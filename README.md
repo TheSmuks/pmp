@@ -1,117 +1,133 @@
 # pmp — Pike Module Package Manager
 
-A minimal package manager for Pike modules. Install, version, and resolve dependencies so that `import Module;` just works.
+[![CI](https://github.com/TheSmuks/pmp/actions/workflows/ci.yml/badge.svg)](https://github.com/TheSmuks/pmp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+Install, version, and resolve dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths.
 
 ## Quick start
 
 ```bash
-# One-time setup: install the pike wrapper
+# Initialize a project
 pmp init
 
-# Install a dependency
-pmp install PUnit
+# Install from GitHub
+pmp install github.com/thesmuks/punit-tests#v1.0.0
 
-# Now any Pike script in this directory can: import PUnit;
-pike my_test.pike
+# Create an isolated environment
+pmp env
+. .pike-env/activate
+
+# Run your code with module paths set
+pmp run my_script.pike
 ```
 
-No `-M` flags. No manual path configuration. The `pike` wrapper auto-detects `pike.json` and injects module paths.
+## Source types
 
-## How it works
+pmp auto-detects the source type from the URL format:
 
-### Three layers of resolution
+| URL format | Type | Version resolution |
+|---|---|---|
+| `github.com/owner/repo` | GitHub | GitHub tags API |
+| `gitlab.com/owner/repo` | GitLab | GitLab tags API |
+| `git.example.com/owner/repo` | Self-hosted git | `git ls-remote --tags` |
+| `./relative/path` or `/abs/path` | Local | None (dev mode, symlinked) |
 
-```
-1. ./modules/              per-project (pmp install)
-2. ~/.pike/modules/        system-wide  (pmp install -g)
-3. Pike stdlib             built-in
-```
+Append `#tag` to pin a version. Without it, pmp resolves the latest tag.
 
-### The `pike` wrapper
+## pike.json
 
-`pmp init` installs a `pike` shell script to `~/.local/bin/` (must be in PATH). When invoked:
-
-1. Walks up from `$PWD` to find `pike.json`
-2. If found and `./modules/` exists, injects it into `PIKE_MODULE_PATH`
-3. Also injects `~/.pike/modules/` (global modules)
-4. `exec`s the real Pike binary
-
-Pike's `master.pike` reads `PIKE_MODULE_PATH` and adds each entry to its internal module search path. `import X` resolves to `X.pmod/` in one of those directories.
-
-### The `pike` wrapper also handles `.h` files
-
-If installed modules contain `.h` files (like PUnit's granular assertion headers), their directories are added to `PIKE_INCLUDE_PATH`. This makes `#include <PUnit.pmod/equal.h>` resolve without manual configuration.
-
-## Manifest: `pike.json`
+Project manifest in your project root:
 
 ```json
 {
   "dependencies": {
-    "PUnit": {
-      "source": "github:TheSmuks/punit",
-      "version": "v1.0.0"
-    }
+    "PUnit": "github.com/thesmuks/punit-tests#v1.0.0",
+    "OtherMod": "gitlab.com/someuser/other-mod",
+    "LocalLib": "./libs/my-lib"
   }
 }
 ```
 
-- `source`: `github:owner/repo` (v1 supports GitHub only)
-- `version`: exact git tag, or omit for `latest`
+- **Key**: module name (directory name in `./modules/`)
+- **Value**: source URL or local path
+- `#version` suffix is optional — defaults to latest tag
+- Local paths are symlinked, not copied — changes are immediately visible
+
+### Package manifest
+
+In the package repository itself:
+
+```json
+{
+  "name": "PUnit",
+  "version": "1.0.0",
+  "description": "JUnit-inspired testing framework for Pike",
+  "source": "github.com/thesmuks/punit-tests"
+}
+```
+
+This is informational — it tells consumers where the package lives.
+
+## pmp env (virtual environment)
+
+Creates `.pike-env/` with a scoped Pike wrapper:
+
+```bash
+pmp env          # creates .pike-env/
+. .pike-env/activate   # activate
+pike my_script.pike    # uses project module paths
+pmp_deactivate         # restore system Pike
+```
+
+The wrapper:
+- Injects `PIKE_MODULE_PATH` and `PIKE_INCLUDE_PATH` for the project
+- Resolves local dependencies from `pike.json` on every invocation
+- Falls back to global modules in `~/.pike/modules/`
 
 ## Commands
 
 ```
-pmp init                  Install pike wrapper to ~/.local/bin/
-pmp install               Install all deps from pike.json into ./modules/
-pmp install <module>      Add module (latest tag) and install
-pmp install <module>@tag  Install specific version
-pmp install -g <module>   Install system-wide to ~/.pike/modules/
-pmp update [module]       Update to latest tags
-pmp list [-g]             Show installed dependencies and versions
-pmp clean                 Remove ./modules/
-pmp run <script.pike>     Run script with module paths injected
-pmp version               Show pmp version
+pmp init                                    Create pike.json scaffold
+pmp install                                 Install all from pike.json
+pmp install <url>                           Add + install (latest tag)
+pmp install <url>#tag                       Install specific version
+pmp install ./local/path                    Local dependency (symlinked)
+pmp install -g <url>                        Install system-wide
+pmp update                                  Update all to latest tags
+pmp update <module>                         Update one dependency
+pmp list                                    Show installed modules
+pmp clean                                   Remove ./modules/
+pmp env                                     Create .pike-env/
+pmp run <script>                            Run script with module paths
+pmp version                                 Show pmp version
 ```
 
-## Selective import via `.h` headers
+## Selective .h imports
 
-Pike's `import Module;` dumps every symbol into scope — there's no `from X import Y`. Module authors can provide granular `.h` files as an alternative:
+PUnit-style packages use granular header files. Import only what you need:
 
-```pike
-// Instead of: import PUnit;  (all 20 assertions)
-// Use:        #include <PUnit.pmod/equal.h>  (only assert_equal + assert_not_equal)
-
-#include <PUnit.pmod/equal.h>
-
-int main() {
-  assert_equal(2, 1+1);  // works
-  // assert_true(1);      // compile error — not in scope
-}
+```c
+#include <PUnit.pmod/assert_equal.h>
+#include <PUnit.pmod/assert_true.h>
 ```
 
-The `.h` files contain `#define` macros that expand to qualified calls (`PUnit.assert_equal(...)`) with automatic `__FILE__:__LINE__` injection. Zero runtime cost.
+Or include all assertions:
 
-**Convention for module authors**: provide both a `macros.h` (all macros) and granular sub-headers:
-
-```
-YourModule.pmod/
-  macros.h        ← all macros (includes the granular headers)
-  equal.h         ← specific subset
-  boolean.h       ← specific subset
-  ...
+```c
+#include <PUnit.pmod/macros.h>
 ```
 
 ## LSP integration
 
-The pike wrapper sets `PIKE_MODULE_PATH` before invoking Pike. The Pike LSP spawns a Pike subprocess that inherits this environment variable. No LSP configuration changes needed — `import PUnit` resolves automatically in the LSP.
-
-For LSP setups that configure include paths explicitly, add `./modules` to `includePaths` when `pike.json` is present.
+For language server support, configure your LSP to use the pike wrapper from `.pike-env/bin/pike`. This ensures module resolution matches runtime behavior.
 
 ## Requirements
 
-- POSIX shell (sh)
-- [Pike](https://pike.lysator.liu.se/) 8.0+
-- `curl`, `tar` for downloads
+- Pike 8.0+
+- `curl` (for GitHub/GitLab downloads)
+- `tar` (for archive extraction)
+- `git` (for self-hosted sources)
 
 ## License
 

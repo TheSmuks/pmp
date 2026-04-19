@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Pike 8.0
+        run: |
+          PIKE_VERSION="8.0.1116"
+          PIKE_URL="https://pike.lysator.liu.se/download/pub/pike/latest/${PIKE_VERSION}/Pike-v${PIKE_VERSION}.tar.gz"
+          cd /tmp
+          curl -sL "$PIKE_URL" -o pike.tar.gz
+          tar -xzf pike.tar.gz
+          cd "Pike-v${PIKE_VERSION}"
+          # Build Pike from source with minimal features
+          make CONFIGUREARGS="--prefix=/usr/local/pike/${PIKE_VERSION} --without-GTK --without-Gnome --without-Mysql --without-ODBC --without-PDF --without-PG --without-SANE --withoutSDL --without-TTF --without-X" -j$(nproc)
+          sudo make install
+          echo "/usr/local/pike/${PIKE_VERSION}/bin" >> "$GITHUB_PATH"
+
+      - name: Verify Pike
+        run: pike --version
+
+      - name: Run tests
+        run: sh tests/test_install.sh

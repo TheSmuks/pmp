@@ -1,0 +1,79 @@
+#!/bin/sh
+# pike wrapper — auto-injects module paths for transparent resolution.
+#
+# Installed by: pmp init
+# Priority: add ~/.local/bin to PATH (or this script's directory)
+#
+# Resolution order:
+#   1. ./modules/           (per-project, if pike.json exists)
+#   2. ~/.pike/modules/     (system-wide, pmp install -g)
+#   3. PIKE_MODULE_PATH     (user-supplied, preserved)
+#   4. Pike stdlib           (built-in)
+
+set -e
+
+MODULE_PATHS=""
+INCLUDE_PATHS=""
+
+# Per-project: detect pike.json in current directory or parents
+_find_project_root() {
+  _dir="${1:-$PWD}"
+  while [ "$_dir" != "/" ]; do
+    if [ -f "$_dir/pike.json" ]; then
+      printf '%s' "$_dir"
+      return 0
+    fi
+    _parent="$(dirname "$_dir")"
+    if [ "$_parent" = "$_dir" ]; then break; fi
+    _dir="$_parent"
+  done
+  return 1
+}
+
+PROJECT_ROOT="$(_find_project_root "$PWD" 2>/dev/null)" || true
+
+if [ -n "$PROJECT_ROOT" ] && [ -d "$PROJECT_ROOT/modules" ]; then
+  MODULE_PATHS="$PROJECT_ROOT/modules"
+  # If project modules contain .h files, add to include path
+  if find "$PROJECT_ROOT/modules" -name '*.h' -print -quit 2>/dev/null | grep -q .; then
+    INCLUDE_PATHS="$PROJECT_ROOT/modules"
+  fi
+fi
+
+# System-wide modules
+if [ -d "$HOME/.pike/modules" ]; then
+  if [ -n "$MODULE_PATHS" ]; then
+    MODULE_PATHS="$MODULE_PATHS:$HOME/.pike/modules"
+  else
+    MODULE_PATHS="$HOME/.pike/modules"
+  fi
+  # System-wide .h files
+  if find "$HOME/.pike/modules" -name '*.h' -print -quit 2>/dev/null | grep -q .; then
+    if [ -n "$INCLUDE_PATHS" ]; then
+      INCLUDE_PATHS="$INCLUDE_PATHS:$HOME/.pike/modules"
+    else
+      INCLUDE_PATHS="$HOME/.pike/modules"
+    fi
+  fi
+fi
+
+# Build environment for real Pike
+PIKE_BIN="/usr/local/pike/8.0.1116/bin/pike"
+[ -x "$PIKE_BIN" ] || { echo "pmp: Pike not found at $PIKE_BIN" >&2; exit 1; }
+
+# Preserve existing PIKE_MODULE_PATH
+if [ -n "$PIKE_MODULE_PATH" ]; then
+  if [ -n "$MODULE_PATHS" ]; then
+    MODULE_PATHS="$MODULE_PATHS:$PIKE_MODULE_PATH"
+  else
+    MODULE_PATHS="$PIKE_MODULE_PATH"
+  fi
+fi
+
+# Build the exec command
+set -- "$PIKE_BIN" "$@"
+
+[ -n "$MODULE_PATHS" ] && set -- PIKE_MODULE_PATH="$MODULE_PATHS" "$@"
+[ -n "$INCLUDE_PATHS" ] && set -- PIKE_INCLUDE_PATH="$INCLUDE_PATHS${PIKE_INCLUDE_PATH+:$PIKE_INCLUDE_PATH}" "$@"
+
+exec "$@"

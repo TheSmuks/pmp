@@ -20,7 +20,7 @@ set -e
 # ── Configuration ──────────────────────────────────────────────────
 
 PMP_VERSION="0.1.0"
-PIKE_BIN="/usr/local/pike/8.0.1116/bin/pike"
+PIKE_BIN="${PIKE_BIN:-$(command -v pike8.0 2>/dev/null || command -v pike 2>/dev/null || echo /usr/local/pike/8.0.1116/bin/pike)}"
 GLOBAL_DIR="$HOME/.pike/modules"
 LOCAL_DIR="./modules"
 PIKE_JSON="./pike.json"

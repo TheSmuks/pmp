@@ -277,7 +277,7 @@ add_to_manifest() {
   # Handle both {} (empty) and { ... } (non-empty) cases
   if grep -q '"dependencies"[[:space:]]*:[[:space:]]*{[[:space:]]*}' "$PIKE_JSON"; then
     # Empty dependencies — replace with first entry
-    sed -i 's/"dependencies"[[:space:]]*:[[:space:]]*{[[:space:]]*}/"dependencies": {\n    "'"$_name"'": "'"$_source"'"\n  }/' "$PIKE_JSON"
+    sed -i 's|"dependencies"[[:space:]]*:[[:space:]]*{[[:space:]]*}|"dependencies": {\n    "'"$_name"'": "'"$_source"'"\n  }|' "$PIKE_JSON"
   else
     # Non-empty — append before closing brace of dependencies
     # This is fragile for complex JSON but works for pmp's simple format

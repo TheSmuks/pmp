@@ -2,16 +2,18 @@
 # pmp — Pike Module Package Manager
 #
 # Usage:
-#   pmp init                  Install pike wrapper to ~/.local/bin/
-#   pmp install               Install all deps from pike.json
-#   pmp install <module>      Add module (latest tag) and install
-#   pmp install <module>@tag  Add specific version and install
-#   pmp install -g <module>   Install system-wide (~/.pike/modules/)
-#   pmp update                Update all deps to latest tags
-#   pmp update <module>       Update one dep
-#   pmp list                  Show installed dependencies
-#   pmp clean                 Remove ./modules/
-#   pmp run <script>          Run a Pike script with module paths
+#   pmp init                                    Create pike.json in current directory
+#   pmp install                                 Install all deps from pike.json
+#   pmp install <url>                           Add dependency and install
+#   pmp install <url>#tag                       Install specific version
+#   pmp install -g <url>                        Install system-wide
+#   pmp update                                  Update all deps to latest tags
+#   pmp update <module>                         Update one dep
+#   pmp list                                    Show installed dependencies
+#   pmp env                                     Create isolated Pike environment (.pike-env/)
+#   pmp clean                                   Remove ./modules/
+#   pmp run <script>                            Run a Pike script with module paths
+#   pmp version                                 Show version
 
 set -e
 
@@ -31,22 +33,285 @@ info() { printf 'pmp: %s\n' "$*"; }
 
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "requires $1"; }
 
-# Read a field from pike.json using grep/sed (no jq dependency)
+# Read a field from pike.json using sed (no jq dependency).
 json_field() {
   _field="$1"
   _file="${2:-$PIKE_JSON}"
   [ -f "$_file" ] || return 1
-  # Match "field": "value" — handles simple string values
   sed -n 's/.*"'"$_field"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_file" | head -1
 }
 
-# Parse source: "github:owner/repo" → "owner repo"
-parse_source() {
+# Walk up from directory to find pike.json
+_find_project_root() {
+  _dir="${1:-$PWD}"
+  while [ "$_dir" != "/" ]; do
+    if [ -f "$_dir/pike.json" ]; then
+      printf '%s' "$_dir"
+      return 0
+    fi
+    _parent="$(dirname "$_dir")"
+    if [ "$_parent" = "$_dir" ]; then break; fi
+    _dir="$_parent"
+  done
+  return 1
+}
+
+# ── Source type detection ─────────────────────────────────────────
+#
+# Source types are detected from URL format:
+#   github.com/owner/repo       → type=github
+#   gitlab.com/owner/repo       → type=gitlab
+#   git.example.com/owner/repo  → type=selfhosted (unknown host with dots)
+#   ./relative/path             → type=local
+#   /absolute/path              → type=local
+#   barename                    → type=registry (not supported in v1)
+
+detect_source_type() {
   _src="$1"
   case "$_src" in
-    github:*) printf '%s' "$_src" | sed 's|github:\([^/]*\)/\(.*\)|\1 \2|' ;;
-    *) die "unsupported source format: $_src (only github:owner/repo supported)" ;;
+    ./*|/*)
+      printf 'local'
+      ;;
+    *)
+      # Check if it contains both . and / — indicates a host URL
+      case "$_src" in
+        */*.*|*.*/*)
+          # Has dots and slashes — it's a host URL
+          # Strip #version suffix before checking domain
+          _clean="${_src%%#*}"
+          _domain="${_clean%%/*}"
+          case "$_domain" in
+            github.com)  printf 'github' ;;
+            gitlab.com)  printf 'gitlab' ;;
+            *)           printf 'selfhosted' ;;
+          esac
+          ;;
+        */*)
+          # Has slashes but no dots — could be a shorthand? Reject.
+          die "unsupported source format: $_src (use full URL like github.com/owner/repo)"
+          ;;
+        *)
+          # Bare name — reserved for future registry
+          die "registry not supported yet — use full URL (e.g. github.com/owner/repo)"
+          ;;
+      esac
+      ;;
   esac
+}
+
+# Extract the module name from the last path segment of a source URL.
+# github.com/thesmuks/punit-tests#v1.0.0 → punit-tests
+# ./libs/my-lib → my-lib
+source_to_name() {
+  _src="$1"
+  # Strip #version suffix
+  _clean="${_src%%#*}"
+  # Get last path segment
+  _name="${_clean##*/}"
+  printf '%s' "$_name"
+}
+
+# Extract version from #suffix. Empty if none.
+source_to_version() {
+  _src="$1"
+  case "$_src" in
+    *\#*) printf '%s' "${_src#*#}" ;;
+    *)    printf '' ;;
+  esac
+}
+
+# Strip #version from source
+source_strip_version() {
+  _src="$1"
+  printf '%s' "${_src%%#*}"
+}
+
+# Extract domain from a host URL
+source_to_domain() {
+  _clean="${1%%#*}"
+  printf '%s' "${_clean%%/*}"
+}
+
+# Extract owner/repo path from host URL (after domain)
+source_to_repo_path() {
+  _clean="${1%%#*}"
+  _domain="${_clean%%/*}"
+  _rest="${_clean#$_domain/}"
+  printf '%s' "$_rest"
+}
+
+# ── Version resolution ────────────────────────────────────────────
+
+# Get latest tag from GitHub
+latest_tag_github() {
+  _repo_path="$1"
+  _url="https://api.github.com/repos/$_repo_path/tags"
+  curl -sL "$_url" | sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1
+}
+
+# Get latest tag from GitLab (gitlab.com)
+latest_tag_gitlab() {
+  _repo_path="$1"
+  # GitLab API: project is URL-encoded owner/repo
+  _encoded="$(printf '%s' "$_repo_path" | sed 's|/|%2F|g')"
+  _url="https://gitlab.com/api/v4/projects/$_encoded/repository/tags"
+  curl -sL "$_url" | sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1
+}
+
+# Get latest tag from self-hosted git via ls-remote
+latest_tag_selfhosted() {
+  _domain="$1"
+  _repo_path="$2"
+  _url="https://$_domain/$_repo_path"
+  git ls-remote --tags "$_url" 2>/dev/null | \
+    sed -n 's|.*refs/tags/\(.*\)|\1|p' | \
+    grep -v '\^{}' | \
+    sort -Vr | head -1
+}
+
+# Resolve latest tag based on source type
+latest_tag() {
+  _type="$1"
+  _domain="$2"
+  _repo_path="$3"
+  case "$_type" in
+    github)     latest_tag_github "$_repo_path" ;;
+    gitlab)     latest_tag_gitlab "$_repo_path" ;;
+    selfhosted) latest_tag_selfhosted "$_domain" "$_repo_path" ;;
+    *)          die "cannot resolve tags for source type: $_type" ;;
+  esac
+}
+
+# ── Download and install ──────────────────────────────────────────
+
+# Download from GitHub and install
+install_github() {
+  _repo_path="$1"
+  _ver="$2"
+  _dest="$3"
+
+  _tmpdir="$(mktemp -d)"
+  _url="https://github.com/$_repo_path/archive/refs/tags/${_ver}.tar.gz"
+
+  info "downloading $_url"
+  curl -sL "$_url" -o "$_tmpdir/archive.tar.gz" || { rm -rf "$_tmpdir"; die "failed to download $_url"; }
+
+  mkdir -p "$_tmpdir/extract"
+  tar -xzf "$_tmpdir/archive.tar.gz" -C "$_tmpdir/extract" || { rm -rf "$_tmpdir"; die "failed to extract archive"; }
+
+  _extracted="$(ls "$_tmpdir/extract" | head -1)"
+  [ -n "$_extracted" ] || { rm -rf "$_tmpdir"; die "empty archive"; }
+
+  rm -rf "$_dest"
+  mkdir -p "$(dirname "$_dest")"
+  cp -r "$_tmpdir/extract/$_extracted" "$_dest"
+
+  printf '%s' "$_ver" > "$_dest/.version"
+  rm -rf "$_tmpdir"
+}
+
+# Download from GitLab and install
+install_gitlab() {
+  _repo_path="$1"
+  _ver="$2"
+  _dest="$3"
+
+  # Derive archive URL: gitlab.com/owner/repo → owner/repo
+  _repo_name="${_repo_path##*/}"
+  _tmpdir="$(mktemp -d)"
+  # GitLab archive format: https://gitlab.com/owner/repo/-/archive/VER/repo-VER.tar.gz
+  _url="https://gitlab.com/$_repo_path/-/archive/${_ver}/${_repo_name}-${_ver}.tar.gz"
+
+  info "downloading $_url"
+  curl -sL "$_url" -o "$_tmpdir/archive.tar.gz" || { rm -rf "$_tmpdir"; die "failed to download $_url"; }
+
+  mkdir -p "$_tmpdir/extract"
+  tar -xzf "$_tmpdir/archive.tar.gz" -C "$_tmpdir/extract" || { rm -rf "$_tmpdir"; die "failed to extract archive"; }
+
+  _extracted="$(ls "$_tmpdir/extract" | head -1)"
+  [ -n "$_extracted" ] || { rm -rf "$_tmpdir"; die "empty archive"; }
+
+  rm -rf "$_dest"
+  mkdir -p "$(dirname "$_dest")"
+  cp -r "$_tmpdir/extract/$_extracted" "$_dest"
+
+  printf '%s' "$_ver" > "$_dest/.version"
+  rm -rf "$_tmpdir"
+}
+
+# Clone from self-hosted git and install
+install_selfhosted() {
+  _domain="$1"
+  _repo_path="$2"
+  _ver="$3"
+  _dest="$4"
+
+  _url="https://$_domain/$_repo_path"
+  _tmpdir="$(mktemp -d)"
+
+  info "cloning $_url at $_ver"
+  git clone --branch "$_ver" --depth 1 "$_url" "$_tmpdir/repo" || { rm -rf "$_tmpdir"; die "failed to clone $_url"; }
+
+  rm -rf "$_dest"
+  mkdir -p "$(dirname "$_dest")"
+  cp -r "$_tmpdir/repo" "$_dest"
+
+  printf '%s' "$_ver" > "$_dest/.version"
+  rm -rf "$_tmpdir"
+}
+
+# ── Manifest helpers ──────────────────────────────────────────────
+
+# Add a dependency to pike.json
+add_to_manifest() {
+  _name="$1"
+  _source="$2"
+  [ -f "$PIKE_JSON" ] || return 0
+
+  # Already present? Skip.
+  if grep -q "\"$_name\"" "$PIKE_JSON" 2>/dev/null; then
+    return 0
+  fi
+
+  # Insert before the closing } of dependencies
+  # Handle both {} (empty) and { ... } (non-empty) cases
+  if grep -q '"dependencies"[[:space:]]*:[[:space:]]*{[[:space:]]*}' "$PIKE_JSON"; then
+    # Empty dependencies — replace with first entry
+    sed -i 's/"dependencies"[[:space:]]*:[[:space:]]*{[[:space:]]*}/"dependencies": {\n    "'"$_name"'": "'"$_source"'"\n  }/' "$PIKE_JSON"
+  else
+    # Non-empty — append before closing brace of dependencies
+    # This is fragile for complex JSON but works for pmp's simple format
+    sed -i '/"dependencies"/,/^  }/ {
+      /^  }/i\    "'"$_name"'": "'"$_source"'"
+    }' "$PIKE_JSON"
+  fi
+}
+
+# Parse dependencies from pike.json.
+# Outputs lines of: module_name<TAB>source_specifier
+parse_deps() {
+  _file="${1:-$PIKE_JSON}"
+  [ -f "$_file" ] || return 0
+
+  # Simple line-by-line parser for "ModuleName": "source-specifier"
+  _in_deps=0
+  while IFS= read -r _line; do
+    case "$_line" in
+      *dependencies* ) _in_deps=1; continue ;;
+    esac
+    if [ "$_in_deps" = 1 ]; then
+      # End of dependencies block
+      case "$_line" in
+        *'}'* ) _in_deps=0; continue ;;
+      esac
+      # Match "name": "value" lines
+      _name="$(printf '%s' "$_line" | sed -n 's/.*"\([^"]*\)"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+      _val="$(printf '%s' "$_line" | sed -n 's/.*"\([^"]*\)"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\2/p')"
+      if [ -n "$_name" ] && [ -n "$_val" ]; then
+        printf '%s\t%s\n' "$_name" "$_val"
+      fi
+    fi
+  done < "$_file"
 }
 
 # ── Commands ───────────────────────────────────────────────────────
@@ -54,51 +319,26 @@ parse_source() {
 cmd_version() { info "pmp v$PMP_VERSION"; }
 
 cmd_init() {
-  need_cmd pike
-  _bindir="$HOME/.local/bin"
-  _wrapper="$_bindir/pike"
-
-  mkdir -p "$_bindir"
-
-  # Find where this pmp script lives to locate the wrapper
-  _self="$(cd "$(dirname "$0")" && pwd)"
-  if [ -f "$_self/pike" ]; then
-    cp "$_self/pike" "$_wrapper"
-    chmod +x "$_wrapper"
-    info "installed pike wrapper to $_wrapper"
-  else
-    die "cannot find bin/pike wrapper alongside pmp"
+  if [ -f "$PIKE_JSON" ]; then
+    die "pike.json already exists in this directory"
   fi
-
-  # Check if ~/.local/bin is in PATH
-  case ":$PATH:" in
-    *":$_bindir:"*) ;;
-    *) info "add $_bindir to your PATH for the wrapper to take effect" ;;
-  esac
-
-  info "done — run 'pike script.pike' and modules resolve automatically"
+  cat > "$PIKE_JSON" << 'MANIFEST'
+{
+  "dependencies": {}
+}
+MANIFEST
+  info "created pike.json"
 }
 
 cmd_install() {
-  need_cmd curl
-  need_cmd tar
-  need_cmd mktemp
-
   _global=0
-  _module=""
-  _version=""
+  _source=""
 
   # Parse arguments
   while [ $# -gt 0 ]; do
     case "$1" in
       -g) _global=1 ;;
-      *)
-        _module="$1"
-        # Check for @version suffix
-        case "$_module" in
-          *@*) _version="${_module#*@}"; _module="${_module%%@*}" ;;
-        esac
-        ;;
+      *)  _source="$1" ;;
     esac
     shift
   done
@@ -109,16 +349,18 @@ cmd_install() {
     _target="$LOCAL_DIR"
   fi
 
-  if [ -z "$_module" ]; then
+  if [ -z "$_source" ]; then
     # Install all deps from pike.json
     [ -f "$PIKE_JSON" ] || die "no pike.json found in current directory"
     cmd_install_all "$_target"
   else
-    # Install specific module
-    cmd_install_one "$_module" "$_version" "$_target"
-    # Add to pike.json if local install
+    # Install specific source
+    cmd_install_source "$_source" "$_target"
+    # Add to pike.json if local install and file exists
     if [ "$_global" = 0 ] && [ -f "$PIKE_JSON" ]; then
-      add_to_manifest "$_module" "$_version"
+      _name="$(source_to_name "$_source")"
+      _clean_source="$(source_strip_version "$_source")"
+      add_to_manifest "$_name" "$_clean_source"
     fi
   fi
 }
@@ -127,135 +369,90 @@ cmd_install_all() {
   _target="$1"
   info "installing dependencies from pike.json..."
 
-  # Parse dependencies from pike.json
-  # We need to iterate over the "dependencies" object
-  # Simple parser: look for "ModuleName": { "source": "...", "version": "..." }
-  _in_deps=0
-  _current_module=""
-  _current_source=""
-  _current_version=""
-
-  while IFS= read -r _line; do
-    case "$_line" in
-      '"dependencies"'*)
-        _in_deps=1
-        continue
-        ;;
-      '}'*)
-        if [ "$_in_deps" = 1 ] && [ -n "$_current_module" ]; then
-          # Flush previous module
-          [ -z "$_current_version" ] && _current_version="latest"
-          cmd_install_one "$_current_module" "$_current_version" "$_target"
-          _current_module=""
-          _current_source=""
-          _current_version=""
-        fi
-        _in_deps=0
-        ;;
-      *)
-        if [ "$_in_deps" = 1 ]; then
-          # Check if this is a module name line: "ModuleName": {
-          _mod="$(printf '%s' "$_line" | sed -n 's/.*"\([^"]*\)"[[:space:]]*:[[:space:]]*{.*/\1/p')"
-          if [ -n "$_mod" ]; then
-            # Flush previous
-            if [ -n "$_current_module" ]; then
-              [ -z "$_current_version" ] && _current_version="latest"
-              cmd_install_one "$_current_module" "$_current_version" "$_target"
-            fi
-            _current_module="$_mod"
-            _current_source=""
-            _current_version=""
-            continue
-          fi
-          # Check for source/version fields
-          _val="$(printf '%s' "$_line" | sed -n 's/.*"source"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
-          [ -n "$_val" ] && _current_source="$_val"
-          _val="$(printf '%s' "$_line" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
-          [ -n "$_val" ] && _current_version="$_val"
-        fi
-        ;;
-    esac
-  done < "$PIKE_JSON"
+  parse_deps "$PIKE_JSON" | while IFS='	' read -r _name _src; do
+    cmd_install_source "$_src" "$_target" "$_name"
+  done
 
   info "done"
 }
 
-cmd_install_one() {
-  _mod="$1"
-  _ver="$2"
-  _target="$3"
+# Install from a source specifier.
+# Optional third argument overrides the module name (from manifest key).
+cmd_install_source() {
+  _src="$1"
+  _target="$2"
+  _override_name="${3:-}"
 
-  # Resolve source from pike.json if not specified
-  _source=""
-  if [ -f "$PIKE_JSON" ]; then
-    # Get the source field for this module from dependencies
-    _source="$(sed -n '/'"$_mod"'/,/}/ s/.*"source"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$PIKE_JSON" | head -1)"
-  fi
+  _type="$(detect_source_type "$_src")"
 
-  # Default to github:TheSmuks/<module> if no source found
-  if [ -z "$_source" ]; then
-    _source="github:TheSmuks/$_mod"
-    info "no source in pike.json for $_mod, trying $_source"
-  fi
+  case "$_type" in
+    local)
+      # Local deps are not copied — they're added to module path by env/run.
+      # Create a symlink so the module appears in ./modules/ for discovery.
+      _name="${_override_name:-$(source_to_name "$_src")}"
+      # Resolve relative path from project root
+      _project_root="$(_find_project_root "$PWD" 2>/dev/null)" || _project_root="$PWD"
+      _local_path="$_src"
+      case "$_local_path" in
+        ./*) _local_path="$_project_root/$_local_path" ;;
+      esac
+      [ -d "$_local_path" ] || die "local path not found: $_local_path"
 
-  set -- $(parse_source "$_source")
-  _owner="$1"
-  _repo="$2"
+      _dest="$_target/$_name"
+      mkdir -p "$_target"
+      # Symlink so changes are immediately visible
+      ln -sfn "$_local_path" "$_dest"
+      info "linked $_name → $_local_path"
+      ;;
+    github|gitlab)
+      need_cmd curl
+      need_cmd tar
+      need_cmd mktemp
 
-  # Resolve version to a tag
-  if [ -z "$_ver" ] || [ "$_ver" = "latest" ]; then
-    _ver="$(latest_tag "$_owner" "$_repo")"
-    [ -n "$_ver" ] || die "no tags found for $_owner/$_repo"
-  fi
+      _name="${_override_name:-$(source_to_name "$_src")}"
+      _ver="$(source_to_version "$_src")"
+      _repo_path="$(source_to_repo_path "$_src")"
+      _dest="$_target/$_name"
 
-  info "installing $_mod ($_ver) from $_owner/$_repo"
+      # Resolve version
+      if [ -z "$_ver" ]; then
+        _ver="$(latest_tag "$_type" "" "$_repo_path")"
+        [ -n "$_ver" ] || die "no tags found for $_repo_path"
+      fi
 
-  # Download and extract
-  _tmpdir="$(mktemp -d)"
-  _url="https://github.com/$_owner/$_repo/archive/refs/tags/${_ver}.tar.gz"
+      info "installing $_name ($_ver) from $_type:$_repo_path"
+      mkdir -p "$_target"
 
-  curl -sL "$_url" -o "$_tmpdir/archive.tar.gz" || die "failed to download $_url"
+      case "$_type" in
+        github) install_github "$_repo_path" "$_ver" "$_dest" ;;
+        gitlab) install_gitlab "$_repo_path" "$_ver" "$_dest" ;;
+      esac
 
-  # GitHub archives extract to owner-repo-tag/
-  mkdir -p "$_tmpdir/extract"
-  tar -xzf "$_tmpdir/archive.tar.gz" -C "$_tmpdir/extract" || die "failed to extract archive"
+      info "installed $_name $_ver → $_dest"
+      ;;
+    selfhosted)
+      need_cmd git
+      need_cmd mktemp
 
-  # Find the extracted directory
-  _extracted="$(ls "$_tmpdir/extract" | head -1)"
-  [ -n "$_extracted" ] || die "empty archive"
+      _name="${_override_name:-$(source_to_name "$_src")}"
+      _ver="$(source_to_version "$_src")"
+      _domain="$(source_to_domain "$_src")"
+      _repo_path="$(source_to_repo_path "$_src")"
+      _dest="$_target/$_name"
 
-  # Install to target
-  _dest="$_target/$_mod"
-  rm -rf "$_dest"
-  mkdir -p "$_target"
-  cp -r "$_tmpdir/extract/$_extracted" "$_dest"
+      # Resolve version
+      if [ -z "$_ver" ]; then
+        _ver="$(latest_tag "$_type" "$_domain" "$_repo_path")"
+        [ -n "$_ver" ] || die "no tags found for $_domain/$_repo_path"
+      fi
 
-  # Write .version file
-  printf '%s' "$_ver" > "$_dest/.version"
+      info "installing $_name ($_ver) from $_domain/$_repo_path"
+      mkdir -p "$_target"
 
-  # Cleanup
-  rm -rf "$_tmpdir"
-
-  info "installed $_mod $_ver → $_dest"
-}
-
-add_to_manifest() {
-  _mod="$1"
-  _ver="$2"
-  # Simple approach: if pike.json exists but doesn't have this dep, add it
-  # For v1, user edits pike.json manually for complex cases
-  if grep -q "\"$_mod\"" "$PIKE_JSON" 2>/dev/null; then
-    return 0  # already in manifest
-  fi
-  info "add '$_mod' to pike.json dependencies manually"
-}
-
-latest_tag() {
-  _owner="$1"
-  _repo="$2"
-  # Use GitHub API to get the latest tag
-  _url="https://api.github.com/repos/$_owner/$_repo/tags"
-  curl -sL "$_url" | sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1
+      install_selfhosted "$_domain" "$_repo_path" "$_ver" "$_dest"
+      info "installed $_name $_ver → $_dest"
+      ;;
+  esac
 }
 
 cmd_update() {
@@ -264,8 +461,12 @@ cmd_update() {
 
   if [ -n "$_mod" ]; then
     info "updating $_mod..."
-    _ver="$(cat "$LOCAL_DIR/$_mod/.version" 2>/dev/null || true)"
-    cmd_install_one "$_mod" "latest" "$LOCAL_DIR"
+    # Find source from pike.json
+    _src="$(parse_deps "$PIKE_JSON" | while IFS='	' read -r _name _s; do
+      if [ "$_name" = "$_mod" ]; then printf '%s' "$_s"; break; fi
+    done)"
+    [ -n "$_src" ] || die "module $_mod not found in pike.json"
+    cmd_install_source "$_src" "$LOCAL_DIR" "$_mod"
   else
     [ -f "$PIKE_JSON" ] || die "no pike.json found"
     cmd_install_all "$LOCAL_DIR"
@@ -278,6 +479,7 @@ cmd_list() {
 
   [ -d "$_dir" ] || { info "no modules installed"; return 0; }
 
+  _found=0
   for _moddir in "$_dir"/*/; do
     [ -d "$_moddir" ] || continue
     _mod="$(basename "$_moddir")"
@@ -285,8 +487,16 @@ cmd_list() {
     if [ -f "$_moddir/.version" ]; then
       _ver="$(cat "$_moddir/.version")"
     fi
-    printf '  %-20s %s\n' "$_mod" "$_ver"
+    # Check if it's a symlink (local dep)
+    _src=""
+    if [ -L "$_moddir" ]; then
+      _src=" → $(readlink "$_moddir")"
+    fi
+    printf '  %-20s %-12s%s\n' "$_mod" "$_ver" "$_src"
+    _found=1
   done
+
+  [ "$_found" = 0 ] && info "no modules installed"
 }
 
 cmd_clean() {
@@ -298,26 +508,214 @@ cmd_clean() {
   fi
 }
 
+# Build module + include paths from project root and global dir.
+_build_paths() {
+  _mod_paths=""
+  _inc_paths=""
+
+  # Per-project: find pike.json, use its directory's modules/
+  _project_root="$(_find_project_root "$PWD" 2>/dev/null)" || true
+  if [ -n "$_project_root" ] && [ -d "$_project_root/modules" ]; then
+    _mod_paths="$_project_root/modules"
+    # Add to include path if .h files exist
+    if find "$_project_root/modules" -name '*.h' -print -quit 2>/dev/null | grep -q .; then
+      _inc_paths="$_project_root/modules"
+    fi
+  fi
+
+  # Local dependencies from pike.json (paths starting with ./ or /)
+  _pjson="${_project_root:-$PWD}/pike.json"
+  if [ -f "$_pjson" ]; then
+    _local_deps_file="$(mktemp)"
+    parse_deps "$_pjson" > "$_local_deps_file"
+    while IFS='	' read -r _name _src; do
+      case "$_src" in
+        ./*|/*)
+          # Resolve relative paths from project root
+          _local_path="$_src"
+          case "$_local_path" in
+            ./*) _local_path="${_project_root:-$PWD}/$_local_path" ;;
+          esac
+          [ -d "$_local_path" ] || continue
+          _mod_paths="${_mod_paths:+$_mod_paths:}$_local_path"
+          if find "$_local_path" -name '*.h' -print -quit 2>/dev/null | grep -q .; then
+            _inc_paths="${_inc_paths:+$_inc_paths:}$_local_path"
+          fi
+          ;;
+      esac
+    done < "$_local_deps_file"
+    rm -f "$_local_deps_file"
+  fi
+
+  # System-wide
+  if [ -d "$GLOBAL_DIR" ]; then
+    _mod_paths="${_mod_paths:+$_mod_paths:}$GLOBAL_DIR"
+    if find "$GLOBAL_DIR" -name '*.h' -print -quit 2>/dev/null | grep -q .; then
+      _inc_paths="${_inc_paths:+$_inc_paths:}$GLOBAL_DIR"
+    fi
+  fi
+}
+
 cmd_run() {
   [ -n "$1" ] || die "usage: pmp run <script.pike> [args...]"
 
   _script="$1"
   shift
 
-  # Build module paths like the wrapper does
-  _paths=""
-  if [ -d "$LOCAL_DIR" ]; then _paths="$LOCAL_DIR"; fi
-  if [ -d "$GLOBAL_DIR" ]; then
-    [ -n "$_paths" ] && _paths="$_paths:"
-    _paths="${_paths}$GLOBAL_DIR"
+  _build_paths
+
+  # Invoke Pike with injected paths
+  _env=""
+  if [ -n "$_mod_paths" ]; then
+    _env="PIKE_MODULE_PATH=$_mod_paths${PIKE_MODULE_PATH+:$PIKE_MODULE_PATH}"
+  fi
+  if [ -n "$_inc_paths" ]; then
+    _env="${_env:+$_env }PIKE_INCLUDE_PATH=$_inc_paths${PIKE_INCLUDE_PATH+:$PIKE_INCLUDE_PATH}"
   fi
 
-  if [ -n "$_paths" ]; then
-    PIKE_MODULE_PATH="$_paths${PIKE_MODULE_PATH+:$PIKE_MODULE_PATH}" \
-      exec "$PIKE_BIN" "$_script" "$@"
+  if [ -n "$_env" ]; then
+    env $_env "$PIKE_BIN" "$_script" "$@"
   else
     exec "$PIKE_BIN" "$_script" "$@"
   fi
+}
+
+# ── Environment ────────────────────────────────────────────────────
+
+cmd_env() {
+  _env_dir=".pike-env"
+  _env_bin="$_env_dir/bin"
+
+  if [ -d "$_env_dir" ]; then
+    info ".pike-env/ already exists — recreating bin/pike wrapper"
+  fi
+
+  mkdir -p "$_env_bin"
+
+  _project_root="$(_find_project_root "$PWD" 2>/dev/null)" || _project_root="$PWD"
+
+  # Generate bin/pike wrapper
+  cat > "$_env_bin/pike" << PIKE_WRAPPER
+#!/bin/sh
+# Generated by pmp env. Re-run 'pmp env' to update.
+PROJECT_ROOT="$_project_root"
+PIKE_BIN="$PIKE_BIN"
+GLOBAL_DIR="\$HOME/.pike/modules"
+
+MOD_PATHS=""
+INC_PATHS=""
+
+# Project modules
+if [ -d "\$PROJECT_ROOT/modules" ]; then
+  MOD_PATHS="\$PROJECT_ROOT/modules"
+  if find "\$PROJECT_ROOT/modules" -name '*.h' -print -quit 2>/dev/null | grep -q .; then
+    INC_PATHS="\$PROJECT_ROOT/modules"
+  fi
+fi
+
+# Local dependencies from pike.json (paths starting with ./ or /)
+_PIKE_JSON="\$PROJECT_ROOT/pike.json"
+if [ -f "\$_PIKE_JSON" ]; then
+  _in_deps=0
+  while IFS= read -r _line; do
+    case "\$_line" in
+      *dependencies* ) _in_deps=1; continue ;;
+    esac
+    if [ "\$_in_deps" = 1 ]; then
+      case "\$_line" in
+        *'}'* ) _in_deps=0; continue ;;
+      esac
+      _val="\$(printf '%s' "\$_line" | sed -n 's/.*"[^"]*"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+      if [ -n "\$_val" ]; then
+        case "\$_val" in
+          ./*|/*)
+            _lpath="\$_val"
+            case "\$_lpath" in
+              ./*) _lpath="\$PROJECT_ROOT/\$_lpath" ;;
+            esac
+            [ -d "\$_lpath" ] || continue
+            MOD_PATHS="\${MOD_PATHS:+\$MOD_PATHS:}\$_lpath"
+            if find "\$_lpath" -name '*.h' -print -quit 2>/dev/null | grep -q .; then
+              INC_PATHS="\${INC_PATHS:+\$INC_PATHS:}\$_lpath"
+            fi
+            ;;
+        esac
+      fi
+    fi
+  done < "\$_PIKE_JSON"
+fi
+
+# Global modules
+if [ -d "\$GLOBAL_DIR" ]; then
+  MOD_PATHS="\${MOD_PATHS:+\$MOD_PATHS:}\$GLOBAL_DIR"
+fi
+
+# Build environment and exec real Pike
+_env=""
+if [ -n "\$MOD_PATHS" ]; then
+  _env="PIKE_MODULE_PATH=\$MOD_PATHS\${PIKE_MODULE_PATH+:\$PIKE_MODULE_PATH}"
+fi
+if [ -n "\$INC_PATHS" ]; then
+  _env="\${_env:+\$_env }PIKE_INCLUDE_PATH=\$INC_PATHS\${PIKE_INCLUDE_PATH+:\$PIKE_INCLUDE_PATH}"
+fi
+
+if [ -n "\$_env" ]; then
+  exec env \$_env "\$PIKE_BIN" "\$@"
+else
+  exec "\$PIKE_BIN" "\$@"
+fi
+PIKE_WRAPPER
+
+  chmod +x "$_env_bin/pike"
+
+  # Generate activate script with baked-in project path
+  _abs_env_dir="$(cd "$_env_dir" && pwd)"
+  cat > "$_env_dir/activate" << 'ACTIVATE'
+# pmp environment activation. Source this: . .pike-env/activate
+
+# Env directory is baked in at creation time
+_pike_env_dir="ACTIVATE_PLACEHOLDER"
+_pike_env_bin="$_pike_env_dir/bin"
+
+# Save original PATH
+if [ -z "$_pike_env_old_path" ]; then
+  _pike_env_old_path="$PATH"
+fi
+
+# Prepend env bin to PATH
+PATH="$_pike_env_bin:$PATH"
+export PATH
+
+# Marker for detection
+PIKE_ENV_PATH="$_pike_env_dir"
+export PIKE_ENV_PATH
+
+pmp_deactivate() {
+  if [ -n "$_pike_env_old_path" ]; then
+    PATH="$_pike_env_old_path"
+    export PATH
+    unset _pike_env_old_path
+  fi
+  unset PIKE_ENV_PATH
+  if [ -n "$_pike_env_old_ps1" ]; then
+    PS1="$_pike_env_old_ps1"
+    unset _pike_env_old_ps1
+  fi
+  unset -f pmp_deactivate
+}
+
+# Shell prompt indicator
+if [ -z "$_pike_env_old_ps1" ]; then
+  _pike_env_old_ps1="$PS1"
+  PS1="(pike) $PS1"
+fi
+ACTIVATE
+  # Replace placeholder with actual path
+  sed -i "s|ACTIVATE_PLACEHOLDER|$_abs_env_dir|" "$_env_dir/activate"
+
+  info "created .pike-env/"
+  info "  activate with:  . .pike-env/activate"
+  info "  or use directly: .pike-env/bin/pike"
 }
 
 # ── Main ───────────────────────────────────────────────────────────
@@ -332,20 +730,28 @@ case "$_cmd" in
   list)     cmd_list "$@" ;;
   clean)    cmd_clean ;;
   run)      cmd_run "$@" ;;
+  env)      cmd_env ;;
   version)  cmd_version ;;
   -h|--help)
     printf 'pmp — Pike Module Package Manager\n\n'
     printf 'Usage:\n'
-    printf '  pmp init                  Install pike wrapper to ~/.local/bin/\n'
-    printf '  pmp install               Install all deps from pike.json\n'
-    printf '  pmp install <module>      Add module (latest) and install\n'
-    printf '  pmp install <module>@tag  Install specific version\n'
-    printf '  pmp install -g <module>   Install system-wide\n'
-    printf '  pmp update [module]       Update deps to latest tags\n'
-    printf '  pmp list [-g]             Show installed dependencies\n'
-    printf '  pmp clean                 Remove ./modules/\n'
-    printf '  pmp run <script>          Run script with module paths\n'
-    printf '  pmp version               Show version\n'
+    printf '  pmp init                                    Create pike.json\n'
+    printf '  pmp install                                 Install all deps from pike.json\n'
+    printf '  pmp install <url>                           Add and install dependency\n'
+    printf '  pmp install <url>#tag                       Install specific version\n'
+    printf '  pmp install ./local/path                    Local dependency (symlinked)\n'
+    printf '  pmp install -g <url>                        Install system-wide\n'
+    printf '  pmp update [module]                         Update deps to latest tags\n'
+    printf '  pmp list [-g]                               Show installed dependencies\n'
+    printf '  pmp env                                     Create .pike-env/ virtual environment\n'
+    printf '  pmp clean                                   Remove ./modules/\n'
+    printf '  pmp run <script>                            Run script with module paths\n'
+    printf '  pmp version                                 Show version\n'
+    printf '\nSource formats:\n'
+    printf '  github.com/owner/repo                       GitHub\n'
+    printf '  gitlab.com/owner/repo                       GitLab\n'
+    printf '  git.example.com/owner/repo                  Self-hosted git\n'
+    printf '  ./local/path or /abs/path                   Local module\n'
     ;;
   *)
     die "unknown command '$_cmd' (try: pmp --help)"

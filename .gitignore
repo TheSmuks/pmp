@@ -1,0 +1,4 @@
+.pike-env/
+modules/
+*.o
+*.pike.o

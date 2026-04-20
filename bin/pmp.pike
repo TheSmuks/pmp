@@ -1,9 +1,9 @@
 #!/usr/bin/env pike
 // pmp — Pike Module Package Manager
-// Native Pike implementation — no curl, tar, sha256sum, or sed-JSON required.
-// Only external tools: gunzip (for .tar.gz decompression), git (self-hosted only).
+// Entry point — mutable state and command dispatch.
+// Pure functions live in bin/Pmp.pmod/*.pmod
 
-constant PMP_VERSION = "0.2.0";
+import Pmp;
 
 // ── Configuration ──────────────────────────────────────────────────
 
@@ -22,660 +22,9 @@ array(array(string)) lock_entries = ({});
 
 multiset(string) visited = (<>);
 
-// ── Helpers ────────────────────────────────────────────────────────
+// ── Cached std_libs ────────────────────────────────────────────────
 
-void die(string msg) {
-    werror("pmp: %s\n", msg);
-    exit(1);
-}
-
-void info(string msg) {
-    write("pmp: %s\n", msg);
-}
-
-void warn(string msg) {
-    werror("pmp: warning: %s\n", msg);
-}
-
-void need_cmd(string name) {
-    array(string) search_path = (getenv("PATH") || "/usr/bin:/bin") / ":";
-    if (!Process.locate_binary(search_path, name))
-        die("requires " + name);
-}
-
-//! Read a field from pike.json using proper JSON parsing.
-void|string json_field(string field, void|string file) {
-    string path = file || pike_json;
-    if (!Stdio.exist(path)) return 0;
-    string raw = Stdio.read_file(path);
-    if (!raw) return 0;
-    mapping|mixed data;
-    mixed err = catch { data = Standards.JSON.decode(raw); };
-    if (err || !mappingp(data)) return 0;
-    // Check top-level field
-    if (!zero_type(data[field])) return data[field];
-    return 0;
-}
-
-//! Walk up from directory to find pike.json, resolving symlinks.
-void|string find_project_root(void|string dir) {
-    string d = dir || getcwd();
-    while (d != "/") {
-        if (Stdio.exist(combine_path(d, "pike.json")))
-            return d;
-        string parent = combine_path(d, "..");
-        if (parent == d) break;
-        d = parent;
-    }
-    return 0;
-}
-
-//! Compute SHA-256 hex digest of a file.
-string compute_sha256(string path) {
-    string data = Stdio.read_file(path);
-    if (!data) return "unknown";
-    return String.string2hex(Crypto.SHA256.hash(data));
-}
-
-// ── Source type detection ──────────────────────────────────────────
-//
-// Source types from URL format:
-//   github.com/owner/repo       -> "github"
-//   gitlab.com/owner/repo       -> "gitlab"
-//   git.example.com/owner/repo  -> "selfhosted"
-//   ./relative/path             -> "local"
-//   /absolute/path              -> "local"
-//   barename                    -> error (registry not supported)
-
-string detect_source_type(string src) {
-    if (has_prefix(src, "./") || has_prefix(src, "/"))
-        return "local";
-
-    string clean = (src / "#")[0];
-    string domain = (clean / "/")[0];
-
-    if (sizeof(clean / "/") >= 2 && has_value(domain, ".")) {
-        switch (domain) {
-            case "github.com":  return "github";
-            case "gitlab.com":  return "gitlab";
-            default:            return "selfhosted";
-        }
-    }
-
-    if (has_value(clean, "/"))
-        die("unsupported source format: " + src +
-            " (use full URL like github.com/owner/repo)");
-
-    die("registry not supported yet — use full URL "
-        "(e.g. github.com/owner/repo)");
-}
-
-//! Extract module name from last path segment.
-string source_to_name(string src) {
-    string clean = (src / "#")[0];
-    return (clean / "/")[-1];
-}
-
-//! Extract version from #suffix. Empty if none.
-string source_to_version(string src) {
-    if (has_value(src, "#"))
-        return (src / "#")[1..] * "#";
-    return "";
-}
-
-//! Strip #version from source.
-string source_strip_version(string src) {
-    return (src / "#")[0];
-}
-
-//! Extract domain from a host URL.
-string source_to_domain(string src) {
-    string clean = (src / "#")[0];
-    return (clean / "/")[0];
-}
-
-//! Extract owner/repo path from host URL (after domain).
-string source_to_repo_path(string src) {
-    string clean = (src / "#")[0];
-    string domain = (clean / "/")[0];
-    // Everything after domain/
-    array parts = clean / "/";
-    if (sizeof(parts) < 3) return "";
-    return parts[1..] * "/";
-}
-
-// ── Store helpers ──────────────────────────────────────────────────
-
-//! Generate store entry name from source, tag, and SHA.
-//! Format: {domain}-{owner}-{repo}-{tag}-{sha_prefix8}
-string store_entry_name(string src, string tag, string sha) {
-    string clean = (src / "#")[0];
-    // Convert / to -, remove leading/trailing -
-    string slug = replace(clean, "/", "-");
-    slug = String.Buffer()->add(
-        replace(sprintf("%s", slug),
-                (["//": "-", "--": "-"])))->get();
-    // Trim leading/trailing dashes
-    while (has_prefix(slug, "-")) slug = slug[1..];
-    while (has_suffix(slug, "-")) slug = slug[..<1];
-
-    string sha8 = (sizeof(sha) >= 8) ? sha[..7] : sha;
-    return sprintf("%s-%s-%s", slug, tag, sha8);
-}
-
-// ── HTTP helpers ───────────────────────────────────────────────────
-
-//! HTTP GET with error handling. Returns body string or dies.
-string http_get(string url, void|mapping(string:string) headers) {
-    Protocols.HTTP.Query con;
-    mapping request_headers = ([
-        "user-agent": "pmp/" + PMP_VERSION,
-    ]);
-
-    if (headers)
-        request_headers |= headers;
-
-    mixed err = catch {
-        con = Protocols.HTTP.do_method("GET", url, 0, request_headers);
-    };
-
-    if (err) {
-        die("failed to fetch " + url + ": " + describe_error(err));
-    }
-    if (!con) {
-        die("failed to connect to " + url);
-    }
-    if (con->status != 200) {
-        die(sprintf("HTTP %d fetching %s", con->status, url));
-    }
-    string body = con->data();
-    if (!body) {
-        die("no data from " + url);
-    }
-    return body;
-}
-
-//! HTTP GET returning ({status, body}) — doesn't die on non-200.
-array(int|string) http_get_safe(string url, void|mapping(string:string) headers) {
-    Protocols.HTTP.Query con;
-    mapping request_headers = ([
-        "user-agent": "pmp/" + PMP_VERSION,
-    ]);
-
-    if (headers)
-        request_headers |= headers;
-
-    mixed err = catch {
-        con = Protocols.HTTP.do_method("GET", url, 0, request_headers);
-    };
-
-    if (err || !con)
-        return ({ 0, "" });
-
-    string body = con->data() || "";
-    return ({ con->status, body });
-}
-
-// ── Version resolution (returns ({tag, commit_sha})) ───────────────
-
-//! Build auth headers if GITHUB_TOKEN is set.
-void|mapping github_auth_headers() {
-    string token = getenv("GITHUB_TOKEN");
-    if (!token || token == "") return 0;
-    info("using GITHUB_TOKEN for authentication");
-    return (["authorization": "token " + token]);
-}
-
-//! Get latest tag from GitHub.
-array(string) latest_tag_github(string repo_path) {
-    string url = "https://api.github.com/repos/" + repo_path + "/tags";
-    string body = http_get(url, github_auth_headers());
-
-    mixed data;
-    mixed err = catch { data = Standards.JSON.decode(body); };
-    if (err || !arrayp(data) || sizeof(data) == 0)
-        return ({ "", "" });
-
-    mapping first = data[0];
-    string tag = first->name || "";
-    string sha = "";
-    // The tags API returns objects with .commit.sha
-    if (mappingp(first->commit))
-        sha = first->commit->sha || "";
-
-    if (sha == "") {
-        // Fallback: fetch commit SHA from the ref endpoint
-        array(int|string) result = http_get_safe(
-            "https://api.github.com/repos/" + repo_path + "/commits/" + tag,
-            github_auth_headers());
-        if (result[0] == 200) {
-            mixed commit_data;
-            err = catch { commit_data = Standards.JSON.decode(result[1]); };
-            if (!err && mappingp(commit_data))
-                sha = commit_data->sha || "";
-        }
-    }
-    return ({ tag, sha || "unknown" });
-}
-
-//! Get latest tag from GitLab.
-array(string) latest_tag_gitlab(string repo_path) {
-    string encoded = replace(repo_path, "/", "%2F");
-    string url = "https://gitlab.com/api/v4/projects/"
-                 + encoded + "/repository/tags";
-    string body = http_get(url);
-
-    mixed data;
-    mixed err = catch { data = Standards.JSON.decode(body); };
-    if (err || !arrayp(data) || sizeof(data) == 0)
-        return ({ "", "" });
-
-    mapping first = data[0];
-    string tag = first->name || "";
-    string sha = "";
-    // GitLab tags API returns .commit.id
-    if (mappingp(first->commit))
-        sha = first->commit->id || "";
-
-    return ({ tag, sha || "unknown" });
-}
-
-//! Get latest tag from self-hosted git via ls-remote.
-array(string) latest_tag_selfhosted(string domain, string repo_path) {
-    need_cmd("git");
-    string url = "https://" + domain + "/" + repo_path;
-
-    mapping result = Process.run(({"git", "ls-remote", "--tags", url}));
-    if (result->exitcode != 0)
-        return ({ "", "" });
-
-    // Find latest non-^{} tag, sorted by version
-    array(string) lines = filter(result->stdout / "\n",
-                                 lambda(string l) {
-                                     return sizeof(l) > 0 &&
-                                            !has_value(l, "^{}");
-                                 });
-    if (sizeof(lines) == 0) return ({ "", "" });
-
-    // Use the last line (usually highest version)
-    string line = lines[-1];
-    string sha = ((line / "\t")[0] || "");
-    string tag = replace((line / "\t")[-1], "refs/tags/", "");
-    return ({ tag, sha });
-}
-
-//! Resolve latest tag. Returns ({tag, commit_sha}).
-array(string) latest_tag(string type, string domain, string repo_path) {
-    switch (type) {
-        case "github":     return latest_tag_github(repo_path);
-        case "gitlab":     return latest_tag_gitlab(repo_path);
-        case "selfhosted": return latest_tag_selfhosted(domain, repo_path);
-        default: die("cannot resolve tags for source type: " + type);
-    }
-}
-
-//! Resolve a specific tag to its commit SHA.
-string resolve_commit_sha(string type, string domain,
-                          string repo_path, string tag) {
-    switch (type) {
-        case "github": {
-            array(int|string) result = http_get_safe(
-                "https://api.github.com/repos/" + repo_path
-                + "/commits/" + tag,
-                github_auth_headers());
-            if (result[0] == 200) {
-                mixed data;
-                mixed err = catch { data = Standards.JSON.decode(result[1]); };
-                if (!err && mappingp(data))
-                    return data->sha || "unknown";
-            }
-            return "unknown";
-        }
-        case "gitlab": {
-            string encoded = replace(repo_path, "/", "%2F");
-            array(int|string) result = http_get_safe(
-                "https://gitlab.com/api/v4/projects/" + encoded
-                + "/repository/commits/" + tag);
-            if (result[0] == 200) {
-                mixed data;
-                mixed err = catch { data = Standards.JSON.decode(result[1]); };
-                if (!err && mappingp(data))
-                    return data->id || "unknown";
-            }
-            return "unknown";
-        }
-        case "selfhosted": {
-            need_cmd("git");
-            mapping r = Process.run(
-                ({"git", "ls-remote", "https://" + domain + "/" + repo_path,
-                  "refs/tags/" + tag}));
-            if (r->exitcode == 0 && sizeof(r->stdout) > 0)
-                return ((r->stdout / "\t")[0]) || "unknown";
-            return "unknown";
-        }
-        default:
-            return "unknown";
-    }
-}
-
-// ── Download to store ──────────────────────────────────────────────
-
-//! Extract a .tar.gz file to a directory.
-//! Uses gunzip + Filesystem.Tar (Gz not available in all builds).
-string extract_targz(string tarball_path, string dest_dir) {
-    need_cmd("gunzip");
-
-    // Decompress to temp .tar file
-    string tmp_tar = String.trim_all_whites(Process.popen("mktemp /tmp/pmp_tar_XXXXXX"));
-    object sout = Stdio.File(tmp_tar, "wct");
-    object proc = Process.create_process(
-        ({"gunzip", "-c", tarball_path}),
-        (["stdout": sout]));
-    sout->close();
-    int exitcode = proc->wait();
-
-    if (exitcode != 0) {
-        rm(tmp_tar);
-        die("gunzip failed with exit code " + exitcode);
-    }
-
-    // Extract using Filesystem.Tar
-    object tar;
-    mixed err = catch { tar = Filesystem.Tar(tmp_tar); };
-    if (err || !tar || !sizeof(tar->tar->entries)) {
-        rm(tmp_tar);
-        die("failed to extract archive (not a valid tar)");
-    }
-
-    Stdio.mkdirhier(dest_dir);
-    tar->tar->extract("/", dest_dir);
-
-    // Find the top-level directory in the extracted content
-    array(string) entries = get_dir(dest_dir);
-    rm(tmp_tar);
-
-    if (!entries || sizeof(entries) == 0)
-        die("empty archive");
-
-    return entries[0];
-}
-
-// Result variables from store_install_*
-string res_tag;
-string res_sha;
-string res_hash;
-string res_entry;
-
-//! Download from GitHub to store.
-void store_install_github(string repo_path, string ver) {
-    string url = "https://github.com/" + repo_path
-                 + "/archive/refs/tags/" + ver + ".tar.gz";
-
-    info("downloading " + url);
-    string body = http_get(url);
-
-    // Write to temp file
-    string tmpdir = String.trim_all_whites(Process.popen("mktemp -d /tmp/pmp_install_XXXXXX"));
-    string tarball = combine_path(tmpdir, "archive.tar.gz");
-    Stdio.write_file(tarball, body);
-
-    string hash = compute_sha256(tarball);
-
-    // Extract
-    string extracted = extract_targz(tarball,
-                                     combine_path(tmpdir, "extract"));
-
-    // Resolve commit SHA
-    string sha = resolve_commit_sha("github", "", repo_path, ver);
-    sha = sha || "unknown";
-
-    string entry_name = store_entry_name(
-        "github.com/" + repo_path, ver, sha);
-    string entry_dir = combine_path(store_dir, entry_name);
-
-    if (Stdio.is_dir(entry_dir)) {
-        info("reusing existing store entry " + entry_name);
-        Stdio.recursive_rm(tmpdir);
-        res_tag = ver; res_sha = sha; res_hash = hash;
-        res_entry = entry_name;
-        return;
-    }
-
-    if (Stdio.exist(entry_dir)) rm(entry_dir);
-    Stdio.mkdirhier(store_dir);
-    Stdio.recursive_rm(entry_dir);
-    // Move extracted content to store
-    string src = combine_path(tmpdir, "extract", extracted);
-    Process.run(({"mv", src, entry_dir}));
-    Stdio.recursive_rm(tmpdir);
-
-    // Write .pmp-meta
-    write_meta(entry_dir, "github.com/" + repo_path, ver, sha, hash);
-
-    res_tag = ver; res_sha = sha; res_hash = hash;
-    res_entry = entry_name;
-    info("stored " + entry_name);
-}
-
-//! Download from GitLab to store.
-void store_install_gitlab(string repo_path, string ver) {
-    string repo_name = (repo_path / "/")[-1];
-    string url = "https://gitlab.com/" + repo_path
-                 + "/-/archive/" + ver + "/" + repo_name + "-" + ver
-                 + ".tar.gz";
-
-    info("downloading " + url);
-    string body = http_get(url);
-
-    string tmpdir = String.trim_all_whites(Process.popen("mktemp -d /tmp/pmp_install_XXXXXX"));
-    string tarball = combine_path(tmpdir, "archive.tar.gz");
-    Stdio.write_file(tarball, body);
-
-    string hash = compute_sha256(tarball);
-
-    string extracted = extract_targz(tarball,
-                                     combine_path(tmpdir, "extract"));
-
-    string sha = resolve_commit_sha("gitlab", "", repo_path, ver);
-    sha = sha || "unknown";
-
-    string entry_name = store_entry_name(
-        "gitlab.com/" + repo_path, ver, sha);
-    string entry_dir = combine_path(store_dir, entry_name);
-
-    if (Stdio.is_dir(entry_dir)) {
-        info("reusing existing store entry " + entry_name);
-        Stdio.recursive_rm(tmpdir);
-        res_tag = ver; res_sha = sha; res_hash = hash;
-        res_entry = entry_name;
-        return;
-    }
-
-    if (Stdio.exist(entry_dir)) rm(entry_dir);
-    Stdio.mkdirhier(store_dir);
-    Stdio.recursive_rm(entry_dir);
-    string src = combine_path(tmpdir, "extract", extracted);
-    Process.run(({"mv", src, entry_dir}));
-    Stdio.recursive_rm(tmpdir);
-
-    write_meta(entry_dir, "gitlab.com/" + repo_path, ver, sha, hash);
-
-    res_tag = ver; res_sha = sha; res_hash = hash;
-    res_entry = entry_name;
-    info("stored " + entry_name);
-}
-
-//! Clone from self-hosted git to store.
-void store_install_selfhosted(string domain, string repo_path, string ver) {
-    need_cmd("git");
-    string url = "https://" + domain + "/" + repo_path;
-
-    string tmpdir = String.trim_all_whites(Process.popen("mktemp -d /tmp/pmp_install_XXXXXX"));
-    string repo_dest = combine_path(tmpdir, "repo");
-
-    info("cloning " + url + " at " + ver);
-    mapping r = Process.run(
-        ({"git", "clone", "--branch", ver, "--depth", "1",
-          url, repo_dest}));
-    if (r->exitcode != 0) {
-        Stdio.recursive_rm(tmpdir);
-        die("failed to clone " + url);
-    }
-
-    string sha = resolve_commit_sha("selfhosted", domain, repo_path, ver);
-    sha = sha || "unknown";
-
-    // Compute content hash from sorted file listing
-    string hash = compute_dir_hash(repo_dest);
-
-    string entry_name = store_entry_name(
-        domain + "/" + repo_path, ver, sha);
-    string entry_dir = combine_path(store_dir, entry_name);
-
-    if (Stdio.is_dir(entry_dir)) {
-        info("reusing existing store entry " + entry_name);
-        Stdio.recursive_rm(tmpdir);
-        res_tag = ver; res_sha = sha; res_hash = hash;
-        res_entry = entry_name;
-        return;
-    }
-
-    if (Stdio.exist(entry_dir)) rm(entry_dir);
-    Stdio.mkdirhier(store_dir);
-    Stdio.recursive_rm(entry_dir);
-    Process.run(({"mv", repo_dest, entry_dir}));
-    Stdio.recursive_rm(tmpdir);
-
-    write_meta(entry_dir, domain + "/" + repo_path, ver, sha, hash);
-
-    res_tag = ver; res_sha = sha; res_hash = hash;
-    res_entry = entry_name;
-    info("stored " + entry_name);
-}
-
-//! Write .pmp-meta file to a store entry.
-void write_meta(string entry_dir, string source, string tag,
-                string sha, string hash) {
-    string meta = sprintf(
-        "source\t%s\ntag\t%s\ncommit_sha\t%s\ncontent_sha256\t%s\ninstalled_at\t%d\n",
-        source, tag, sha, hash, time());
-    Stdio.write_file(combine_path(entry_dir, ".pmp-meta"), meta);
-}
-
-//! Compute a content hash from a directory by hashing sorted file contents.
-string compute_dir_hash(string dir) {
-    mapping result = Process.run(
-        ({"find", dir, "-type", "f"}),
-        (["cwd": dir]));
-    if (result->exitcode != 0) return "unknown";
-
-    array(string) files = filter(result->stdout / "\n",
-                                 lambda(string f) { return sizeof(f) > 0; });
-    sort(files);
-
-    String.Buffer buf = String.Buffer();
-    foreach (files; ; string f) {
-        string hash = compute_sha256(combine_path(dir, f));
-        buf->add(hash + "  " + f + "\n");
-    }
-    return String.string2hex(Crypto.SHA256.hash(buf->get()));
-}
-
-// ── Lockfile ───────────────────────────────────────────────────────
-
-void lockfile_add_entry(string name, string source, string tag,
-                        string sha, string hash) {
-    lock_entries += ({ ({ name, source, tag, sha, hash }) });
-}
-
-void write_lockfile() {
-    if (sizeof(lock_entries) == 0) return;
-
-    String.Buffer buf = String.Buffer();
-    buf->add("# pmp lockfile v1 — DO NOT EDIT\n");
-    buf->add("# name\tsource\ttag\tcommit_sha\tcontent_sha256\n");
-    foreach (lock_entries; ; array(string) entry) {
-        buf->add(entry[0] + "\t" + entry[1] + "\t" + entry[2]
-                 + "\t" + entry[3] + "\t" + entry[4] + "\n");
-    }
-    Stdio.write_file(lockfile_path, buf->get());
-    info("wrote " + lockfile_path);
-}
-
-//! Read lockfile entries. Returns array of ({name, source, tag, sha, hash}).
-array(array(string)) read_lockfile(void|string lf) {
-    string path = lf || lockfile_path;
-    if (!Stdio.exist(path)) return ({});
-
-    string raw = Stdio.read_file(path);
-    array(array(string)) entries = ({});
-    foreach (raw / "\n"; ; string line) {
-        if (has_prefix(line, "#") || sizeof(line) == 0) continue;
-        array parts = line / "\t";
-        if (sizeof(parts) >= 5 && sizeof(parts[0]) > 0)
-            entries += ({ parts[..4] });
-    }
-    return entries;
-}
-
-//! Check if a dependency name exists in the lockfile.
-int lockfile_has_dep(string name, void|string lf) {
-    foreach (read_lockfile(lf); ; array(string) entry)
-        if (entry[0] == name) return 1;
-    return 0;
-}
-
-// ── Manifest helpers ───────────────────────────────────────────────
-
-//! Add a dependency to pike.json using proper JSON round-trip.
-void add_to_manifest(string name, string source) {
-    if (!Stdio.exist(pike_json)) return;
-
-    string raw = Stdio.read_file(pike_json);
-    if (!raw) return;
-
-    mixed data;
-    mixed err = catch { data = Standards.JSON.decode(raw); };
-    if (err || !mappingp(data)) return;
-
-    // Check if already present in dependencies (not raw string search)
-    // to avoid false positive when name appears in other fields
-    if (mappingp(data->dependencies) &&
-        !zero_type(data->dependencies[name])) return;
-
-    if (!mappingp(data->dependencies))
-        data->dependencies = ([]);
-    data->dependencies[name] = source;
-
-    string encoded = Standards.JSON.encode(data,
-                                           Standards.JSON.HUMAN_READABLE);
-    Stdio.write_file(pike_json, encoded + "\n");
-}
-
-//! Parse dependencies from pike.json.
-//! Returns array of ({name, source}).
-array(array(string)) parse_deps(void|string file) {
-    string path = file || pike_json;
-    if (!Stdio.exist(path)) return ({});
-
-    string raw = Stdio.read_file(path);
-    if (!raw) return ({});
-
-    mixed data;
-    mixed err = catch { data = Standards.JSON.decode(raw); };
-    if (err || !mappingp(data)) return ({});
-
-    mapping deps = data->dependencies;
-    if (!mappingp(deps)) return ({});
-
-    array(array(string)) result = ({});
-    foreach (sort(indices(deps)); ; string name) {
-        string val = deps[name];
-        if (stringp(val) && sizeof(val) > 0)
-            result += ({ ({ name, val }) });
-    }
-    return result;
-}
+multiset(string) std_libs = (<>);
 
 // ── Transitive dependency resolution ───────────────────────────────
 
@@ -700,7 +49,8 @@ void install_one(string name, string source, string target) {
             System.symlink(local_path, dest);
             info("linked " + name + " -> " + local_path);
 
-            lockfile_add_entry(name, source, "-", "-", "-");
+            lock_entries = lockfile_add_entry(lock_entries,
+                name, source, "-", "-", "-");
             break;
         }
         case "github":
@@ -713,7 +63,7 @@ void install_one(string name, string source, string target) {
             // Resolve version if not pinned
             if (ver == "") {
                 array(string) resolved =
-                    latest_tag(type, domain, repo_path);
+                    latest_tag(type, domain, repo_path, PMP_VERSION);
                 if (sizeof(resolved[0]) == 0)
                     die("no tags found for " + repo_path);
                 ver = resolved[0];
@@ -745,17 +95,17 @@ void install_one(string name, string source, string target) {
                             case "github":
                             case "gitlab":
                                 sha = resolve_commit_sha(
-                                    type, "", repo_path, ver);
+                                    type, "", repo_path, ver, PMP_VERSION);
                                 break;
                             case "selfhosted":
                                 sha = resolve_commit_sha(
-                                    type, domain, repo_path, ver);
+                                    type, domain, repo_path, ver, PMP_VERSION);
                                 break;
                         }
                         sha = sha || "unknown";
-                        lockfile_add_entry(name,
-                                           source_strip_version(source),
-                                           ver, sha, "unknown");
+                        lock_entries = lockfile_add_entry(lock_entries, name,
+                            source_strip_version(source),
+                            ver, sha, "unknown");
                         return;
                     } else {
                         warn(name + ": version " + ver
@@ -770,21 +120,25 @@ void install_one(string name, string source, string target) {
                  + type + ":" + repo_path);
 
             // Install to store
+            mapping result;
             switch (type) {
                 case "github":
-                    store_install_github(repo_path, ver);
+                    result = store_install_github(store_dir,
+                        repo_path, ver, PMP_VERSION);
                     break;
                 case "gitlab":
-                    store_install_gitlab(repo_path, ver);
+                    result = store_install_gitlab(store_dir,
+                        repo_path, ver, PMP_VERSION);
                     break;
                 case "selfhosted":
-                    store_install_selfhosted(domain, repo_path, ver);
+                    result = store_install_selfhosted(store_dir,
+                        domain, repo_path, ver, PMP_VERSION);
                     break;
             }
 
             // Symlink from modules/ to store entry
             Stdio.mkdirhier(target);
-            string entry_full = combine_path(store_dir, res_entry);
+            string entry_full = combine_path(store_dir, result->entry);
             if (Stdio.exist(dest)) rm(dest);
             System.symlink(entry_full, dest);
 
@@ -792,8 +146,9 @@ void install_one(string name, string source, string target) {
             Stdio.write_file(combine_path(entry_full, ".version"), ver);
 
             info("installed " + name + " " + ver + " -> " + dest);
-            lockfile_add_entry(name, source_strip_version(source),
-                               res_tag, res_sha, res_hash);
+            lock_entries = lockfile_add_entry(lock_entries, name,
+                source_strip_version(source),
+                result->tag, result->sha, result->hash);
 
             // Resolve transitive dependencies
             string pkg_json = combine_path(entry_full, "pike.json");
@@ -806,207 +161,6 @@ void install_one(string name, string source, string target) {
                 }
             }
             break;
-        }
-    }
-}
-
-// ── Manifest validation (warn-only) ────────────────────────────────
-//! Strip Pike comments and string literals from source code.
-//! Removes: // line comments, /* */ block comments, "string literals", 'char literals'.
-string strip_comments_and_strings(string content) {
-    String.Buffer buf = String.Buffer();
-    int i = 0;
-    int len = sizeof(content);
-
-    while (i < len) {
-        // Single-line comment
-        if (i + 1 < len && content[i..i] == "/" && content[i+1..i+1] == "/") {
-            while (i < len && content[i..i] != "\n")
-                i++;
-            continue;
-        }
-        // Block comment
-        if (i + 1 < len && content[i..i] == "/" && content[i+1..i+1] == "*") {
-            i += 2;
-            while (i + 1 < len &&
-                   !(content[i..i] == "*" && content[i+1..i+1] == "/"))
-                i++;
-            i += 2;
-            continue;
-        }
-        // String literal
-        if (content[i..i] == "\"") {
-            i++;
-            while (i < len && content[i..i] != "\"") {
-                if (content[i..i] == "\\" && i + 1 < len)
-                    i++;
-                i++;
-            }
-            if (i < len) i++;
-            continue;
-        }
-        // Character literal
-        if (content[i..i] == "'") {
-            i++;
-            while (i < len && content[i..i] != "'") {
-                if (content[i..i] == "\\" && i + 1 < len)
-                    i++;
-                i++;
-            }
-            if (i < len) i++;
-            continue;
-        }
-        buf->add(content[i..i]);
-        i++;
-    }
-
-    return buf->get();
-}
-
-// Dynamic std_libs — populated at first use by init_std_libs().
-multiset(string) std_libs = (<>);
-
-//! Build std_libs from the running Pike's module path.
-multiset(string) init_std_libs() {
-    multiset(string) libs = (<>);
-    string mp = getenv("PIKE_MODULE_PATH") || "";
-
-    array(string) dirs = ({});
-    if (sizeof(mp) > 0)
-        dirs += mp / ":" - ({ "" });
-
-    // Infer Pike home from the running binary
-    if (pike_bin && sizeof(pike_bin) > 0) {
-        array(string) parts = pike_bin / "/";
-        if (sizeof(parts) > 2) {
-            string pike_home = parts[..sizeof(parts)-3] * "/";
-            dirs += ({ combine_path(pike_home, "lib/modules") });
-        }
-    }
-
-    foreach (dirs; ; string dir) {
-        if (!Stdio.is_dir(dir)) continue;
-        foreach (get_dir(dir) || ({}); ; string entry) {
-            string full = combine_path(dir, entry);
-            if (Stdio.is_dir(full) && has_suffix(entry, ".pmod")) {
-                libs[entry[..<5]] = 1;
-            } else if (has_suffix(entry, ".pmod")) {
-                libs[entry[..<5]] = 1;
-            } else if (has_suffix(entry, ".so")) {
-                string name = entry[..<3];
-                array(string) parts = name / "-";
-                if (sizeof(parts) > 1 && sizeof(parts[-1]) > 0 &&
-                    (< '0','1','2','3','4','5','6','7','8','9' >)[parts[-1][0]])
-                    name = parts[..sizeof(parts)-2] * "-";
-                libs[name] = 1;
-            } else if (Stdio.is_dir(full)) {
-                if (Stdio.exist(combine_path(full, "module.pmod")) ||
-                    Stdio.exist(combine_path(full, "module.pike")))
-                    libs[entry] = 1;
-            }
-        }
-    }
-
-    // Always include known builtins that may not appear as files
-    libs |= (<
-        "Stdio", "Array", "Mapping", "Multiset", "String", "System",
-        "Thread", "__builtin", "Crypto", "Protocols", "ADT", "Cache",
-        "Calendar", "Colors", "GL", "Graphics", "GTK", "Java", "Locale",
-        "MIME", "Math", "Module", "Parser", "Pike", "Process", "SSL",
-        "Web", "Regexp", "Sql", "Standards", "Filesystem", "Debug",
-        "Error", "Concurrent", "Val", "Int", "Float", "Function",
-        "Program", "Object", "Serializer", "Search", "Tools", "Git",
-        "Image", "Yp"
-    >);
-
-    return libs;
-}
-
-void validate_manifests() {
-    // Lazy-init std_libs on first call
-    if (sizeof(std_libs) == 0)
-        std_libs = init_std_libs();
-
-    if (!Stdio.is_dir(local_dir)) return;
-    info("validating imports against declared dependencies...");
-
-    foreach (get_dir(local_dir) || ({}); ; string mod_name) {
-        string moddir = combine_path(local_dir, mod_name);
-        if (!Stdio.is_dir(moddir)) continue;
-
-        // Resolve real path through symlink
-        string real_dir = moddir;
-        mixed err = catch {
-            real_dir = System.readlink(moddir) || moddir;
-        };
-
-        // Collect imports/inherits/includes from .pike and .pmod files
-        multiset(string) imports = (<>);
-
-        // Recurse into all directories (not just .pmod-suffixed),
-        // skip hidden dirs, limit depth
-        void collect_imports(string dir, int depth) {
-            if (!Stdio.is_dir(dir)) return;
-            if (depth > 10) return;
-            foreach (get_dir(dir) || ({}); ; string entry) {
-                if (sizeof(entry) > 0 && entry[0] == '.') continue;
-                string full = combine_path(dir, entry);
-                if (Stdio.is_dir(full)) {
-                    collect_imports(full, depth + 1);
-                }
-                if (has_suffix(entry, ".pike") ||
-                    has_suffix(entry, ".pmod")) {
-                    string content = Stdio.read_file(full);
-                    if (!content) continue;
-                    // Strip comments and strings before scanning
-                    string clean = strip_comments_and_strings(content);
-                    foreach (clean / "\n"; ; string line) {
-                        string trimmed = String.trim_whites(line);
-                        // import Foo;
-                        array matches =
-                            Regexp("import[ \t]+([A-Za-z_][A-Za-z0-9_]*)")
-                            ->split(trimmed);
-                        if (matches && sizeof(matches) > 0) {
-                            imports[matches[0]] = 1;
-                            continue;
-                        }
-                        // inherit Foo; or inherit Foo.Bar;
-                        matches =
-                            Regexp("inherit[ \t]+([A-Za-z_][A-Za-z0-9_]*)")
-                            ->split(trimmed);
-                        if (matches && sizeof(matches) > 0) {
-                            imports[matches[0]] = 1;
-                            continue;
-                        }
-                        // #include <Foo.pmod/bar.h>
-                        matches =
-                            Regexp("#include[ \t]*<([A-Za-z_][A-Za-z0-9_]*)\\.pmod/")
-                            ->split(trimmed);
-                        if (matches && sizeof(matches) > 0) {
-                            imports[matches[0]] = 1;
-                            continue;
-                        }
-                    }
-                }
-            }
-        };
-        collect_imports(real_dir, 0);
-
-        // Get declared deps
-        string pkg_json = combine_path(real_dir, "pike.json");
-        multiset(string) declared = (<>);
-        if (Stdio.exist(pkg_json)) {
-            foreach (parse_deps(pkg_json); ; array(string) dep)
-                declared[dep[0]] = 1;
-        }
-
-        // Check each import
-        foreach (indices(imports); ; string imp) {
-            if (imp == mod_name) continue;
-            if (std_libs[imp]) continue;
-            if (!declared[imp])
-                warn(mod_name + " imports " + imp
-                     + " but does not declare it as a dependency");
         }
     }
 }
@@ -1050,13 +204,13 @@ void cmd_install(array(string) args) {
         lock_entries = ({});
         cmd_install_source(source, target);
         if (!global_flag) {
-            write_lockfile();
+            write_lockfile(lockfile_path, lock_entries);
             if (Stdio.exist(pike_json)) {
                 string name = source_to_name(source);
                 string clean_source = source_strip_version(source);
-                add_to_manifest(name, clean_source);
+                add_to_manifest(pike_json, name, clean_source);
             }
-            validate_manifests();
+            validate_manifests(local_dir, std_libs);
         }
     }
 }
@@ -1071,7 +225,7 @@ void cmd_install_all(string target) {
         use_lockfile = 1;
         int lockfile_complete = 1;
 
-        array(array(string)) deps = parse_deps();
+        array(array(string)) deps = parse_deps(pike_json);
         foreach (deps; ; array(string) dep) {
             if (!lockfile_has_dep(dep[0])) {
                 lockfile_complete = 0;
@@ -1081,7 +235,7 @@ void cmd_install_all(string target) {
 
         if (lockfile_complete) {
             info("installing from " + lockfile_path + " (up to date)");
-            array(array(string)) lf_entries = read_lockfile();
+            array(array(string)) lf_entries = read_lockfile(lockfile_path);
             foreach (lf_entries; ; array(string) entry) {
                 string ln = entry[0], ls = entry[1],
                        lt = entry[2], lsha = entry[3],
@@ -1143,7 +297,8 @@ void cmd_install_all(string target) {
                         use_lockfile = 0;
                     }
                 }
-                lockfile_add_entry(ln, ls, lt, lsha, lhash);
+                lock_entries = lockfile_add_entry(lock_entries,
+                    ln, ls, lt, lsha, lhash);
             }
         } else {
             info("lockfile is stale — re-resolving missing deps");
@@ -1153,14 +308,14 @@ void cmd_install_all(string target) {
 
     if (!use_lockfile) {
         info("installing dependencies from pike.json...");
-        array(array(string)) deps = parse_deps();
+        array(array(string)) deps = parse_deps(pike_json);
         foreach (deps; ; array(string) dep)
             install_one(dep[0], dep[1], target);
     }
 
     if (target == local_dir) {
-        write_lockfile();
-        validate_manifests();
+        write_lockfile(lockfile_path, lock_entries);
+        validate_manifests(local_dir, std_libs);
     }
 
     info("done");
@@ -1181,7 +336,7 @@ void cmd_update(array(string) args) {
     if (sizeof(mod_name) > 0) {
         info("updating " + mod_name + "...");
         string src = "";
-        array(array(string)) deps = parse_deps();
+        array(array(string)) deps = parse_deps(pike_json);
         foreach (deps; ; array(string) dep) {
             if (dep[0] == mod_name) { src = dep[1]; break; }
         }
@@ -1190,7 +345,7 @@ void cmd_update(array(string) args) {
         visited = (<>);
         lock_entries = ({});
         install_one(mod_name, src, local_dir);
-        write_lockfile();
+        write_lockfile(lockfile_path, lock_entries);
     } else {
         if (!Stdio.exist(pike_json))
             die("no pike.json found");
@@ -1205,11 +360,11 @@ void cmd_lock() {
     lock_entries = ({});
 
     info("resolving dependencies...");
-    array(array(string)) deps = parse_deps();
+    array(array(string)) deps = parse_deps(pike_json);
     foreach (deps; ; array(string) dep)
         install_one(dep[0], dep[1], local_dir);
 
-    write_lockfile();
+    write_lockfile(lockfile_path, lock_entries);
     info("lockfile written");
 }
 
@@ -1420,12 +575,12 @@ void cmd_remove(array(string) args) {
 
     // Update lockfile
     if (Stdio.exist(lockfile_path)) {
-        array(array(string)) entries = read_lockfile();
+        array(array(string)) entries = read_lockfile(lockfile_path);
         array(array(string)) new_entries = ({});
         foreach (entries; ; array(string) e)
             if (e[0] != name) new_entries += ({ e });
         lock_entries = new_entries;
-        write_lockfile();
+        write_lockfile(lockfile_path, lock_entries);
     }
 }
 
@@ -1512,8 +667,6 @@ void cmd_env() {
         local_inc_block += "  INC_PATHS=\"${INC_PATHS:+$INC_PATHS:}" + p + "\"\n";
 
     // Build the pike wrapper as a shell script
-    // Uses string concatenation instead of sprintf to avoid %s conflicts
-    // in the embedded Pike -e code
     string wrapper =
         "#!/bin/sh\n"
         "# Generated by pmp env. Re-run 'pmp env' to update.\n"
@@ -1672,6 +825,9 @@ int main(int argc, array(string) argv) {
         || "/usr/local/pike/8.0.1116/bin/pike";
     global_dir = combine_path(getenv("HOME") || "/tmp", ".pike/modules");
     store_dir = combine_path(getenv("HOME") || "/tmp", ".pike/store");
+
+    // Initialize std_libs lazily (only when validation runs)
+    // std_libs is set before validate_manifests is called
 
     if (argc < 2) {
         print_help();

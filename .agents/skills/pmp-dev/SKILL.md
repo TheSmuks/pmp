@@ -32,6 +32,7 @@ PUnit   github.com/thesmuks/punit-tests  v1.0.0  a1b2c3...  abcd1234...
 
 Tab-separated. Created by `pmp install` or `pmp lock`. Read by `cmd_install_all()` to skip resolution.
 
+See `ARCHITECTURE.md` for the full architecture document with system diagrams, data flow, and extension points.
 ## Key patterns
 
 ### JSON parsing (no jq)

@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - All pure functions extracted to modules; state passed as explicit parameters
   - `store_install_*` return result mappings instead of setting globals
   - `lockfile_add_entry` returns new array (Pike arrays are immutable on `+=`)
+- **Refactor:** Replaced manual argv parsing with Pike's `Arg.parse`
+  - Global flags: `--help`, `--version`
+  - Per-command flag parsing: `-g` in `install` and `list`
+  - Subcommand args extracted via `Arg.REST`
+- **Refactor:** `pmp env` now follows uv-style virtual environment patterns
+  - `.pike-env/.gitignore` excludes generated files from version control
+  - `pike-env.cfg` stores metadata (pike binary, project root, pmp version)
+  - Wrapper reads config from `pike-env.cfg` instead of baking paths inline
+  - `activate` is idempotent (guards against double-sourcing)
+  - `pmp_deactivate` restores PATH, PS1, and runs `hash -r`
 - `.github/workflows/docs-check.yml` — removed `continue-on-error: true` (docs must be consistent)
 
 ### Fixed

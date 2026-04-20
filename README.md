@@ -35,6 +35,73 @@ pmp auto-detects the source type from the URL format:
 
 Append `#tag` to pin a version. Without it, pmp resolves the latest tag.
 
+## Content-addressable store
+
+pmp uses a global content-addressable store at `~/.pike/store/`. Each package version is downloaded once and shared across projects via symlinks:
+
+```
+~/.pike/store/
+  github.com-thesmuks-punit-v1.0.0-a1b2c3d4/   # immutable store entry
+    PUnit.pmod/
+    pike.json
+    .pmp-meta                                     # source, tag, commit SHA, content hash
+
+your-project/
+  modules/
+    PUnit/    → symlink to ~/.pike/store/github.com-thesmuks-punit-v1.0.0-a1b2c3d4/
+```
+
+**Benefits:**
+- Instant installs when a package is already in the store
+- Zero disk duplication across projects
+- Store survives `pmp clean` — only project symlinks are removed
+
+Store entry names include the first 8 characters of the commit SHA to disambiguate force-pushed tags.
+
+## pike.lock (lockfile)
+
+After every install, pmp writes `pike.lock` with exact commit SHAs and content hashes:
+
+```
+# pmp lockfile v1 — DO NOT EDIT
+# name	source	tag	commit_sha	content_sha256
+PUnit	github.com/thesmuks/punit-tests	v1.0.0	a1b2c3d4e5f6...	abcdef1234...
+LocalLib	./libs/my-lib	-	-	-
+```
+
+**Commit `pike.lock` to git** for reproducible builds. When it exists, `pmp install` uses the lockfile to skip resolution and install exact versions.
+
+- `pike.json` = what you want (declarative, may have `#tag` or omit it)
+- `pike.lock` = what you got (exact commit SHA, always pinned)
+
+## Integrity verification
+
+Every remote package download is verified with SHA-256. The hash is recorded in both `.pmp-meta` (in the store) and `pike.lock`. On lockfile-based reinstalls, the hash is compared to ensure the content hasn't changed.
+
+## Transitive dependencies
+
+Packages can declare their own dependencies in their `pike.json`:
+
+```json
+{
+  "name": "MyLib",
+  "version": "1.0.0",
+  "dependencies": {
+    "PUnit": "github.com/thesmuks/punit-tests#v1.0.0"
+  }
+}
+```
+
+pmp resolves transitive dependencies recursively. The lockfile captures the full resolved tree. Cycle detection prevents infinite loops.
+
+**Conflict resolution:** if two packages need different versions of the same dependency, the first-installed version wins and a warning is emitted.
+
+## Manifest validation
+
+After installing, pmp scans each package's `.pike`/`.pmod` files for `import` statements and warns about imports that reference modules not declared in the package's `pike.json`. This encourages explicit dependency declarations.
+
+Validation is warn-only in v0.2.0 — it will not block installs.
+
 ## pike.json
 
 Project manifest in your project root:
@@ -63,11 +130,14 @@ In the package repository itself:
   "name": "PUnit",
   "version": "1.0.0",
   "description": "JUnit-inspired testing framework for Pike",
-  "source": "github.com/thesmuks/punit-tests"
+  "source": "github.com/thesmuks/punit-tests",
+  "dependencies": {
+    "SomeDep": "github.com/owner/dep#v2.0.0"
+  }
 }
 ```
 
-This is informational — it tells consumers where the package lives.
+The `dependencies` block enables transitive resolution when other projects install this package.
 
 ## pmp env (virtual environment)
 
@@ -89,15 +159,18 @@ The wrapper:
 
 ```
 pmp init                                    Create pike.json scaffold
-pmp install                                 Install all from pike.json
+pmp install                                 Install all deps (from lockfile or pike.json)
 pmp install <url>                           Add + install (latest tag)
 pmp install <url>#tag                       Install specific version
 pmp install ./local/path                    Local dependency (symlinked)
 pmp install -g <url>                        Install system-wide
 pmp update                                  Update all to latest tags
 pmp update <module>                         Update one dependency
+pmp lock                                    Resolve and write pike.lock without installing
+pmp store                                   Show store entries and disk usage
+pmp store prune                             Show unused store entries
 pmp list                                    Show installed modules
-pmp clean                                   Remove ./modules/
+pmp clean                                   Remove ./modules/ (keeps store)
 pmp env                                     Create .pike-env/
 pmp run <script>                            Run script with module paths
 pmp version                                 Show pmp version
@@ -124,10 +197,12 @@ For language server support, configure your LSP to use the pike wrapper from `.p
 
 ## Requirements
 
+- POSIX sh (dash, bash, etc.)
 - Pike 8.0+
 - `curl` (for GitHub/GitLab downloads)
 - `tar` (for archive extraction)
 - `git` (for self-hosted sources)
+- `sha256sum` or `shasum` (for integrity verification; optional — falls back to "unknown")
 
 ## License
 

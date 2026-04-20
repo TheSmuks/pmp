@@ -1,0 +1,47 @@
+name: Doc Sync Check
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  docs-check:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check CHANGELOG and ARCHITECTURE sync
+        run: |
+          set -e
+          SOURCE_FILES=$(git diff --name-only origin/main...HEAD -- 'bin/pmp' 'tests/**')
+          if [ -z "$SOURCE_FILES" ]; then
+            echo "No source files changed. Skipping doc sync check."
+            exit 0
+          fi
+
+          echo "Source files changed:"
+          echo "$SOURCE_FILES"
+          echo ""
+
+          WARNINGS=""
+
+          DOC_FILES=$(git diff --name-only origin/main...HEAD -- 'CHANGELOG.md' 'ARCHITECTURE.md')
+          if [ -z "$DOC_FILES" ]; then
+            WARNINGS="${WARNINGS}- WARNING: Source files changed but CHANGELOG.md and/or ARCHITECTURE.md were not updated.\n"
+          fi
+
+          CHANGELOG_UNRELEASED=$(git diff origin/main...HEAD -- CHANGELOG.md | grep -c '\[Unreleased\]' || true)
+          if [ "$CHANGELOG_UNRELEASED" -eq 0 ]; then
+            WARNINGS="${WARNINGS}- WARNING: CHANGELOG.md may be missing [Unreleased] entries for this change.\n"
+          fi
+
+          if [ -n "$WARNINGS" ]; then
+            echo "::warning::$WARNINGS"
+            echo "$WARNINGS"
+            echo "Doc sync check completed with warnings."
+          else
+            echo "Doc sync check passed."
+          fi

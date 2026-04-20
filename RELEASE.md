@@ -10,6 +10,7 @@
 ## Pre-release checklist
 
 - Run `sh tests/test_install.sh` — all 45 tests must pass
+- Update `CHANGELOG.md` — move relevant items from `[Unreleased]` to a new version section
 - Run `sh -n bin/pmp` — syntax check must pass
 - Verify AGENTS.md, SKILL.md, ARCHITECTURE.md are synchronized (see below)
 

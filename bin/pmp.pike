@@ -634,16 +634,17 @@ void add_to_manifest(string name, string source) {
     string raw = Stdio.read_file(pike_json);
     if (!raw) return;
 
-    // Check if already present
-    if (has_value(raw, "\"" + name + "\"")) return;
-
     mixed data;
     mixed err = catch { data = Standards.JSON.decode(raw); };
     if (err || !mappingp(data)) return;
 
+    // Check if already present in dependencies (not raw string search)
+    // to avoid false positive when name appears in other fields
+    if (mappingp(data->dependencies) &&
+        !zero_type(data->dependencies[name])) return;
+
     if (!mappingp(data->dependencies))
         data->dependencies = ([]);
-
     data->dependencies[name] = source;
 
     string encoded = Standards.JSON.encode(data,
@@ -810,21 +811,126 @@ void install_one(string name, string source, string target) {
 }
 
 // ── Manifest validation (warn-only) ────────────────────────────────
+//! Strip Pike comments and string literals from source code.
+//! Removes: // line comments, /* */ block comments, "string literals", 'char literals'.
+string strip_comments_and_strings(string content) {
+    String.Buffer buf = String.Buffer();
+    int i = 0;
+    int len = sizeof(content);
 
-multiset(string) std_libs = (<
-    "Stdio", "Array", "Mapping", "Multiset", "String", "System",
-    "Thread", "__builtin", "crypto", "Image", "Protocols", "Yp",
-    "ADT", "Cache", "Calendar", "Colors", "Crypto", "Geographic",
-    "GL", "Graphics", "GTK", "Java", "Locale", "MIME", "Math",
-    "Media", "Module", "Parser", "Pike", "Pikefonts", "Process",
-    "SSL", "Support", "Types", "Web", "X"
->);
+    while (i < len) {
+        // Single-line comment
+        if (i + 1 < len && content[i..i] == "/" && content[i+1..i+1] == "/") {
+            while (i < len && content[i..i] != "\n")
+                i++;
+            continue;
+        }
+        // Block comment
+        if (i + 1 < len && content[i..i] == "/" && content[i+1..i+1] == "*") {
+            i += 2;
+            while (i + 1 < len &&
+                   !(content[i..i] == "*" && content[i+1..i+1] == "/"))
+                i++;
+            i += 2;
+            continue;
+        }
+        // String literal
+        if (content[i..i] == "\"") {
+            i++;
+            while (i < len && content[i..i] != "\"") {
+                if (content[i..i] == "\\" && i + 1 < len)
+                    i++;
+                i++;
+            }
+            if (i < len) i++;
+            continue;
+        }
+        // Character literal
+        if (content[i..i] == "'") {
+            i++;
+            while (i < len && content[i..i] != "'") {
+                if (content[i..i] == "\\" && i + 1 < len)
+                    i++;
+                i++;
+            }
+            if (i < len) i++;
+            continue;
+        }
+        buf->add(content[i..i]);
+        i++;
+    }
+
+    return buf->get();
+}
+
+// Dynamic std_libs — populated at first use by init_std_libs().
+multiset(string) std_libs = (<>);
+
+//! Build std_libs from the running Pike's module path.
+multiset(string) init_std_libs() {
+    multiset(string) libs = (<>);
+    string mp = getenv("PIKE_MODULE_PATH") || "";
+
+    array(string) dirs = ({});
+    if (sizeof(mp) > 0)
+        dirs += mp / ":" - ({ "" });
+
+    // Infer Pike home from the running binary
+    if (pike_bin && sizeof(pike_bin) > 0) {
+        array(string) parts = pike_bin / "/";
+        if (sizeof(parts) > 2) {
+            string pike_home = parts[..sizeof(parts)-3] * "/";
+            dirs += ({ combine_path(pike_home, "lib/modules") });
+        }
+    }
+
+    foreach (dirs; ; string dir) {
+        if (!Stdio.is_dir(dir)) continue;
+        foreach (get_dir(dir) || ({}); ; string entry) {
+            string full = combine_path(dir, entry);
+            if (Stdio.is_dir(full) && has_suffix(entry, ".pmod")) {
+                libs[entry[..<5]] = 1;
+            } else if (has_suffix(entry, ".pmod")) {
+                libs[entry[..<5]] = 1;
+            } else if (has_suffix(entry, ".so")) {
+                string name = entry[..<3];
+                array(string) parts = name / "-";
+                if (sizeof(parts) > 1 && sizeof(parts[-1]) > 0 &&
+                    (< '0','1','2','3','4','5','6','7','8','9' >)[parts[-1][0]])
+                    name = parts[..sizeof(parts)-2] * "-";
+                libs[name] = 1;
+            } else if (Stdio.is_dir(full)) {
+                if (Stdio.exist(combine_path(full, "module.pmod")) ||
+                    Stdio.exist(combine_path(full, "module.pike")))
+                    libs[entry] = 1;
+            }
+        }
+    }
+
+    // Always include known builtins that may not appear as files
+    libs |= (<
+        "Stdio", "Array", "Mapping", "Multiset", "String", "System",
+        "Thread", "__builtin", "Crypto", "Protocols", "ADT", "Cache",
+        "Calendar", "Colors", "GL", "Graphics", "GTK", "Java", "Locale",
+        "MIME", "Math", "Module", "Parser", "Pike", "Process", "SSL",
+        "Web", "Regexp", "Sql", "Standards", "Filesystem", "Debug",
+        "Error", "Concurrent", "Val", "Int", "Float", "Function",
+        "Program", "Object", "Serializer", "Search", "Tools", "Git",
+        "Image", "Yp"
+    >);
+
+    return libs;
+}
 
 void validate_manifests() {
+    // Lazy-init std_libs on first call
+    if (sizeof(std_libs) == 0)
+        std_libs = init_std_libs();
+
     if (!Stdio.is_dir(local_dir)) return;
     info("validating imports against declared dependencies...");
 
-    foreach (get_dir(local_dir); ; string mod_name) {
+    foreach (get_dir(local_dir) || ({}); ; string mod_name) {
         string moddir = combine_path(local_dir, mod_name);
         if (!Stdio.is_dir(moddir)) continue;
 
@@ -834,32 +940,57 @@ void validate_manifests() {
             real_dir = System.readlink(moddir) || moddir;
         };
 
-        // Collect imports from .pike and .pmod files
+        // Collect imports/inherits/includes from .pike and .pmod files
         multiset(string) imports = (<>);
-        void collect_imports(string dir) {
+
+        // Recurse into all directories (not just .pmod-suffixed),
+        // skip hidden dirs, limit depth
+        void collect_imports(string dir, int depth) {
             if (!Stdio.is_dir(dir)) return;
+            if (depth > 10) return;
             foreach (get_dir(dir) || ({}); ; string entry) {
+                if (sizeof(entry) > 0 && entry[0] == '.') continue;
                 string full = combine_path(dir, entry);
-                if (Stdio.is_dir(full) &&
-                    has_suffix(entry, ".pmod")) {
-                    collect_imports(full);
+                if (Stdio.is_dir(full)) {
+                    collect_imports(full, depth + 1);
                 }
                 if (has_suffix(entry, ".pike") ||
                     has_suffix(entry, ".pmod")) {
                     string content = Stdio.read_file(full);
                     if (!content) continue;
-                    // Match import Foo patterns
-                    foreach (content / "\n"; ; string line) {
+                    // Strip comments and strings before scanning
+                    string clean = strip_comments_and_strings(content);
+                    foreach (clean / "\n"; ; string line) {
+                        string trimmed = String.trim_whites(line);
+                        // import Foo;
                         array matches =
                             Regexp("import[ \t]+([A-Za-z_][A-Za-z0-9_]*)")
-                            ->split(line);
-                        if (matches && sizeof(matches) > 0)
+                            ->split(trimmed);
+                        if (matches && sizeof(matches) > 0) {
                             imports[matches[0]] = 1;
+                            continue;
+                        }
+                        // inherit Foo; or inherit Foo.Bar;
+                        matches =
+                            Regexp("inherit[ \t]+([A-Za-z_][A-Za-z0-9_]*)")
+                            ->split(trimmed);
+                        if (matches && sizeof(matches) > 0) {
+                            imports[matches[0]] = 1;
+                            continue;
+                        }
+                        // #include <Foo.pmod/bar.h>
+                        matches =
+                            Regexp("#include[ \t]*<([A-Za-z_][A-Za-z0-9_]*)\\.pmod/")
+                            ->split(trimmed);
+                        if (matches && sizeof(matches) > 0) {
+                            imports[matches[0]] = 1;
+                            continue;
+                        }
                     }
                 }
             }
         };
-        collect_imports(real_dir);
+        collect_imports(real_dir, 0);
 
         // Get declared deps
         string pkg_json = combine_path(real_dir, "pike.json");

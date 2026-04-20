@@ -11,8 +11,8 @@
 
 ```
 bin/pmp                14-line POSIX sh shim — delegates to bin/pmp.pike
-bin/pmp.pike           Native Pike implementation (~1574 lines)
-tests/test_install.sh  Test suite (pure sh, 51 tests)
+bin/pmp.pike           Native Pike implementation (~1700 lines)
+tests/test_install.sh  Test suite (pure sh, 60 tests)
 AGENTS.md              Agent context file
 ARCHITECTURE.md        This file
 README.md              User documentation
@@ -65,7 +65,7 @@ User → pmp CLI (bin/pmp shim → bin/pmp.pike)
 
 ### bin/pmp.pike
 
-Single file, all logic (~1574 lines). Organized into sections:
+Single file, all logic (~1700 lines). Organized into sections:
 
 - **Configuration** — version, paths, globals
 - **Helpers** — `die`, `info`, `warn`, `need_cmd`
@@ -75,8 +75,13 @@ Single file, all logic (~1574 lines). Organized into sections:
 - **Version resolution** — `latest_tag_github`/`gitlab`/`selfhosted`, `resolve_commit_sha`
 - **Download to store** — `store_install_github`/`gitlab`/`selfhosted` (using `Protocols.HTTP`, `Filesystem.Tar`)
 - **Lockfile I/O** — `write_lockfile`, `read_lockfile`, `lockfile_has_dep`
-- **Manifest helpers** — `add_to_manifest`, `validate_manifests`
+- **Manifest helpers** — `add_to_manifest`, `parse_deps`
 - **Transitive resolution** — `install_one`, `visited` multiset cycle detection
+- **Manifest validation** — `validate_manifests`, `strip_comments_and_strings`, `extract_dependencies`, `init_std_libs`
+  - Strips `//` and `/* */` comments and string/char literals before scanning
+  - Scans `import`, `inherit`, and `#include <Foo.pmod/...>` statements
+  - Recurses into all nested directories (not just `.pmod`-suffixed)
+  - Builds `std_libs` dynamically from the running Pike's module path
 - **Commands** — `cmd_init`, `cmd_install`, `cmd_install_all`, `cmd_install_source`, `cmd_update`, `cmd_lock`, `cmd_store`, `cmd_list`, `cmd_clean`, `cmd_remove`, `cmd_run`, `cmd_env`
 - **Main dispatch** — switch on `argv[1]`
 

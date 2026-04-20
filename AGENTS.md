@@ -2,7 +2,7 @@
 
 ## Project overview
 
-pmp (Pike Module Package Manager) is a native Pike script that installs, versions, and resolves dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths. The tool is `bin/pmp.pike` (~1574 lines of Pike), invoked via a 14-line `bin/pmp` shim.
+pmp (Pike Module Package Manager) is a native Pike script that installs, versions, and resolves dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths. The tool is `bin/pmp.pike` (~1700 lines of Pike), invoked via a 14-line `bin/pmp` shim.
 
 ## Setup commands
 
@@ -10,14 +10,14 @@ pmp (Pike Module Package Manager) is a native Pike script that installs, version
 - Verify syntax: `pike bin/pmp.pike --help`
 - Check version: `pike bin/pmp.pike version` (or `sh bin/pmp version`)
 
-Expected result: 51 passed, 0 failed, exit code 0.
+Expected result: 60 passed, 0 failed, exit code 0.
 
 ## Architecture
 
 ```
 bin/pmp                14-line POSIX sh shim — delegates to bin/pmp.pike
-bin/pmp.pike           Native Pike implementation (~1574 lines)
-tests/test_install.sh  Test suite (pure sh, no test framework)
+bin/pmp.pike           Native Pike implementation (~1700 lines)
+tests/test_install.sh  Test suite (pure sh, 60 tests)
 README.md              User documentation
 ```
 
@@ -38,7 +38,9 @@ Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 - `store_install_github/gitlab/selfhosted()` — download to store, compute hashes
 - `install_one()` — install a single dep including transitive resolution
 - `cmd_install_all()` — orchestrates lockfile check, dep resolution, lockfile write
-- `validate_manifests()` — warn on undeclared imports
+- `validate_manifests()` — warn on undeclared imports/inherits/includes
+- `strip_comments_and_strings()` — strip comments/strings before import scanning
+- `init_std_libs()` — dynamically discover stdlib modules from running Pike
 - `write_lockfile()` / `read_lockfile()` — lockfile I/O
 - `parse_deps()` — native JSON parsing via Standards.JSON for pike.json dependencies
 - `json_field()` — read a field from pike.json
@@ -62,6 +64,7 @@ Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 - `compile_string` resolves `""` includes relative to source file
 - pmp enforces isolation at install time (manifest validation), not at runtime
 - `catch` blocks use `mixed err = catch { ... }; if (err) ...` pattern
+- `inherit .Foo` in `.pmod` files copies state — shared mutable state does not work across modules
 
 ## Testing instructions
 
@@ -69,7 +72,7 @@ Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 - Uses `assert`, `assert_exists`, `assert_not_exists`, `assert_output_contains` helpers
 - Tests create temp dirs and clean up on exit
 - Tests that need the store back up/restore `~/.pike/store/`
-- Every change must pass all 51 tests
+- Every change must pass all 60 tests
 
 ## Commit conventions
 
@@ -81,7 +84,7 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/) 1.0.0:
 
 Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci`, `perf`, `style`, `revert`
 
-Scopes: `install`, `store`, `lockfile`, `deps`, `env`, `cli`
+Scopes: `install`, `store`, `lockfile`, `deps`, `env`, `cli`, `validate`
 
 ## Pre-commit doc checklist
 
@@ -97,5 +100,5 @@ Doc-only changes do NOT trigger this checklist.
 ## PR instructions
 
 - Title format: descriptive summary of the change
-- Run `sh tests/test_install.sh` before committing — all 51 tests must pass
+- Run `sh tests/test_install.sh` before committing — all 60 tests must pass
 - If adding new features, add corresponding test cases

@@ -72,6 +72,29 @@ Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 - Tests that need the store back up/restore `~/.pike/store/`
 - Every change must pass all 45 tests
 
+## Commit conventions
+
+Follow [Conventional Commits](https://www.conventionalcommits.org/) 1.0.0:
+
+```
+<type>(<scope>): <description>
+```
+
+Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci`, `perf`, `style`, `revert`
+
+Scopes: `install`, `store`, `lockfile`, `deps`, `env`, `cli`
+
+## Pre-commit doc checklist
+
+| Source file changed | Must also update |
+|---|---|
+| `bin/pmp` (behavior changes) | `CHANGELOG.md`, `ARCHITECTURE.md` |
+| `tests/test_install.sh` (count changes) | `CHANGELOG.md`, `AGENTS.md` (baseline) |
+| `bin/pmp` (new commands/flags) | `ARCHITECTURE.md`, `AGENTS.md` |
+| Any source file | `CHANGELOG.md` ([Unreleased]) |
+
+Doc-only changes do NOT trigger this checklist.
+
 ## PR instructions
 - Title format: descriptive summary of the change
 - Run `sh tests/test_install.sh` before committing — all tests must pass

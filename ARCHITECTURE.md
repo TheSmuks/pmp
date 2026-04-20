@@ -151,6 +151,18 @@ Runs on `ubuntu-latest` with 3 steps:
 - Tests create temp dirs via `mktemp -d`, cleanup via `trap EXIT`
 - Store backup/restore pattern prevents test pollution
 
+### Commit Conventions
+
+This project follows [Conventional Commits](https://www.conventionalcommits.org/) 1.0.0:
+
+```
+<type>(<scope>): <description>
+```
+
+Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci`, `perf`, `style`, `revert`
+
+Scopes: `install`, `store`, `lockfile`, `deps`, `env`, `cli`
+
 ## Glossary
 
 - **Store entry** — Immutable directory in `~/.pike/store/` containing a downloaded package

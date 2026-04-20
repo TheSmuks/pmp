@@ -1,0 +1,37 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract changelog
+        id: changelog
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          if grep -q "## \[$TAG\]" CHANGELOG.md; then
+            sed -n "/## \[$TAG\]/,/## \[/p" CHANGELOG.md | head -n -1 > /tmp/notes.md
+          elif grep -q "## $TAG" CHANGELOG.md; then
+            sed -n "/## $TAG/,/## /p" CHANGELOG.md | head -n -1 > /tmp/notes.md
+          else
+            echo "No changelog entry for $TAG" > /tmp/notes.md
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: /tmp/notes.md
+          draft: false
+          prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') }}

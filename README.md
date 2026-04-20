@@ -197,12 +197,9 @@ For language server support, configure your LSP to use the pike wrapper from `.p
 
 ## Requirements
 
-- POSIX sh (dash, bash, etc.)
-- Pike 8.0+
-- `curl` (for GitHub/GitLab downloads)
-- `tar` (for archive extraction)
-- `git` (for self-hosted sources)
-- `sha256sum` or `shasum` (for integrity verification; optional — falls back to "unknown")
+- Pike 8.0+ (provides HTTP client, JSON parser, SHA-256, tar extraction natively)
+- `gunzip` (for .tar.gz decompression)
+- `git` (for self-hosted sources only; not needed for GitHub/GitLab)
 
 ## License
 

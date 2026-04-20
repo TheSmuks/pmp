@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `remove` command — remove a dependency (uninstall + delete from pike.json + update lockfile)
+- `CONTRIBUTING.md` — standard contributing guide
+- `.github/workflows/release.yml` — tag-triggered release workflow
+
+### Changed
+- **Breaking:** Rewrote `bin/pmp` from POSIX sh to native Pike (`bin/pmp.pike`, ~1574 lines)
+  - No longer requires curl, tar, sha256sum — uses Pike's native `Protocols.HTTP`, `Standards.JSON`, `Crypto.SHA256`, `Filesystem.Tar`
+  - `bin/pmp` is now a 14-line shim that delegates to `bin/pmp.pike`
+  - JSON parsing is now native (was sed-based)
+  - `pmp env` resolves local dependencies at generation time instead of runtime
+- `.github/workflows/docs-check.yml` — removed `continue-on-error: true` (docs must be consistent)
+
+### Fixed
+- `cmd_env()` now includes local path dependencies (`./` and `/` prefixed) in the generated `.pike-env/bin/pike` wrapper
+
 ## [0.2.0] - 2026-04-20
 
 ### Added

@@ -10,35 +10,40 @@
 ## Project Structure
 
 ```
-bin/pmp                    Single ~1233-line POSIX sh script — the entire tool
-tests/test_install.sh      Test suite (pure sh, no framework, 45 tests)
-AGENTS.md                  Agent context file
-ARCHITECTURE.md            This file
-README.md                  User documentation
-LICENSE                    MIT license
-pike.json                  Package manifest
-.github/workflows/ci.yml   GitHub Actions CI (3 steps: install Pike, verify, test)
+bin/pmp                14-line POSIX sh shim — delegates to bin/pmp.pike
+bin/pmp.pike           Native Pike implementation (~1574 lines)
+tests/test_install.sh  Test suite (pure sh, 51 tests)
+AGENTS.md              Agent context file
+ARCHITECTURE.md        This file
+README.md              User documentation
+LICENSE                MIT license
+pike.json              Package manifest
+CONTRIBUTING.md        Contributing guide
+.github/workflows/ci.yml   GitHub Actions CI
 ```
 
 ## System Diagram
 
 ```
-User → pmp CLI (bin/pmp)
+User → pmp CLI (bin/pmp shim → bin/pmp.pike)
   │
   ├─ init         creates pike.json
   ├─ install      cmd_install_all() or cmd_install_source()
   │     │
   │     ▼
   │   parse_deps(pike.json)     → name<TAB>source lines
-  │     │
+  │     │                        (native Standards.JSON.decode)
   │     ▼
   │   detect_source_type(url)    → github | gitlab | selfhosted | local
   │     │
   │     ▼
-  │   _install_one(name, source, target)
+  │   install_one(name, source, target)
   │     ├─ latest_tag() / resolve_commit_sha()  → tag + SHA
   │     ├─ store_install_*()                     → download, hash, store
-  │     ├─ ln -sfn STORE_DIR/entry modules/name  → symlink
+  │     │                                        (Protocols.HTTP,
+  │     │                                         Crypto.SHA256,
+  │     │                                         Filesystem.Tar)
+  │     ├─ symlink STORE_DIR/entry → modules/name
   │     ├─ parse_deps(package/pike.json)          → transitive deps
   │     └─ lockfile_add_entry()                   → accumulate lockfile data
   │     │
@@ -58,22 +63,22 @@ User → pmp CLI (bin/pmp)
 
 ## Core Components
 
-### bin/pmp
+### bin/pmp.pike
 
-Single file, all logic. Organized into sections:
+Single file, all logic (~1574 lines). Organized into sections:
 
-- **Configuration** — version, paths, defaults
+- **Configuration** — version, paths, globals
 - **Helpers** — `die`, `info`, `warn`, `need_cmd`
-- **JSON parsing** — `json_field`, `parse_deps` — sed-based, no jq
+- **JSON parsing** — `json_field`, `parse_deps` — native via `Standards.JSON`
 - **Source type detection** — `detect_source_type`, `source_to_name`/`version`/`domain`/`repo_path`
-- **Store helpers** — `store_entry_name`, `compute_sha256`
+- **Store helpers** — `store_entry_name`, `compute_sha256` (using `Crypto.SHA256`)
 - **Version resolution** — `latest_tag_github`/`gitlab`/`selfhosted`, `resolve_commit_sha`
-- **Download to store** — `store_install_github`/`gitlab`/`selfhosted`
+- **Download to store** — `store_install_github`/`gitlab`/`selfhosted` (using `Protocols.HTTP`, `Filesystem.Tar`)
 - **Lockfile I/O** — `write_lockfile`, `read_lockfile`, `lockfile_has_dep`
 - **Manifest helpers** — `add_to_manifest`, `validate_manifests`
-- **Transitive resolution** — `_install_one`, `_VISITED` cycle detection
-- **Commands** — `cmd_init`, `cmd_install`, `cmd_install_all`, `cmd_install_source`, `cmd_update`, `cmd_lock`, `cmd_store`, `cmd_list`, `cmd_clean`, `cmd_run`, `cmd_env`
-- **Main dispatch** — case statement on `$1`
+- **Transitive resolution** — `install_one`, `visited` multiset cycle detection
+- **Commands** — `cmd_init`, `cmd_install`, `cmd_install_all`, `cmd_install_source`, `cmd_update`, `cmd_lock`, `cmd_store`, `cmd_list`, `cmd_clean`, `cmd_remove`, `cmd_run`, `cmd_env`
+- **Main dispatch** — switch on `argv[1]`
 
 ### Content-addressable store
 
@@ -98,11 +103,11 @@ Generated `bin/pike` wrapper that sets `PIKE_MODULE_PATH` and `PIKE_INCLUDE_PATH
 1. User runs `pmp install` or `pmp install github.com/owner/repo`
 2. If no source arg: check lockfile exists and covers all deps
 3. If lockfile is complete: symlink from store entries listed in lockfile
-4. Otherwise: `parse_deps(pike.json)` outputs `name<TAB>source` lines
+4. Otherwise: `parse_deps(pike.json)` uses `Standards.JSON.decode` natively → `name<TAB>source` lines
 5. For each dep: `detect_source_type` determines github/gitlab/selfhosted/local
 6. For remote: resolve version (`latest_tag` or pinned `#tag`)
-7. Check cycle via `_VISITED` (`type:repo_path#tag`)
-8. Download to temp dir, extract, compute SHA-256
+7. Check cycle via `visited` multiset (`source:repo_path#tag`)
+8. Download via `Protocols.HTTP`, hash via `Crypto.SHA256`, extract via `Filesystem.Tar`
 9. Move to store entry (`~/.pike/store/{slug}-{tag}-{sha8}`)
 10. Write `.pmp-meta`, create symlink `./modules/{name}` → store entry
 11. Check for transitive deps in installed package's `pike.json`
@@ -142,8 +147,7 @@ Runs on `ubuntu-latest` with 3 steps:
 
 ### Local testing
 
-- `sh tests/test_install.sh` — 45 tests
-- `sh -n bin/pmp` — syntax check
+- `sh tests/test_install.sh` — 51 tests
 
 ### Test infrastructure
 
@@ -170,4 +174,3 @@ Scopes: `install`, `store`, `lockfile`, `deps`, `env`, `cli`
 - **Lockfile** — `pike.lock` — reproducibility artifact with exact versions and hashes
 - **Manifest validation** — Warns if installed packages import modules not declared in their `pike.json` dependencies
 - **Virtual environment** — `.pike-env/` — shell wrapper that injects `PIKE_MODULE_PATH`
-- **Temp file pattern** — POSIX sh pattern to avoid pipe-while-read subshell issues

@@ -2,7 +2,7 @@
 
 ## Project overview
 
-pmp (Pike Module Package Manager) is a native Pike script that installs, versions, and resolves dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths. The tool is `bin/pmp.pike` (~1700 lines of Pike), invoked via a 14-line `bin/pmp` shim.
+pmp (Pike Module Package Manager) installs, versions, and resolves dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths. The architecture is a modular split: `bin/pmp.pike` (~480 lines, entry point with mutable state and command dispatch) and `bin/Pmp.pmod/` (9 stateless modules with pure functions), invoked via a POSIX sh shim `bin/pmp`.
 
 ## Setup commands
 
@@ -15,8 +15,19 @@ Expected result: 60 passed, 0 failed, exit code 0.
 ## Architecture
 
 ```
-bin/pmp                14-line POSIX sh shim — delegates to bin/pmp.pike
-bin/pmp.pike           Native Pike implementation (~1700 lines)
+bin/pmp                POSIX sh shim — sets PIKE_MODULE_PATH, delegates to pmp.pike
+bin/pmp.pike           Entry point (~480 lines) — mutable state + command dispatch
+bin/Pmp.pmod/          Stateless module library
+  Config.pmod          PMP_VERSION constant
+  Helpers.pmod         die, info, warn, need_cmd, json_field, find_project_root, compute_sha256
+  Source.pmod          detect_source_type, source_to_name/version/domain/repo_path/strip_version
+  Http.pmod            http_get, http_get_safe, github_auth_headers
+  Resolve.pmod         latest_tag_*, resolve_commit_sha
+  Store.pmod           store_entry_name, extract_targz, write_meta, compute_dir_hash, store_install_*
+  Lockfile.pmod        lockfile_add_entry, write_lockfile, read_lockfile, lockfile_has_dep
+  Manifest.pmod        add_to_manifest, parse_deps
+  Validate.pmod        validate_manifests, strip_comments_and_strings, init_std_libs
+  module.pmod          Re-exports all sub-modules via inherit
 tests/test_install.sh  Test suite (pure sh, 60 tests)
 README.md              User documentation
 ```
@@ -33,23 +44,34 @@ Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 
 ### Key functions
 
-- `detect_source_type()` — classifies URL as github/gitlab/selfhosted/local
-- `store_entry_name()` — generates store entry name from source+tag+sha
-- `store_install_github/gitlab/selfhosted()` — download to store, compute hashes
+**In pmp.pike (stateful orchestrators):**
 - `install_one()` — install a single dep including transitive resolution
 - `cmd_install_all()` — orchestrates lockfile check, dep resolution, lockfile write
+
+**In Pmp.pmod/ (stateless pure functions):**
+- `detect_source_type()` — classifies URL as github/gitlab/selfhosted/local
+- `store_entry_name()` — generates store entry name from source+tag+sha
+- `store_install_*()` — download to store, compute hashes, return result mapping
 - `validate_manifests()` — warn on undeclared imports/inherits/includes
+- `write_lockfile()` / `read_lockfile()` — lockfile I/O (takes entries + path as params)
+- `parse_deps()` — native JSON parsing via Standards.JSON
+- `json_field()` — read a field from a JSON file
 - `strip_comments_and_strings()` — strip comments/strings before import scanning
 - `init_std_libs()` — dynamically discover stdlib modules from running Pike
-- `write_lockfile()` / `read_lockfile()` — lockfile I/O
-- `parse_deps()` — native JSON parsing via Standards.JSON for pike.json dependencies
-- `json_field()` — read a field from pike.json
 
 - See `ARCHITECTURE.md` for full architecture document with diagrams, data flow, and extension points.
 
+### Module design principles
+
+- All `.pmod` modules are stateless — no mutable global variables
+- State is passed explicitly as parameters (e.g., `store_dir`, `lock_entries`, `lockfile_path`)
+- `lockfile_add_entry()` returns a new array (Pike `+=` creates new arrays)
+- `store_install_*()` return result mappings instead of setting globals
+- `module.pmod` uses `inherit .SubModule;` to re-export all symbols
+
 ## Code style
 
-- Pike 8.0 syntax. Use `protected` for internal members.
+- Pike 8.0 syntax.
 - Arrays: `({})`, mappings: `([])`, multisets: `(<>)`.
 - 4-space indentation.
 - JSON parsed natively via `Standards.JSON.decode` — no sed/awk.
@@ -64,7 +86,8 @@ Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 - `compile_string` resolves `""` includes relative to source file
 - pmp enforces isolation at install time (manifest validation), not at runtime
 - `catch` blocks use `mixed err = catch { ... }; if (err) ...` pattern
-- `inherit .Foo` in `.pmod` files copies state — shared mutable state does not work across modules
+- `inherit .Foo` in `.pmod` files copies state — shared mutable state does not work across modules. Use explicit parameter passing instead.
+- `import .Foo` does not expose `protected` symbols — use `inherit .Foo` when internal access is needed, or make symbols public
 
 ## Testing instructions
 
@@ -90,7 +113,7 @@ Scopes: `install`, `store`, `lockfile`, `deps`, `env`, `cli`, `validate`
 
 | Source file changed | Must also update |
 |---|---|
-| `bin/pmp.pike` (behavior changes) | `CHANGELOG.md`, `ARCHITECTURE.md` |
+| `bin/pmp.pike` or `bin/Pmp.pmod/` (behavior changes) | `CHANGELOG.md`, `ARCHITECTURE.md` |
 | `tests/test_install.sh` (count changes) | `CHANGELOG.md`, `AGENTS.md` (baseline) |
 | `bin/pmp.pike` (new commands/flags) | `ARCHITECTURE.md`, `AGENTS.md` |
 | Any source file | `CHANGELOG.md` ([Unreleased]) |

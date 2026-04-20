@@ -9,18 +9,20 @@
 
 ## Project Structure
 
-```
-bin/pmp                14-line POSIX sh shim — delegates to bin/pmp.pike
-bin/pmp.pike           Native Pike implementation (~1700 lines)
+bin/pmp                POSIX sh shim — delegates to bin/pmp.pike, sets PIKE_MODULE_PATH
+bin/pmp.pike           Entry point (~480 lines) — mutable state + command dispatch
+bin/Pmp.pmod/          Stateless module library (9 files)
+  Config.pmod          PMP_VERSION constant
+  Helpers.pmod         die, info, warn, need_cmd, json_field, find_project_root, compute_sha256
+  Source.pmod          detect_source_type, source_to_name/version/domain/repo_path/strip_version
+  Http.pmod            http_get, http_get_safe, github_auth_headers
+  Resolve.pmod         latest_tag_*, resolve_commit_sha
+  Store.pmod           store_entry_name, extract_targz, write_meta, compute_dir_hash, store_install_*
+  Lockfile.pmod        lockfile_add_entry, write_lockfile, read_lockfile, lockfile_has_dep
+  Manifest.pmod        add_to_manifest, parse_deps
+  Validate.pmod        validate_manifests, strip_comments_and_strings, init_std_libs
+  module.pmod          Re-exports all sub-modules via inherit
 tests/test_install.sh  Test suite (pure sh, 60 tests)
-AGENTS.md              Agent context file
-ARCHITECTURE.md        This file
-README.md              User documentation
-LICENSE                MIT license
-pike.json              Package manifest
-CONTRIBUTING.md        Contributing guide
-.github/workflows/ci.yml   GitHub Actions CI
-```
 
 ## System Diagram
 
@@ -65,25 +67,33 @@ User → pmp CLI (bin/pmp shim → bin/pmp.pike)
 
 ### bin/pmp.pike
 
-Single file, all logic (~1700 lines). Organized into sections:
+### bin/pmp.pike (entry point, ~480 lines)
 
-- **Configuration** — version, paths, globals
-- **Helpers** — `die`, `info`, `warn`, `need_cmd`
-- **JSON parsing** — `json_field`, `parse_deps` — native via `Standards.JSON`
-- **Source type detection** — `detect_source_type`, `source_to_name`/`version`/`domain`/`repo_path`
-- **Store helpers** — `store_entry_name`, `compute_sha256` (using `Crypto.SHA256`)
-- **Version resolution** — `latest_tag_github`/`gitlab`/`selfhosted`, `resolve_commit_sha`
-- **Download to store** — `store_install_github`/`gitlab`/`selfhosted` (using `Protocols.HTTP`, `Filesystem.Tar`)
-- **Lockfile I/O** — `write_lockfile`, `read_lockfile`, `lockfile_has_dep`
-- **Manifest helpers** — `add_to_manifest`, `parse_deps`
-- **Transitive resolution** — `install_one`, `visited` multiset cycle detection
-- **Manifest validation** — `validate_manifests`, `strip_comments_and_strings`, `extract_dependencies`, `init_std_libs`
+Holds all mutable state (`lock_entries`, `visited`, `std_libs`, config paths) and command dispatch. All pure functions are imported from `Pmp.pmod/`.
+
+- **Configuration** — `pike_bin`, `global_dir`, `local_dir`, `store_dir`, `pike_json`, `lockfile_path`
+- **Mutable state** — `lock_entries` array, `visited` multiset, `std_libs` multiset
+- **Transitive resolution** — `install_one()` orchestrates Store, Resolve, Lockfile modules
+- **Commands** — `cmd_init`, `cmd_install`, `cmd_install_all`, `cmd_install_source`, `cmd_update`, `cmd_lock`, `cmd_store`, `cmd_list`, `cmd_clean`, `cmd_remove`, `cmd_run`, `cmd_env`
+- **Main dispatch** — `switch (argv[1])`
+
+### bin/Pmp.pmod/ (stateless module library)
+
+All modules are pure functions — no mutable global state. State is passed as explicit parameters.
+
+- **Config.pmod** — `PMP_VERSION` constant
+- **Helpers.pmod** — `die`, `info`, `warn`, `need_cmd`, `json_field`, `find_project_root`, `compute_sha256`
+- **Source.pmod** — `detect_source_type`, `source_to_name`/`version`/`domain`/`repo_path`/`strip_version`
+- **Http.pmod** — `http_get`, `http_get_safe`, `github_auth_headers`
+- **Resolve.pmod** — `latest_tag_github`/`gitlab`/`selfhosted`, `resolve_commit_sha`
+- **Store.pmod** — `store_entry_name`, `extract_targz`, `write_meta`, `compute_dir_hash`, `store_install_*` (return result mappings)
+- **Lockfile.pmod** — `lockfile_add_entry` (returns new array), `write_lockfile`, `read_lockfile`, `lockfile_has_dep`
+- **Manifest.pmod** — `add_to_manifest`, `parse_deps`
+- **Validate.pmod** — `validate_manifests`, `strip_comments_and_strings`, `init_std_libs`
   - Strips `//` and `/* */` comments and string/char literals before scanning
   - Scans `import`, `inherit`, and `#include <Foo.pmod/...>` statements
   - Recurses into all nested directories (not just `.pmod`-suffixed)
   - Builds `std_libs` dynamically from the running Pike's module path
-- **Commands** — `cmd_init`, `cmd_install`, `cmd_install_all`, `cmd_install_source`, `cmd_update`, `cmd_lock`, `cmd_store`, `cmd_list`, `cmd_clean`, `cmd_remove`, `cmd_run`, `cmd_env`
-- **Main dispatch** — switch on `argv[1]`
 
 ### Content-addressable store
 

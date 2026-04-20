@@ -1,0 +1,9 @@
+inherit .Config;
+inherit .Helpers;
+inherit .Source;
+inherit .Http;
+inherit .Resolve;
+inherit .Store;
+inherit .Lockfile;
+inherit .Manifest;
+inherit .Validate;

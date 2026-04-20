@@ -13,11 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.github/workflows/release.yml` — tag-triggered release workflow
 
 ### Changed
-- **Breaking:** Rewrote `bin/pmp` from POSIX sh to native Pike (`bin/pmp.pike`, ~1700 lines)
+- **Breaking:** Rewrote `bin/pmp` from POSIX sh to native Pike (`bin/pmp.pike`)
   - No longer requires curl, tar, sha256sum — uses Pike's native `Protocols.HTTP`, `Standards.JSON`, `Crypto.SHA256`, `Filesystem.Tar`
-  - `bin/pmp` is now a 14-line shim that delegates to `bin/pmp.pike`
+  - `bin/pmp` is now a shim that delegates to `bin/pmp.pike`, sets `PIKE_MODULE_PATH`
   - JSON parsing is now native (was sed-based)
   - `pmp env` resolves local dependencies at generation time instead of runtime
+- **Refactor:** Decomposed monolithic `pmp.pike` (~1700 lines) into modular `Pmp.pmod/` library
+  - 9 stateless modules: Config, Helpers, Source, Http, Resolve, Store, Lockfile, Manifest, Validate
+  - Entry point `pmp.pike` (~480 lines) holds mutable state and command dispatch
+  - All pure functions extracted to modules; state passed as explicit parameters
+  - `store_install_*` return result mappings instead of setting globals
+  - `lockfile_add_entry` returns new array (Pike arrays are immutable on `+=`)
 - `.github/workflows/docs-check.yml` — removed `continue-on-error: true` (docs must be consistent)
 
 ### Fixed

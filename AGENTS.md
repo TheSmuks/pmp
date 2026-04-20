@@ -40,6 +40,7 @@ Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 - `write_lockfile()` / `read_lockfile()` — lockfile I/O
 - `parse_deps()` — sed-based JSON parser for `pike.json` dependencies
 
+- See `ARCHITECTURE.md` for full architecture document with diagrams, data flow, and extension points
 ## Code style
 - POSIX sh only (dash-compatible). No bashisms: no `[[`, no arrays, no `$()`.
   - Actually `$()` is fine in POSIX sh. Avoid `[[` and `(( ))`.

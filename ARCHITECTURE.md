@@ -11,7 +11,7 @@
 
 bin/pmp                POSIX sh shim — delegates to bin/pmp.pike, sets PIKE_MODULE_PATH
 bin/pmp.pike           Entry point (~480 lines) — mutable state + command dispatch
-bin/Pmp.pmod/          Stateless module library (9 files)
+bin/Pmp.pmod/          Stateless module library (10 files)
   Config.pmod          PMP_VERSION constant
   Helpers.pmod         die, info, warn, need_cmd, json_field, find_project_root, compute_sha256
   Source.pmod          detect_source_type, source_to_name/version/domain/repo_path/strip_version
@@ -21,7 +21,8 @@ bin/Pmp.pmod/          Stateless module library (9 files)
   Lockfile.pmod        lockfile_add_entry, write_lockfile, read_lockfile, lockfile_has_dep
   Manifest.pmod        add_to_manifest, parse_deps
   Validate.pmod        validate_manifests, strip_comments_and_strings, init_std_libs
-  module.pmod          Re-exports all sub-modules via inherit
+  Semver.pmod          parse_semver, compare_semver, sort_tags_semver, classify_bump
+  module.pmod          Re-exports all sub-modules (14 total) via inherit
 tests/test_install.sh  Test suite (pure sh, 60 tests)
 
 ## System Diagram
@@ -53,12 +54,15 @@ User → pmp CLI (bin/pmp shim → bin/pmp.pike)
   │   write_lockfile() → pike.lock (tab-separated)
   │   validate_manifests() → warn on undeclared imports
   │
-  ├─ update       removes lockfile, re-resolves
+  ├─ update       removes lockfile, re-resolves, shows summary table
+  ├─ rollback     restore modules from pike.lock.prev
+  ├─ changelog    show commit log between versions
   ├─ lock         resolve + write lockfile without installing
   ├─ store        show entries / prune unused
   ├─ list         show installed modules with versions
   ├─ clean        remove ./modules/ (keeps store)
-  ├─ env          create .pike-env/ virtual environment
+  ├─ env          create .pike-env/ virtual environment (dynamic wrapper)
+  ├─ resolve      print PIKE_MODULE_PATH/PIKE_INCLUDE_PATH or resolve a module name
   ├─ run          execute script with PIKE_MODULE_PATH
   └─ version      show version
 ```
@@ -74,7 +78,7 @@ Holds all mutable state (`lock_entries`, `visited`, `std_libs`, config paths) an
 - **Configuration** — `pike_bin`, `global_dir`, `local_dir`, `store_dir`, `pike_json`, `lockfile_path`
 - **Mutable state** — `lock_entries` array, `visited` multiset, `std_libs` multiset
 - **Transitive resolution** — `install_one()` orchestrates Store, Resolve, Lockfile modules
-- **Commands** — `cmd_init`, `cmd_install`, `cmd_install_all`, `cmd_install_source`, `cmd_update`, `cmd_lock`, `cmd_store`, `cmd_list`, `cmd_clean`, `cmd_remove`, `cmd_run`, `cmd_env`
+- **Commands** — `cmd_init`, `cmd_install`, `cmd_install_all`, `cmd_install_source`, `cmd_update`, `cmd_rollback`, `cmd_changelog`, `cmd_lock`, `cmd_store`, `cmd_list`, `cmd_clean`, `cmd_remove`, `cmd_run`, `cmd_env`, `cmd_resolve`
 - **Main dispatch** — `switch (argv[1])`
 
 ### bin/Pmp.pmod/ (stateless module library)
@@ -94,6 +98,7 @@ All modules are pure functions — no mutable global state. State is passed as e
   - Scans `import`, `inherit`, and `#include <Foo.pmod/...>` statements
   - Recurses into all nested directories (not just `.pmod`-suffixed)
   - Builds `std_libs` dynamically from the running Pike's module path
+- **Semver.pmod** — `parse_semver`, `compare_semver`, `sort_tags_semver`, `classify_bump`
 
 ### Content-addressable store
 
@@ -111,7 +116,7 @@ Tab-separated, line-oriented. Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TA
 
 Location: `.pike-env/`
 
-Generated `bin/pike` wrapper that sets `PIKE_MODULE_PATH` and `PIKE_INCLUDE_PATH`. `activate` script for shell sourcing.
+Generated `bin/pike` wrapper that sets `PIKE_MODULE_PATH` and `PIKE_INCLUDE_PATH`. Wrapper is fully dynamic — reads `./modules/` at runtime, no baked paths. `activate` script for shell sourcing. `cmd_resolve` prints resolved paths or resolves a specific module name to its filesystem path.
 
 ## Data Flow — Install Lifecycle
 
@@ -162,7 +167,7 @@ Runs on `ubuntu-latest` with 3 steps:
 
 ### Local testing
 
-- `sh tests/test_install.sh` — 51 tests
+- `sh tests/test_install.sh` — 91 tests
 
 ### Test infrastructure
 

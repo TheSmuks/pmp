@@ -74,6 +74,8 @@ LocalLib	./libs/my-lib	-	-	-
 - `pike.json` = what you want (declarative, may have `#tag` or omit it)
 - `pike.lock` = what you got (exact commit SHA, always pinned)
 
+- `pike.lock.prev` = previous lockfile (automatic backup created on every install/update, used by `pmp rollback`)
+
 ## Integrity verification
 
 Every remote package download is verified with SHA-256. The hash is recorded in both `.pmp-meta` (in the store) and `pike.lock`. On lockfile-based reinstalls, the hash is compared to ensure the content hasn't changed.
@@ -174,7 +176,11 @@ pmp clean                                   Remove ./modules/ (keeps store)
 pmp env                                     Create .pike-env/
 pmp run <script>                            Run script with module paths
 pmp version                                 Show pmp version
+pmp rollback                               Rollback to previous lockfile (pike.lock.prev)
+pmp changelog <module>                     Show commit log between installed versions
 ```
+
+> **Note:** pmp uses [Semantic Versioning](https://semver.org/) for tag comparison. Only tags matching MAJOR.MINOR.PATCH (with optional `v` prefix and `-prerelease` suffix) are sorted correctly. Non-semver tags are deprioritized.
 
 ## Selective .h imports
 

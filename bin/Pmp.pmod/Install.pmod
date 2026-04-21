@@ -1,4 +1,5 @@
-// Install.pmod — install orchestrators: install_one, cmd_install, cmd_update, cmd_lock
+// Install.pmod — install orchestrators: install_one, cmd_install, cmd_update, cmd_lock,
+//                cmd_rollback, cmd_changelog
 // All state is passed via context mapping (ctx).
 
 inherit .Config;
@@ -10,6 +11,7 @@ inherit .Store;
 inherit .Lockfile;
 inherit .Manifest;
 inherit .Validate;
+inherit .Semver;
 
 //! Install a single dep from source, including transitive resolution.
 void install_one(string name, string source, string target,
@@ -344,10 +346,46 @@ void cmd_install(array(string) args, mapping ctx) {
     }
 }
 
+//! Print update summary table comparing old and new lockfile entries.
+void print_update_summary(array(array(string)) old_entries,
+                           array(array(string)) new_entries) {
+    // Build lookup from name -> entry
+    mapping(string:array(string)) old_map = ([]);
+    foreach (old_entries; ; array(string) e)
+        old_map[e[0]] = e;
+
+    int any_change = 0;
+    String.Buffer buf = String.Buffer();
+    foreach (new_entries; ; array(string) e) {
+        string name = e[0];
+        string new_tag = e[2];
+        if (old_map[name]) {
+            string old_tag = old_map[name][2];
+            if (old_tag != new_tag && old_tag != "-" && new_tag != "-") {
+                string bump = classify_bump(old_tag, new_tag);
+                string label = bump == "major" ? "MAJOR" : bump;
+                buf->add(sprintf("  %-20s %-12s %-12s %s\n",
+                    name, old_tag, new_tag, label));
+                any_change = 1;
+            }
+        }
+    }
+
+    if (any_change) {
+        info("update summary:");
+        write(sprintf("  %-20s %-12s %-12s %s\n",
+            "MODULE", "OLD", "NEW", "CHANGE"));
+        write(buf->get());
+    }
+}
+
 void cmd_update(array(string) args, mapping ctx) {
     mapping opts = Arg.parse(({"pmp"}) + args);
     array(string) rest = opts[Arg.REST];
     string mod_name = sizeof(rest) > 0 ? rest[0] : "";
+
+    // Save old lockfile entries for summary comparison
+    array(array(string)) old_entries = read_lockfile(ctx["lockfile_path"]);
 
     if (sizeof(mod_name) > 0) {
         info("updating " + mod_name + "...");
@@ -378,6 +416,10 @@ void cmd_update(array(string) args, mapping ctx) {
         cmd_install_all(ctx["local_dir"], ctx);
         m_delete(ctx, "force");
     }
+
+    // Print update summary
+    array(array(string)) new_entries = read_lockfile(ctx["lockfile_path"]);
+    print_update_summary(old_entries, new_entries);
 }
 
 void cmd_lock(mapping ctx) {
@@ -393,4 +435,223 @@ void cmd_lock(mapping ctx) {
 
     write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
     info("lockfile written");
+}
+
+//! Rollback all modules to the previous lockfile state.
+//! Reads pike.lock.prev and re-symlinks modules to those versions.
+void cmd_rollback(mapping ctx) {
+    string prev_path = ctx["lockfile_path"] + ".prev";
+    if (!Stdio.exist(prev_path))
+        die("no previous lockfile found (" + prev_path + ")");
+
+    array(array(string)) prev_entries = read_lockfile(prev_path);
+    if (sizeof(prev_entries) == 0)
+        die("previous lockfile is empty");
+
+    string target = ctx["local_dir"];
+    Stdio.mkdirhier(target);
+
+    foreach (prev_entries; ; array(string) entry) {
+        string ln = entry[0], ls = entry[1],
+               lt = entry[2], lsha = entry[3],
+               lhash = entry[4];
+        if (sizeof(ln) == 0) continue;
+
+        string dest = combine_path(target, ln);
+
+        if (ls == "-" || has_prefix(ls, "./") || has_prefix(ls, "/")) {
+            // Local dep — re-symlink
+            if (sizeof(ls) > 0 && ls != "-") {
+                string local_path = ls;
+                string project_root = find_project_root() || getcwd();
+                if (has_prefix(local_path, "./"))
+                    local_path = combine_path(project_root, local_path);
+                if (!Stdio.is_dir(local_path)) {
+                    warn("local dep " + ln + " path " + local_path
+                         + " not found — skipping");
+                    continue;
+                }
+                if (Stdio.exist(dest)) rm(dest);
+                System.symlink(local_path, dest);
+                info("restored " + ln + " -> " + local_path);
+            }
+        } else {
+            // Remote dep — find store entry matching source+tag+sha
+            string slug = replace(ls, "/", "-");
+            string pattern = slug + "-" + lt + "-" + (sizeof(lsha) >= 8 ? lsha[..7] : lsha) + "*";
+            string found_entry = "";
+
+            if (Stdio.is_dir(ctx["store_dir"])) {
+                foreach (get_dir(ctx["store_dir"]) || ({}); ; string se) {
+                    if (glob(pattern, se) && Stdio.is_dir(
+                            combine_path(ctx["store_dir"], se))) {
+                        found_entry = se;
+                        break;
+                    }
+                }
+            }
+
+            // Fallback: match by slug+tag (sha might differ)
+            if (sizeof(found_entry) == 0) {
+                string fallback_pattern = slug + "-" + lt + "-*";
+                if (Stdio.is_dir(ctx["store_dir"])) {
+                    foreach (get_dir(ctx["store_dir"]) || ({}); ; string se) {
+                        if (glob(fallback_pattern, se) && Stdio.is_dir(
+                                combine_path(ctx["store_dir"], se))) {
+                            found_entry = se;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (sizeof(found_entry) == 0)
+                die("store entry not found for " + ln + " " + lt
+                    + " — cannot rollback (store entry may have been pruned)");
+
+            if (Stdio.exist(dest)) rm(dest);
+            System.symlink(
+                combine_path(ctx["store_dir"], found_entry), dest);
+            info("restored " + ln + " " + lt);
+        }
+    }
+
+    // Restore lockfile from .prev
+    string prev_content = Stdio.read_file(prev_path);
+    if (prev_content) {
+        string tmp_path = ctx["lockfile_path"] + ".tmp";
+        Stdio.write_file(tmp_path, prev_content);
+        mapping r = Process.run(({"mv", tmp_path, ctx["lockfile_path"]}));
+        if (r->exitcode != 0)
+            die("failed to restore lockfile: " + (r->stderr || ""));
+    }
+
+    info("rollback complete — restored " + sizeof(prev_entries) + " modules");
+}
+
+//! Show changes between versions for a specific module.
+//! Compares current lockfile with .prev lockfile.
+void cmd_changelog(array(string) args, mapping ctx) {
+    if (sizeof(args) == 0)
+        die("usage: pmp changelog <module>");
+
+    string mod_name = args[0];
+    string prev_path = ctx["lockfile_path"] + ".prev";
+
+    array(array(string)) current = read_lockfile(ctx["lockfile_path"]);
+    array(array(string)) prev = read_lockfile(prev_path);
+
+    // Find module in both lockfiles
+    array(string) cur_entry = 0;
+    array(string) prev_entry = 0;
+    foreach (current; ; array(string) e)
+        if (e[0] == mod_name) { cur_entry = e; break; }
+    foreach (prev; ; array(string) e)
+        if (e[0] == mod_name) { prev_entry = e; break; }
+
+    if (!cur_entry)
+        die("module " + mod_name + " not found in current lockfile");
+    if (!prev_entry)
+        die("module " + mod_name + " not found in previous lockfile"
+            + " — no version to compare against");
+
+    string cur_tag = cur_entry[2];
+    string prev_tag = prev_entry[2];
+    string cur_sha = cur_entry[3];
+    string prev_sha = prev_entry[3];
+
+    if (cur_sha == prev_sha) {
+        info(mod_name + ": no changes (" + cur_tag + " == " + prev_tag + ")");
+        return;
+    }
+
+    write("pmp: " + mod_name + " " + prev_tag + " -> " + cur_tag + "\n");
+
+    // Detect source type from the source field
+    string source = cur_entry[1];
+    string type = detect_source_type(source);
+
+    if (type == "local") {
+        write("pmp: local dependency — no remote changelog available\n");
+        return;
+    }
+
+    string repo_path = source_to_repo_path(source);
+    string domain = source_to_domain(source);
+
+    // Fetch commit log between versions
+    switch (type) {
+        case "github": {
+            // GitHub compare API
+            string url = "https://api.github.com/repos/" + repo_path
+                         + "/compare/" + prev_sha + "..." + cur_sha;
+            array(int|string) result = http_get_safe(url,
+                github_auth_headers(), PMP_VERSION);
+            if (result[0] == 200) {
+                mixed data;
+                mixed err = catch { data = Standards.JSON.decode(result[1]); };
+                if (!err && mappingp(data) && arrayp(data->commits)) {
+                    foreach (data->commits; ; mapping commit) {
+                        string msg = (commit->commit
+                            && commit->commit->message) || "";
+                        // First line only
+                        msg = (msg / "\n")[0];
+                        string sha_short = sizeof(commit->sha || "") >= 7
+                            ? commit->sha[..6] : commit->sha || "";
+                        write("  " + sha_short + " " + msg + "\n");
+                    }
+                    int ahead = data->ahead_by || 0;
+                    int behind = data->behind_by || 0;
+                    write("pmp: " + ahead + " commits ahead, "
+                        + behind + " behind\n");
+                } else {
+                    info("could not parse compare response");
+                }
+            } else {
+                info("could not fetch compare (HTTP " + result[0] + ")");
+            }
+            break;
+        }
+        case "gitlab": {
+            string encoded = replace(repo_path, "/", "%2F");
+            string url = "https://gitlab.com/api/v4/projects/" + encoded
+                         + "/repository/compare?from=" + prev_sha
+                         + "&to=" + cur_sha;
+            array(int|string) result = http_get_safe(url, 0, PMP_VERSION);
+            if (result[0] == 200) {
+                mixed data;
+                mixed err = catch { data = Standards.JSON.decode(result[1]); };
+                if (!err && mappingp(data) && arrayp(data->commits)) {
+                    foreach (data->commits; ; mapping commit) {
+                        string msg = commit->message || "";
+                        msg = (msg / "\n")[0];
+                        string sha_short = sizeof(commit->id || "") >= 7
+                            ? commit->id[..6] : commit->id || "";
+                        write("  " + sha_short + " " + msg + "\n");
+                    }
+                } else {
+                    info("could not parse compare response");
+                }
+            } else {
+                info("could not fetch compare (HTTP " + result[0] + ")");
+            }
+            break;
+        }
+        case "selfhosted": {
+            need_cmd("git");
+            string url = "https://" + domain + "/" + repo_path;
+            // git log --oneline between SHAs (shallow clone won't have history)
+            mapping r = Process.run(({"git", "log", "--oneline",
+                prev_sha + ".." + cur_sha, url}));
+            if (r->exitcode == 0 && sizeof(r->stdout) > 0) {
+                foreach (r->stdout / "\n"; ; string line)
+                    if (sizeof(line) > 0)
+                        write("  " + line + "\n");
+            } else {
+                info("could not fetch commit log (git log failed — "
+                    + "likely no local clone available)");
+            }
+            break;
+        }
+    }
 }

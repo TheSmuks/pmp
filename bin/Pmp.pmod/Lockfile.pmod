@@ -24,6 +24,13 @@ array(array(string)) merge_lock_entries(array(array(string)) existing,
 
 //! Write lockfile entries to disk.
 void write_lockfile(string lockfile_path, array(array(string)) entries) {
+    // Backup existing lockfile before overwriting
+    if (Stdio.exist(lockfile_path)) {
+        string existing = Stdio.read_file(lockfile_path);
+        if (existing && sizeof(existing) > 0)
+            Stdio.write_file(lockfile_path + ".prev", existing);
+    }
+
     String.Buffer buf = String.Buffer();
     buf->add("# pmp lockfile v1 — DO NOT EDIT\n");
     buf->add("# name\tsource\ttag\tcommit_sha\tcontent_sha256\n");

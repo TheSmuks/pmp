@@ -28,7 +28,7 @@ $PMP rollback
 _rollback_out="$(cat pike.lock)"
 case "$_rollback_out" in *"bak-lib"*) _rb=1 ;; *) _rb=0 ;; esac
 assert "lockfile restored after rollback" "1" "$_rb"
-assert_exists "modules restored" "$TESTDIR/modules/bak-lib"
+assert_exists "modules restored" "$TESTDIR/modules/bak-lib.pmod"
 
 printf '\n=== Rollback: no .prev fails ===\n'
 rm -f pike.lock.prev

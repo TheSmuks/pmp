@@ -136,8 +136,9 @@ void validate_manifests(string local_dir, multiset(string) std_libs,
                 if (Stdio.is_dir(full)) {
                     collect_imports(full, depth + 1);
                 }
-                if (has_suffix(entry, ".pike") ||
-                    has_suffix(entry, ".pmod")) {
+                if ((has_suffix(entry, ".pike") ||
+                     has_suffix(entry, ".pmod")) &&
+                    !Stdio.is_dir(full)) {
                     string content = Stdio.read_file(full);
                     if (!content) continue;
                     // Strip comments and strings before scanning
@@ -177,6 +178,12 @@ void validate_manifests(string local_dir, multiset(string) std_libs,
         // Get declared deps
         string pkg_json = pike_json_override
             || combine_path(real_dir, "pike.json");
+        // If .pmod symlink, pike.json may be at store entry root (parent)
+        if (!Stdio.exist(pkg_json) && has_suffix(mod_name, ".pmod")) {
+            string parent_json = combine_path(real_dir, "..", "pike.json");
+            if (Stdio.exist(parent_json))
+                pkg_json = parent_json;
+        }
         multiset(string) declared = (<>);
         if (Stdio.exist(pkg_json)) {
             foreach (parse_deps(pkg_json); ; array(string) dep)
@@ -185,7 +192,8 @@ void validate_manifests(string local_dir, multiset(string) std_libs,
 
         // Check each import
         foreach (indices(imports); ; string imp) {
-            if (imp == mod_name) continue;
+            string mod_base = display_name(mod_name);
+            if (imp == mod_base) continue;
             if (std_libs[imp]) continue;
             if (!declared[imp])
                 warn(mod_name + " imports " + imp

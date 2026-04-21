@@ -28,12 +28,13 @@ void install_one(string name, string source, string target,
             if (!Stdio.is_dir(local_path))
                 die("local path not found: " + local_path);
 
-            string dest = combine_path(target, name);
+            mapping rmp = resolve_module_path(name, local_path);
+            string dest = combine_path(target, rmp->link_name);
             Stdio.mkdirhier(target);
             // Remove existing symlink/dir if present
             if (Stdio.exist(dest)) rm(dest);
-            System.symlink(local_path, dest);
-            info("linked " + name + " -> " + local_path);
+            System.symlink(rmp->target, dest);
+            info("linked " + name + " -> " + rmp->target);
 
             ctx["lock_entries"] = lockfile_add_entry(ctx["lock_entries"],
                 name, source, "-", "-", "-");
@@ -64,12 +65,23 @@ void install_one(string name, string source, string target,
             }
             ctx["visited"][visit_key] = 1;
 
-            // Check if already in modules/
+            // Check if already in modules/ (try both bare name and .pmod)
             string dest = combine_path(target, name);
+            if (!Stdio.exist(dest)) {
+                string alt = combine_path(target, name + ".pmod");
+                if (Stdio.exist(alt)) dest = alt;
+            }
             if (Stdio.exist(dest)) {
-                // Check version
+                // Check version — resolve through symlink to store entry root
+                string resolved = dest;
+                mixed rerr = catch { resolved = System.readlink(dest) || dest; };
+                string version_dir = resolved;
+                if (has_suffix(dest, ".pmod") && Stdio.exist(combine_path(resolved, ".."))) {
+                    // .pmod symlink points inside store entry; .version is at entry root
+                    version_dir = combine_path(resolved, "..");
+                }
                 string version_file =
-                    combine_path(dest, ".version");
+                    combine_path(version_dir, ".version");
                 if (Stdio.exist(version_file)) {
                     string existing_ver =
                         Stdio.read_file(version_file);
@@ -154,8 +166,10 @@ void install_one(string name, string source, string target,
             // Symlink from modules/ to store entry
             Stdio.mkdirhier(target);
             string entry_full = combine_path(ctx["store_dir"], result->entry);
+            mapping rmp = resolve_module_path(name, entry_full);
+            dest = combine_path(target, rmp->link_name);
             if (Stdio.exist(dest)) rm(dest);
-            System.symlink(entry_full, dest);
+            System.symlink(rmp->target, dest);
 
             // Write .version for compatibility with list command
             Stdio.write_file(combine_path(entry_full, ".version"), ver);
@@ -226,10 +240,11 @@ void cmd_install_all(string target, mapping ctx) {
                             continue;
                         }
                         Stdio.mkdirhier(target);
-                        string dest = combine_path(target, ln);
+                        mapping rmp = resolve_module_path(ln, local_path);
+                        string dest = combine_path(target, rmp->link_name);
                         if (Stdio.exist(dest)) rm(dest);
-                        System.symlink(local_path, dest);
-                        info("linked " + ln + " -> " + local_path);
+                        System.symlink(rmp->target, dest);
+                        info("linked " + ln + " -> " + rmp->target);
                     }
                 } else {
                     // Remote dep — find store entry
@@ -251,11 +266,11 @@ void cmd_install_all(string target, mapping ctx) {
 
                     if (sizeof(found_entry) > 0) {
                         Stdio.mkdirhier(target);
-                        string dest = combine_path(target, ln);
+                        string entry_full = combine_path(ctx["store_dir"], found_entry);
+                        mapping rmp = resolve_module_path(ln, entry_full);
+                        string dest = combine_path(target, rmp->link_name);
                         if (Stdio.exist(dest)) rm(dest);
-                        System.symlink(
-                            combine_path(ctx["store_dir"], found_entry),
-                            dest);
+                        System.symlink(rmp->target, dest);
                         info("installed " + ln + " " + lt
                              + " (from lockfile)");
                     } else {
@@ -472,8 +487,11 @@ void cmd_rollback(mapping ctx) {
                     continue;
                 }
                 if (Stdio.exist(dest)) rm(dest);
-                System.symlink(local_path, dest);
-                info("restored " + ln + " -> " + local_path);
+                mapping rmp = resolve_module_path(ln, local_path);
+                string dest_rm = combine_path(target, rmp->link_name);
+                if (Stdio.exist(dest_rm)) rm(dest_rm);
+                System.symlink(rmp->target, dest_rm);
+                info("restored " + ln + " -> " + rmp->target);
             }
         } else {
             // Remote dep — find store entry matching source+tag+sha
@@ -509,9 +527,13 @@ void cmd_rollback(mapping ctx) {
                 die("store entry not found for " + ln + " " + lt
                     + " — cannot rollback (store entry may have been pruned)");
 
+            string entry_full = combine_path(ctx["store_dir"], found_entry);
+            mapping rmp = resolve_module_path(ln, entry_full);
+            string dest_rm = combine_path(target, rmp->link_name);
+            // Remove both possible old symlinks (bare and .pmod)
             if (Stdio.exist(dest)) rm(dest);
-            System.symlink(
-                combine_path(ctx["store_dir"], found_entry), dest);
+            if (Stdio.exist(dest_rm)) rm(dest_rm);
+            System.symlink(rmp->target, dest_rm);
             info("restored " + ln + " " + lt);
         }
     }

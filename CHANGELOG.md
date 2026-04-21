@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+### Changed
+- **Modularized pmp.pike** — extracted install orchestrators into `Pmp.Install` (390 lines), store command into `Pmp.StoreCmd` (89 lines), project commands into `Pmp.Project` (102 lines), and env/run into `Pmp.Env` (248 lines). `pmp.pike` reduced from 925 to 111 lines (config init + dispatch). Shared state now passed as a context mapping instead of global variables.
+
+### Fixed
+- **P1: Lockfile integrity on partial store miss** — `cmd_install_all` now breaks out of lockfile loop immediately when a store entry is missing, preventing duplicate lockfile entries from accumulating before re-resolution
+- **P1: `pmp update <module>` preserves other lockfile entries** — single-module update now reads existing lockfile, merges the updated entry by name, and writes the combined result instead of destroying all other modules' pinned entries
+- **P1: `pmp install <source>` preserves existing lockfile** — adding a new dependency now reads and merges with the existing lockfile instead of overwriting it with only the new entry
+- **P2: Reproducible content hashes** — `compute_dir_hash` now uses relative paths (`find .` with cwd) instead of absolute tmpdir paths, producing identical hashes for identical content regardless of install location
+- **P2: Empty lockfile writes correctly** — `write_lockfile` no longer silently skips writing when entries are empty; writes a header-only lockfile so stale lockfiles can be cleaned up
+- **P2: Unknown source types die instead of returning "unknown"** — `resolve_commit_sha` now calls `die()` for unrecognized source types, matching the behavior of `latest_tag`
+- **P2: Self-hosted tag resolution uses version sorting** — `latest_tag_selfhosted` now uses `git ls-remote --sort=-v:refname` (git 2.18+) and takes the first non-`^{}` line, ensuring the highest semver tag is selected instead of an arbitrary server-dependent order
+- **P2: `lockfile_has_dep` uses explicit lockfile path** — passes `lockfile_path` as second argument instead of relying on default coincidence
+- **P2: Version mismatch still records lockfile entry** — when installed version differs from requested, the kept version is now recorded in the lockfile with its current metadata
+
+### Changed
+- Test suite: version assertions use pattern matching (`pmp v*`) instead of literal string to avoid brittleness across version bumps
+- Test suite: temp files created inside `$TESTDIR` instead of `/tmp` for proper cleanup
+- Test suite: cleanup trap now does `cd /` before `rm -rf` to avoid removing wrong directory
+- Test suite: inline store restore removed (EXIT trap handles it)
+- Test suite: added 5 error-path tests (--version flag, unknown command, remove/run without args, install without pike.json)
+
 ### Added
 - `remove` command — remove a dependency (uninstall + delete from pike.json + update lockfile)
 - `CONTRIBUTING.md` — standard contributing guide

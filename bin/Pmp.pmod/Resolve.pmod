@@ -60,7 +60,7 @@ array(string) latest_tag_selfhosted(string domain, string repo_path) {
     need_cmd("git");
     string url = "https://" + domain + "/" + repo_path;
 
-    mapping result = Process.run(({"git", "ls-remote", "--tags", url}));
+    mapping result = Process.run(({"git", "ls-remote", "--sort=-v:refname", "--tags", url}));
     if (result->exitcode != 0)
         return ({ "", "" });
 
@@ -72,8 +72,8 @@ array(string) latest_tag_selfhosted(string domain, string repo_path) {
                                  });
     if (sizeof(lines) == 0) return ({ "", "" });
 
-    // Use the last line (usually highest version)
-    string line = lines[-1];
+    // Use the first line (highest version after --sort=-v:refname)
+    string line = lines[0];
     string sha = ((line / "\t")[0] || "");
     string tag = replace((line / "\t")[-1], "refs/tags/", "");
     return ({ tag, sha });
@@ -130,7 +130,6 @@ string resolve_commit_sha(string type, string domain,
                 return ((r->stdout / "\t")[0]) || "unknown";
             return "unknown";
         }
-        default:
-            return "unknown";
+            die("cannot resolve commit SHA for source type: " + type);
     }
 }

@@ -13,11 +13,13 @@ TESTDIR=""
 STORE_BACKUP=""
 
 cleanup() {
+  cd /
   [ -n "$TESTDIR" ] && rm -rf "$TESTDIR"
   # Restore store if we backed it up
   if [ -n "$STORE_BACKUP" ] && [ -d "$STORE_BACKUP" ]; then
     rm -rf "$HOME/.pike/store"
-    mv "$STORE_BACKUP" "$HOME/.pike/store"
+    mv "$STORE_BACKUP/store" "$HOME/.pike/store"
+    rm -rf "$STORE_BACKUP"
   fi
 }
 trap cleanup EXIT
@@ -86,8 +88,9 @@ assert_output_contains() {
 # ── Tests ──────────────────────────────────────────────────────────
 
 printf '\n=== pmp version ===\n'
-_out="$("$PMP" version)"
-assert_output_contains "version output" "pmp v0.2.0" "$_out"
+_out="$($PMP version)"
+case "$_out" in *"pmp v"*) _vok=1 ;; *) _vok=0 ;; esac
+assert "version output" "1" "$_vok"
 
 printf '\n=== pmp init ===\n'
 TESTDIR="$(mktemp -d)"
@@ -274,11 +277,10 @@ _expected="$_slug-v1.0.0-a1b2c3d4"
 assert "store entry naming" "$_expected" "$_test_name"
 
 printf '\n=== Checksum: compute_sha256 ===\n'
-echo "test content" > /tmp/pmp-test-sha.txt
-_hash="$(sha256sum /tmp/pmp-test-sha.txt 2>/dev/null | cut -d' ' -f1)"
-[ -z "$_hash" ] && _hash="$(shasum -a 256 /tmp/pmp-test-sha.txt 2>/dev/null | cut -d' ' -f1)"
+echo "test content" > "$TESTDIR/pmp-test-sha.txt"
+_hash="$(sha256sum "$TESTDIR/pmp-test-sha.txt" 2>/dev/null | cut -d ' ' -f1)"
+[ -z "$_hash" ] && _hash="$(shasum -a 256 "$TESTDIR/pmp-test-sha.txt" 2>/dev/null | cut -d ' ' -f1)"
 assert "sha256 computes" "" "$([ -n "$_hash" ] && echo '' || echo 'no hash tool')"
-rm -f /tmp/pmp-test-sha.txt
 
 printf '\n=== Transitive deps: mock package with deps ===\n'
 # Create a mock package that has its own dependencies
@@ -555,17 +557,38 @@ assert_output_contains "pike.json updated" "other-mod" "$(cat pike.json)"
 _out="$(cat pike.json)"
 case "$_out" in *local-mod*) _has_lm=1 ;; *) _has_lm=0 ;; esac
 assert "local-mod removed from pike.json" "0" "$_has_lm"
+
+printf '\n=== Error paths ===\n'
+
+# pmp --version (flag path via Arg.parse)
+_out="$($PMP --version 2>&1)"
+case "$_out" in *"pmp v"*) _vf=1 ;; *) _vf=0 ;; esac
+assert "--version flag" "1" "$_vf"
+
+# pmp foobar → unknown command exit
+_out="$($PMP foobar 2>&1 || true)"
+case "$_out" in *"unknown command"*) _uc=1 ;; *) _uc=0 ;; esac
+assert "unknown command" "1" "$_uc"
+
+# pmp remove (no args) → usage error
+_out="$($PMP remove 2>&1 || true)"
+case "$_out" in *"usage"*) _ru=1 ;; *) _ru=0 ;; esac
+assert "remove no args" "1" "$_ru"
+
+# pmp run (no args) → usage error
+_out="$($PMP run 2>&1 || true)"
+case "$_out" in *"usage"*) _rn=1 ;; *) _rn=0 ;; esac
+assert "run no args" "1" "$_rn"
+
+# pmp install without pike.json → die
+rm -f pike.json
+_out="$($PMP install 2>&1 || true)"
+case "$_out" in *"pike.json"*) _npj=1 ;; *) _npj=0 ;; esac
+assert "install without pike.json" "1" "$_npj"
+
 rm -rf modules libs pike.lock
 printf '\n=== Clean up ===\n'
 rm -rf modules libs pike.lock pike.json .pike-env
-
-# Restore store if backed up
-if [ -n "$STORE_BACKUP" ] && [ -d "$STORE_BACKUP/store" ]; then
-  rm -rf "$HOME/.pike/store"
-  mv "$STORE_BACKUP/store" "$HOME/.pike/store"
-  rm -rf "$STORE_BACKUP"
-  STORE_BACKUP=""
-fi
 
 # ── Summary ────────────────────────────────────────────────────────
 

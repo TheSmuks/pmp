@@ -9,7 +9,6 @@ array(array(string)) lockfile_add_entry(array(array(string)) entries,
 
 //! Write lockfile entries to disk.
 void write_lockfile(string lockfile_path, array(array(string)) entries) {
-    if (sizeof(entries) == 0) return;
 
     String.Buffer buf = String.Buffer();
     buf->add("# pmp lockfile v1 — DO NOT EDIT\n");

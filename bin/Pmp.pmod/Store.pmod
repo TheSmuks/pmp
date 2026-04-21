@@ -71,7 +71,7 @@ void write_meta(string entry_dir, string source, string tag,
 //! Compute a content hash from a directory by hashing sorted file contents.
 string compute_dir_hash(string dir) {
     mapping result = Process.run(
-        ({"find", dir, "-type", "f"}),
+        ({"find", ".", "-type", "f"}),
         (["cwd": dir]));
     if (result->exitcode != 0) return "unknown";
 

@@ -7,3 +7,7 @@ inherit .Store;
 inherit .Lockfile;
 inherit .Manifest;
 inherit .Validate;
+inherit .Install;
+inherit .StoreCmd;
+inherit .Project;
+inherit .Env;

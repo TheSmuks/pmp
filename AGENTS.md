@@ -10,13 +10,13 @@ pmp (Pike Module Package Manager) installs, versions, and resolves dependencies 
 - Verify syntax: `pike bin/pmp.pike --help`
 - Check version: `pike bin/pmp.pike version` (or `sh bin/pmp version`)
 
-Expected result: 91 passed, 0 failed, exit code 0.
+Expected result: 97 passed, 0 failed, exit code 0.
 
 ## Architecture
 
 ```
 bin/pmp                POSIX sh shim — sets PIKE_MODULE_PATH, delegates to pmp.pike
-bin/pmp.pike           Entry point (~110 lines) — config init, context mapping, command dispatch
+bin/pmp.pike           Entry point (~190 lines) — config init, context mapping, command dispatch
 bin/Pmp.pmod/          Module library (14 modules)
   Config.pmod          PMP_VERSION constant
   Helpers.pmod         die, info, warn, need_cmd, json_field, find_project_root, compute_sha256
@@ -33,7 +33,8 @@ bin/Pmp.pmod/          Module library (14 modules)
   Project.pmod         cmd_init, cmd_list, cmd_clean, cmd_remove
   Env.pmod             cmd_env, build_paths, resolve_local_dep_paths, cmd_run
   module.pmod          Re-exports all sub-modules via inherit
-tests/test_install.sh  Test suite (pure sh, 91 tests)
+tests/test_install.sh  Test suite (pure sh, 97 tests)
+install.sh             curl-pipe-sh installer (POSIX sh)
 README.md              User documentation
 ```
 
@@ -53,6 +54,7 @@ Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 - `main()` — config init, builds context mapping, Arg.parse, dispatches to command modules
 - `print_help()` — usage text
 - `cmd_version()` — version output
+- `cmd_self_update()` — update pmp to the latest version (git fetch + tag checkout)
 
 **In Pmp.pmod/Install.pmod (stateful orchestrators, take `mapping ctx`):**
 - `install_one()` — install a single dep including transitive resolution

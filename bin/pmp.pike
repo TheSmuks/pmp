@@ -51,6 +51,8 @@ void print_help() {
           "Print resolved module paths\n");
     write("  pmp version                                 "
           "Show version\n");
+    write("  pmp self-update                            "
+          "Update pmp to the latest version\n");
     write("\nSource formats:\n");
     write("  github.com/owner/repo                       "
           "GitHub\n");
@@ -62,6 +64,65 @@ void print_help() {
           "Local module\n");
     write("\nVersion resolution uses Semantic Versioning (https://semver.org/).\n");
     write("Only tags matching MAJOR.MINOR.PATCH are sorted correctly.\n");
+}
+
+void cmd_self_update(mapping ctx) {
+    // Resolve the pmp repo root from the running script location.
+    // __FILE__ is /path/to/pmp/bin/pmp.pike — go up two levels to reach the repo root.
+    string pmp_dir = combine_path(__FILE__, "../..");
+    string git_dir = combine_path(pmp_dir, ".git");
+
+    // Verify we're in a git checkout
+    if (!Stdio.exist(git_dir)) {
+        die("not installed via git — re-run: curl -LsSf https://github.com/TheSmuks/pmp/install.sh | sh");
+    }
+
+    // Check for local modifications
+    mapping status_res = Process.run(({"git", "status", "--porcelain"}), (["cwd": pmp_dir]));
+    string status_out = String.trim_all_whites(status_res->stdout || "");
+    if (sizeof(status_out) > 0) {
+        warn("local modifications detected — aborting self-update");
+        die("commit or stash your changes before updating");
+    }
+
+    // Fetch tags
+    info("checking for updates...");
+    mapping fetch_res = Process.run(({"git", "fetch", "--tags"}), (["cwd": pmp_dir]));
+    if (fetch_res->exitcode != 0) {
+        die("failed to fetch updates — check your internet connection");
+    }
+
+    // Get the SHA of the latest tagged commit
+    mapping rev_res = Process.run(({"git", "rev-list", "--tags", "--max-count=1"}), (["cwd": pmp_dir]));
+    string rev = String.trim_all_whites(rev_res->stdout || "");
+    if (rev == "") {
+        die("no tags found in the repository");
+    }
+
+    // Resolve that SHA to a tag name
+    mapping tag_res = Process.run(({"git", "describe", "--tags", rev}), (["cwd": pmp_dir]));
+    string latest_tag = String.trim_all_whites(tag_res->stdout || "");
+    if (latest_tag == "") {
+        die("could not determine latest version");
+    }
+
+    string current = PMP_VERSION;
+    // Strip 'v' prefix for comparison
+    string current_clean = has_prefix(current, "v") ? current[1..] : current;
+    string latest_clean = has_prefix(latest_tag, "v") ? latest_tag[1..] : latest_tag;
+
+    if (current_clean == latest_clean) {
+        info("pmp is up to date (v" + current_clean + ")");
+        return;
+    }
+
+    // Checkout the latest tag
+    mapping checkout_res = Process.run(({"git", "checkout", latest_tag}), (["cwd": pmp_dir]));
+    if (checkout_res->exitcode != 0) {
+        die("failed to checkout " + latest_tag);
+    }
+
+    info("updated pmp v" + current_clean + " → v" + latest_clean);
 }
 
 int main(int argc, array(string) argv) {
@@ -114,7 +175,8 @@ int main(int argc, array(string) argv) {
         case "run":       cmd_run(args, ctx); break;
         case "resolve":   cmd_resolve(args, ctx); break;
         case "env":       cmd_env(ctx); break;
-        case "version":   cmd_version(); break;
+        case "version":    cmd_version(); break;
+        case "self-update": cmd_self_update(ctx); break;
         default:
             die("unknown command '" + cmd + "' (try: pmp --help)");
     }

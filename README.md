@@ -5,6 +5,58 @@
 
 Install, version, and resolve dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths.
 
+## Installation
+
+```bash
+curl -LsSf https://github.com/TheSmuks/pmp/install.sh | sh
+```
+
+Or with wget:
+
+```bash
+wget -qO- https://github.com/TheSmuks/pmp/install.sh | sh
+```
+
+Pin to a specific version:
+
+```bash
+curl -LsSf https://github.com/TheSmuks/pmp/install.sh | env PMP_VERSION=v0.2.0 sh
+```
+
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `PMP_INSTALL_DIR` | `~/.pmp` | Installation directory |
+| `PMP_VERSION` | latest | Pin to a specific git tag |
+| `PMP_NO_MODIFY_PATH` | unset | Set to `1` to skip shell rc modification |
+
+Re-running the installer updates pmp in place (git pull).
+
+## Upgrading
+
+```bash
+pmp self-update
+```
+
+Or re-run the installer:
+
+```bash
+curl -LsSf https://github.com/TheSmuks/pmp/install.sh | sh
+```
+
+## Uninstall
+
+```bash
+rm -rf ~/.pmp
+```
+
+Remove the PATH line from your shell rc (`~/.bashrc`, `~/.zshrc`, or `~/.profile`):
+
+```
+export PATH="$HOME/.pmp/bin:$PATH"
+```
+
 ## Quick start
 
 ```bash

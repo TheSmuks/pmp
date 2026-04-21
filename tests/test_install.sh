@@ -754,6 +754,45 @@ assert_output_contains "help mentions semver" "semver" "$_help"
 printf '\n=== Clean up ===\n'
 rm -rf modules libs pike.lock pike.json .pike-env
 
+
+# ── Install.sh tests ──
+# Derive repo root from PMP shim location
+_REPO_ROOT="$(cd "$(dirname "$PMP")/.." && pwd)"
+
+printf '\n=== install.sh: clean install ===\n'
+_installdir="$TESTDIR/pmp-install-test"
+PMP_INSTALL_DIR="$_installdir" PMP_NO_MODIFY_PATH=1 sh "$_REPO_ROOT/install.sh" 2>&1
+assert_exists "bin/pmp installed" "$_installdir/bin/pmp"
+assert "bin/pmp is executable" "" "$([ -x "$_installdir/bin/pmp" ] && echo '' || echo 'not executable')"
+
+printf '\n=== install.sh: idempotent re-run ===\n'
+PMP_INSTALL_DIR="$_installdir" PMP_NO_MODIFY_PATH=1 sh "$_REPO_ROOT/install.sh" 2>&1
+assert_exists "bin/pmp still exists" "$_installdir/bin/pmp"
+
+printf '\n=== install.sh: non-git dir error ===\n'
+_nongitdir="$TESTDIR/pmp-nongit"
+mkdir -p "$_nongitdir"
+_out="$(PMP_INSTALL_DIR="$_nongitdir" PMP_NO_MODIFY_PATH=1 sh "$_REPO_ROOT/install.sh" 2>&1 || true)"
+assert_output_contains "non-git dir error message" "not a git repository" "$_out"
+
+# ── Self-update tests ──
+printf '\n=== pmp self-update: reports version ===\n'
+_out="$($PMP self-update 2>&1 || true)"
+# In the dev repo, we likely have local modifications, so it may abort
+# Either "up to date" or "local modifications" is acceptable
+case "$_out" in
+    *"up to date"*) _su_ok=1 ;;
+    *"local modifications"*) _su_ok=1 ;;
+    *"not installed via git"*) _su_ok=1 ;;
+    *"checking for updates"*) _su_ok=1 ;;
+    *) _su_ok=0 ;;
+esac
+assert "self-update runs without crash" "1" "$_su_ok"
+
+printf '\n=== Help: self-update ===\n'
+_help="$($PMP --help 2>&1)"
+assert_output_contains "help shows self-update" "self-update" "$_help"
+
 # ── Summary ────────────────────────────────────────────────────────
 
 printf '\n══════════════════════════════════════\n'

@@ -1,1 +1,1 @@
-constant PMP_VERSION = "0.2.0";
+constant PMP_VERSION = "0.3.0";

@@ -93,28 +93,36 @@ void install_one(string name, string source, string target,
                             ver, sha, "unknown");
                         return;
                     } else {
-                        warn(name + ": version " + ver
-                             + " requested but " + existing_ver
-                             + " already installed — keeping existing");
-                        // Record the kept version in lockfile
-                        string kept_sha = "";
-                        switch (type) {
-                            case "github":
-                            case "gitlab":
-                                kept_sha = resolve_commit_sha(
-                                    type, "", repo_path, existing_ver, PMP_VERSION);
-                                break;
-                            case "selfhosted":
-                                kept_sha = resolve_commit_sha(
-                                    type, domain, repo_path, existing_ver, PMP_VERSION);
-                                break;
+                        if (ctx["force"]) {
+                            info(name + ": replacing " + existing_ver
+                                 + " with " + ver + " (update)");
+                            // Remove existing symlink — install will replace it
+                            if (Stdio.exist(dest)) rm(dest);
+                            // Fall through to fresh install below
+                        } else {
+                            warn(name + ": version " + ver
+                                 + " requested but " + existing_ver
+                                 + " already installed — keeping existing");
+                            // Record the kept version in lockfile
+                            string kept_sha = "";
+                            switch (type) {
+                                case "github":
+                                case "gitlab":
+                                    kept_sha = resolve_commit_sha(
+                                        type, "", repo_path, existing_ver, PMP_VERSION);
+                                    break;
+                                case "selfhosted":
+                                    kept_sha = resolve_commit_sha(
+                                        type, domain, repo_path, existing_ver, PMP_VERSION);
+                                    break;
+                            }
+                            kept_sha = kept_sha || "unknown";
+                            ctx["lock_entries"] = lockfile_add_entry(
+                                ctx["lock_entries"], name,
+                                source_strip_version(source),
+                                existing_ver, kept_sha, "unknown");
+                            return;
                         }
-                        kept_sha = kept_sha || "unknown";
-                        ctx["lock_entries"] = lockfile_add_entry(
-                            ctx["lock_entries"], name,
-                            source_strip_version(source),
-                            existing_ver, kept_sha, "unknown");
-                        return;
                     }
                 }
             }
@@ -137,6 +145,8 @@ void install_one(string name, string source, string target,
                     result = store_install_selfhosted(ctx["store_dir"],
                         domain, repo_path, ver, PMP_VERSION);
                     break;
+                default:
+                    die("unsupported source type: " + type);
             }
 
             // Symlink from modules/ to store entry
@@ -165,6 +175,8 @@ void install_one(string name, string source, string target,
             }
             break;
         }
+        default:
+            die("unsupported source type: " + type);
     }
 }
 
@@ -180,7 +192,7 @@ void cmd_install_all(string target, mapping ctx) {
 
         array(array(string)) deps = parse_deps(ctx["pike_json"]);
         foreach (deps; ; array(string) dep) {
-            if (!lockfile_has_dep(dep[0], ctx["lockfile_path"])) {
+            if (!lockfile_has_dep(dep[0], ctx["lockfile_path"], dep[1])) {
                 lockfile_complete = 0;
                 break;
             }
@@ -271,6 +283,15 @@ void cmd_install_all(string target, mapping ctx) {
     }
 
     if (target == ctx["local_dir"]) {
+        // Prune entries for deps no longer in pike.json
+        array(array(string)) deps = parse_deps(ctx["pike_json"]);
+        multiset(string) dep_names = (<>);
+        foreach (deps; ; array(string) d)
+            dep_names[d[0]] = 1;
+        array(array(string)) filtered = ({});
+        foreach (ctx["lock_entries"]; ; array(string) e)
+            if (dep_names[e[0]]) filtered += ({ e });
+        ctx["lock_entries"] = filtered;
         write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
         validate_manifests(ctx["local_dir"], ctx["std_libs"]);
     }
@@ -309,18 +330,7 @@ void cmd_install(array(string) args, mapping ctx) {
         cmd_install_source(source, target, ctx);
 
         // Merge new entries into existing (dedup by name)
-        foreach (ctx["lock_entries"]; ; array(string) new_e) {
-            int found = 0;
-            foreach (existing; int i; array(string) old_e) {
-                if (old_e[0] == new_e[0]) {
-                    existing[i] = new_e;
-                    found = 1;
-                    break;
-                }
-            }
-            if (!found) existing += ({ new_e });
-        }
-        ctx["lock_entries"] = existing;
+        ctx["lock_entries"] = merge_lock_entries(existing, ctx["lock_entries"]);
 
         if (!global_flag) {
             write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
@@ -354,23 +364,19 @@ void cmd_update(array(string) args, mapping ctx) {
 
         ctx["visited"] = (<>);
         ctx["lock_entries"] = ({});
+        ctx["force"] = 1;
         install_one(mod_name, src, ctx["local_dir"], ctx);
+        m_delete(ctx, "force");
 
-        // Merge: replace existing entry by name, keep others
-        array(array(string)) merged = ({});
-        foreach (existing; ; array(string) e) {
-            if (e[0] == mod_name) {
-                continue;
-            }
-            merged += ({ e });
-        }
-        merged += ctx["lock_entries"];
-        ctx["lock_entries"] = merged;
+        // Merge: dedup by name — new entries replace existing
+        ctx["lock_entries"] = merge_lock_entries(existing, ctx["lock_entries"]);
         write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
     } else {
         if (!Stdio.exist(ctx["pike_json"]))
             die("no pike.json found");
+        ctx["force"] = 1;
         cmd_install_all(ctx["local_dir"], ctx);
+        m_delete(ctx, "force");
     }
 }
 

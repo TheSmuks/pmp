@@ -38,6 +38,11 @@ void cmd_store(array(string) args, mapping ctx) {
                         info("unused store entry: " + ename);
                         pruned = 1;
                     }
+                } else {
+                    // No local modules/ — every store entry is unused
+                    // from this project (but could be from others)
+                    info("unused store entry: " + ename);
+                    pruned = 1;
                 }
             }
             if (!pruned) info("no unused entries found");

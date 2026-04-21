@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `pmp rollback` command — restores all modules from `pike.lock.prev`
+- `pmp changelog <module>` command — shows commit log between current and previous version
+- `Semver.pmod` — semantic version parsing, comparison, and tag sorting (Pike 8.0, no external deps)
+- Lockfile backup — `write_lockfile()` now copies existing lockfile to `pike.lock.prev` before overwriting
+- Update summary — `pmp update` prints old→new version table with bump classification (major/minor/patch/prerelease/downgrade)
+
 ### Fixed
 - **CRITICAL: `pmp update` now replaces existing modules** — added `ctx["force"]` flag so `install_one` bypasses the version-mismatch guard during updates. Previously `pmp update` was a no-op because `install_one` would "keep existing" and return.
 - **P1: Atomic lockfile writes** — `write_lockfile` now writes to a `.tmp` file and renames, preventing corruption from crashes mid-write
@@ -20,7 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **P2: Stale lockfile entries pruned** — `cmd_install_all` filters lockfile entries to only include deps present in `pike.json`
 
 ### Changed
-- **DRY: `resolve_local_dep_paths` helper** — extracted shared local-dep path resolution from `build_paths` and `cmd_env` into a single function
+- **Dynamic `pmp env` wrapper** — wrapper is now fully dynamic; it reads `./modules/` at runtime instead of baking local dep paths at generation time. Adding/removing deps with `pmp install` takes effect immediately without re-running `pmp env`.
+- **Removed `resolve_local_dep_paths()`** — `./modules/` is the single source of truth for all installed deps
 - **P1: Lockfile integrity on partial store miss** — `cmd_install_all` now breaks out of lockfile loop immediately when a store entry is missing, preventing duplicate lockfile entries from accumulating before re-resolution
 - **P1: `pmp update <module>` preserves other lockfile entries** — single-module update now reads existing lockfile, merges the updated entry by name, and writes the combined result instead of destroying all other modules' pinned entries
 - **P1: `pmp install <source>` preserves existing lockfile** — adding a new dependency now reads and merges with the existing lockfile instead of overwriting it with only the new entry
@@ -30,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **P2: Self-hosted tag resolution uses version sorting** — `latest_tag_selfhosted` now uses `git ls-remote --sort=-v:refname` (git 2.18+) and takes the first non-`^{}` line, ensuring the highest semver tag is selected instead of an arbitrary server-dependent order
 - **P2: `lockfile_has_dep` uses explicit lockfile path** — passes `lockfile_path` as second argument instead of relying on default coincidence
 - **P2: Version mismatch still records lockfile entry** — when installed version differs from requested, the kept version is now recorded in the lockfile with its current metadata
+- `latest_tag_github/gitlab` now returns highest semver tag instead of most-recently-created tag
+- `latest_tag_selfhosted` now applies semver sort on top of `--sort=-v:refname`
 
 ### Changed
 - Test suite: version assertions use pattern matching (`pmp v*`) instead of literal string to avoid brittleness across version bumps
@@ -38,7 +48,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test suite: inline store restore removed (EXIT trap handles it)
 - Test suite: added 5 error-path tests (--version flag, unknown command, remove/run without args, install without pike.json)
 
+### Tests
+- 91 tests (was 71): added semver parsing/comparison, lockfile backup, rollback, changelog, update summary, and help text tests
+
 ### Added
+- `pmp resolve [module]` — print resolved module paths (PIKE_MODULE_PATH, PIKE_INCLUDE_PATH) or resolve a specific module to its filesystem path
 - `remove` command — remove a dependency (uninstall + delete from pike.json + update lockfile)
 - `CONTRIBUTING.md` — standard contributing guide
 - `.github/workflows/release.yml` — tag-triggered release workflow

@@ -1,3 +1,4 @@
+inherit .Semver;
 inherit .Config;
 inherit .Helpers;
 inherit .Source;

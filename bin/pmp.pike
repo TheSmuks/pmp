@@ -27,6 +27,10 @@ void print_help() {
           "Install system-wide\n");
     write("  pmp update [module]                         "
           "Update deps to latest tags\n");
+    write("  pmp rollback                                "
+          "Rollback to previous lockfile\n");
+    write("  pmp changelog <module>                      "
+          "Show changes between versions\n");
     write("  pmp lock                                    "
           "Write pike.lock\n");
     write("  pmp store                                   "
@@ -43,6 +47,8 @@ void print_help() {
           "Remove a dependency\n");
     write("  pmp run <script>                            "
           "Run script with module paths\n");
+    write("  pmp resolve [module]                       "
+          "Print resolved module paths\n");
     write("  pmp version                                 "
           "Show version\n");
     write("\nSource formats:\n");
@@ -54,6 +60,8 @@ void print_help() {
           "Self-hosted git\n");
     write("  ./local/path or /abs/path                   "
           "Local module\n");
+    write("\nVersion resolution uses Semantic Versioning (https://semver.org/).\n");
+    write("Only tags matching MAJOR.MINOR.PATCH are sorted correctly.\n");
 }
 
 int main(int argc, array(string) argv) {
@@ -95,15 +103,18 @@ int main(int argc, array(string) argv) {
     switch (cmd) {
         case "init":     cmd_init(ctx); break;
         case "install":  cmd_install(args, ctx); break;
-        case "update":   cmd_update(args, ctx); break;
-        case "lock":     cmd_lock(ctx); break;
-        case "store":    cmd_store(args, ctx); break;
-        case "list":     cmd_list(args, ctx); break;
-        case "clean":    cmd_clean(ctx); break;
-        case "remove":   cmd_remove(args, ctx); break;
-        case "run":      cmd_run(args, ctx); break;
-        case "env":      cmd_env(ctx); break;
-        case "version":  cmd_version(); break;
+        case "update":    cmd_update(args, ctx); break;
+        case "rollback":  cmd_rollback(ctx); break;
+        case "changelog": cmd_changelog(args, ctx); break;
+        case "lock":      cmd_lock(ctx); break;
+        case "store":     cmd_store(args, ctx); break;
+        case "list":      cmd_list(args, ctx); break;
+        case "clean":     cmd_clean(ctx); break;
+        case "remove":    cmd_remove(args, ctx); break;
+        case "run":       cmd_run(args, ctx); break;
+        case "resolve":   cmd_resolve(args, ctx); break;
+        case "env":       cmd_env(ctx); break;
+        case "version":   cmd_version(); break;
         default:
             die("unknown command '" + cmd + "' (try: pmp --help)");
     }

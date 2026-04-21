@@ -2,7 +2,7 @@
 
 ## Project overview
 
-pmp (Pike Module Package Manager) installs, versions, and resolves dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths. The architecture is a modular split: `bin/pmp.pike` (~110 lines, entry point with config init and command dispatch) and `bin/Pmp.pmod/` (13 modules — 9 stateless pure-function libraries + 4 stateful command modules), invoked via a POSIX sh shim `bin/pmp`.
+pmp (Pike Module Package Manager) installs, versions, and resolves dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths. The architecture is a modular split: `bin/pmp.pike` (~110 lines, entry point with config init and command dispatch) and `bin/Pmp.pmod/` (14 modules — 10 stateless pure-function libraries + 4 stateful command modules), invoked via a POSIX sh shim `bin/pmp`.
 
 ## Setup commands
 
@@ -10,14 +10,14 @@ pmp (Pike Module Package Manager) installs, versions, and resolves dependencies 
 - Verify syntax: `pike bin/pmp.pike --help`
 - Check version: `pike bin/pmp.pike version` (or `sh bin/pmp version`)
 
-Expected result: 65 passed, 0 failed, exit code 0.
+Expected result: 91 passed, 0 failed, exit code 0.
 
 ## Architecture
 
 ```
 bin/pmp                POSIX sh shim — sets PIKE_MODULE_PATH, delegates to pmp.pike
 bin/pmp.pike           Entry point (~110 lines) — config init, context mapping, command dispatch
-bin/Pmp.pmod/          Module library (13 modules)
+bin/Pmp.pmod/          Module library (14 modules)
   Config.pmod          PMP_VERSION constant
   Helpers.pmod         die, info, warn, need_cmd, json_field, find_project_root, compute_sha256
   Source.pmod          detect_source_type, source_to_name/version/domain/repo_path/strip_version
@@ -27,12 +27,13 @@ bin/Pmp.pmod/          Module library (13 modules)
   Lockfile.pmod        lockfile_add_entry, write_lockfile, read_lockfile, lockfile_has_dep, merge_lock_entries
   Manifest.pmod        add_to_manifest, parse_deps
   Validate.pmod        validate_manifests, strip_comments_and_strings, init_std_libs
-  Install.pmod         install_one, cmd_install, cmd_install_all, cmd_install_source, cmd_update, cmd_lock
+  Semver.pmod          parse_semver, compare_semver, sort_tags_semver, classify_bump
+  Install.pmod         install_one, cmd_install, cmd_install_all, cmd_install_source, cmd_update, cmd_lock, cmd_rollback, cmd_changelog, print_update_summary
   StoreCmd.pmod        cmd_store (status + prune)
   Project.pmod         cmd_init, cmd_list, cmd_clean, cmd_remove
   Env.pmod             cmd_env, build_paths, resolve_local_dep_paths, cmd_run
   module.pmod          Re-exports all sub-modules via inherit
-tests/test_install.sh  Test suite (pure sh, 65 tests)
+tests/test_install.sh  Test suite (pure sh, 91 tests)
 README.md              User documentation
 ```
 
@@ -57,11 +58,20 @@ Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 - `install_one()` — install a single dep including transitive resolution
 - `cmd_install_all()` — orchestrates lockfile check, dep resolution, lockfile write
 - `cmd_install()`, `cmd_update()`, `cmd_lock()` — install-family command entry points
+- `cmd_rollback()` — restore all modules from pike.lock.prev
+- `cmd_changelog(args, ctx)` — show commit log between versions
+- `print_update_summary(old, new)` — show old→new version table
 
 **In Pmp.pmod/Project.pmod, StoreCmd.pmod, Env.pmod (stateful commands, take `mapping ctx`):**
 - `cmd_init()`, `cmd_list()`, `cmd_clean()`, `cmd_remove()` — project management
 - `cmd_store()` — store inspection and pruning
 - `cmd_env()`, `build_paths()`, `cmd_run()` — environment and script execution
+
+**In Pmp.pmod/Semver.pmod (stateless pure functions):**
+- `parse_semver(tag)` — parse version string into (major, minor, patch, prerelease)
+- `compare_semver(a, b)` — compare two parsed versions (-1/0/1)
+- `sort_tags_semver(tags)` — sort tag strings by semver (highest first)
+- `classify_bump(old, new)` — classify change as major/minor/patch/prerelease/downgrade
 
 **In Pmp.pmod/ (stateless pure functions):**
 - `detect_source_type()` — classifies URL as github/gitlab/selfhosted/local
@@ -114,7 +124,7 @@ Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 - Uses `assert`, `assert_exists`, `assert_not_exists`, `assert_output_contains` helpers
 - Tests create temp dirs and clean up on exit
 - Tests that need the store back up/restore `~/.pike/store/`
-- Every change must pass all 65 tests
+- Every change must pass all 91 tests
 
 ## Commit conventions
 
@@ -142,5 +152,5 @@ Doc-only changes do NOT trigger this checklist.
 ## PR instructions
 
 - Title format: descriptive summary of the change
-- Run `sh tests/test_install.sh` before committing — all 65 tests must pass
+- Run `sh tests/test_install.sh` before committing — all 91 tests must pass
 - If adding new features, add corresponding test cases

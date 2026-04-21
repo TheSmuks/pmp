@@ -1,9 +1,12 @@
 inherit .Helpers;
 inherit .Http;
+inherit .Semver;
 
-//! Get latest tag from GitHub.
+//! Get latest tag from GitHub — returns highest semver, not most-recently-created.
 array(string) latest_tag_github(string repo_path, void|string version) {
-    string url = "https://api.github.com/repos/" + repo_path + "/tags";
+    // Fetch up to 100 tags (most repos have fewer than 100)
+    string url = "https://api.github.com/repos/" + repo_path
+                 + "/tags?per_page=100";
     string body = http_get(url, github_auth_headers(), version);
 
     mixed data;
@@ -11,12 +14,27 @@ array(string) latest_tag_github(string repo_path, void|string version) {
     if (err || !arrayp(data) || sizeof(data) == 0)
         return ({ "", "" });
 
-    mapping first = data[0];
-    string tag = first->name || "";
+    // Build tag list and sort by semver (highest first)
+    array(string) tag_names = ({});
+    foreach (data; ; mapping entry)
+        if (entry->name)
+            tag_names += ({ entry->name });
+
+    tag_names = sort_tags_semver(tag_names);
+    if (sizeof(tag_names) == 0)
+        return ({ "", "" });
+
+    string tag = tag_names[0];
+
+    // Find the entry for this tag to get its SHA
     string sha = "";
-    // The tags API returns objects with .commit.sha
-    if (mappingp(first->commit))
-        sha = first->commit->sha || "";
+    foreach (data; ; mapping entry) {
+        if (entry->name == tag) {
+            if (mappingp(entry->commit))
+                sha = entry->commit->sha || "";
+            break;
+        }
+    }
 
     if (sha == "") {
         // Fallback: fetch commit SHA from the ref endpoint
@@ -33,11 +51,11 @@ array(string) latest_tag_github(string repo_path, void|string version) {
     return ({ tag, sha || "unknown" });
 }
 
-//! Get latest tag from GitLab.
+//! Get latest tag from GitLab — returns highest semver, not most-recently-created.
 array(string) latest_tag_gitlab(string repo_path, void|string version) {
     string encoded = replace(repo_path, "/", "%2F");
     string url = "https://gitlab.com/api/v4/projects/"
-                 + encoded + "/repository/tags";
+                 + encoded + "/repository/tags?per_page=100";
     string body = http_get(url, 0, version);
 
     mixed data;
@@ -45,17 +63,33 @@ array(string) latest_tag_gitlab(string repo_path, void|string version) {
     if (err || !arrayp(data) || sizeof(data) == 0)
         return ({ "", "" });
 
-    mapping first = data[0];
-    string tag = first->name || "";
+    // Build tag list and sort by semver (highest first)
+    array(string) tag_names = ({});
+    foreach (data; ; mapping entry)
+        if (entry->name)
+            tag_names += ({ entry->name });
+
+    tag_names = sort_tags_semver(tag_names);
+    if (sizeof(tag_names) == 0)
+        return ({ "", "" });
+
+    string tag = tag_names[0];
+
+    // Find the entry for this tag to get its SHA
     string sha = "";
-    // GitLab tags API returns .commit.id
-    if (mappingp(first->commit))
-        sha = first->commit->id || "";
+    foreach (data; ; mapping entry) {
+        if (entry->name == tag) {
+            if (mappingp(entry->commit))
+                sha = entry->commit->id || "";
+            break;
+        }
+    }
 
     return ({ tag, sha || "unknown" });
 }
 
 //! Get latest tag from self-hosted git via ls-remote.
+//! Uses --sort=-v:refname then applies semver sort on top.
 array(string) latest_tag_selfhosted(string domain, string repo_path) {
     need_cmd("git");
     string url = "https://" + domain + "/" + repo_path;
@@ -64,7 +98,7 @@ array(string) latest_tag_selfhosted(string domain, string repo_path) {
     if (result->exitcode != 0)
         return ({ "", "" });
 
-    // Find latest non-^{} tag, sorted by version
+    // Collect non-^{} tag lines
     array(string) lines = filter(result->stdout / "\n",
                                  lambda(string l) {
                                      return sizeof(l) > 0 &&
@@ -72,11 +106,30 @@ array(string) latest_tag_selfhosted(string domain, string repo_path) {
                                  });
     if (sizeof(lines) == 0) return ({ "", "" });
 
-    // Use the first line (highest version after --sort=-v:refname)
-    string line = lines[0];
-    string sha = ((line / "\t")[0] || "");
-    string tag = replace((line / "\t")[-1], "refs/tags/", "");
-    return ({ tag, sha });
+    // Build ({tag, sha}) pairs
+    array(array(string)) tags = ({});
+    foreach (lines; ; string line) {
+        array(string) parts = line / "\t";
+        if (sizeof(parts) >= 2) {
+            string sha = parts[0];
+            string tag = replace(parts[-1], "refs/tags/", "");
+            tags += ({ ({ tag, sha }) });
+        }
+    }
+
+    if (sizeof(tags) == 0) return ({ "", "" });
+
+    // Sort by semver (highest first), extract tag names
+    array(string) tag_names = column(tags, 0);
+    tag_names = sort_tags_semver(tag_names);
+    string best = tag_names[0];
+
+    // Find the SHA for the best tag
+    foreach (tags; ; array(string) t)
+        if (t[0] == best)
+            return ({ best, t[1] });
+
+    return ({ best, "" });
 }
 
 //! Resolve latest tag. Returns ({tag, commit_sha}).

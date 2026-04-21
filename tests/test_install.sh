@@ -558,6 +558,68 @@ _out="$(cat pike.json)"
 case "$_out" in *local-mod*) _has_lm=1 ;; *) _has_lm=0 ;; esac
 assert "local-mod removed from pike.json" "0" "$_has_lm"
 
+printf '\n=== pmp resolve ===\n'
+# Setup: create a local dep and install
+mkdir -p libs/resolve-lib
+cat > libs/resolve-lib/test.pike << 'PIKE'
+int main() { write("resolve ok\n"); return 0; }
+PIKE
+cat > pike.json << 'JSON'
+{
+  "dependencies": {
+    "resolve-lib": "./libs/resolve-lib"
+  }
+}
+JSON
+"$PMP" install
+
+# pmp resolve (no args) should output PIKE_MODULE_PATH
+_out="$({ $PMP resolve; } 2>&1)"
+assert_output_contains "resolve outputs PIKE_MODULE_PATH" "PIKE_MODULE_PATH=" "$_out"
+assert_output_contains "resolve includes project modules" "/modules" "$_out"
+
+# pmp resolve <module> should output the resolved path
+_out="$({ $PMP resolve resolve-lib; } 2>&1)"
+assert_output_contains "resolve specific module finds it" "resolve-lib" "$_out"
+
+# pmp resolve for nonexistent module should error
+_out="$({ $PMP resolve nonexistent-mod; } 2>&1 || true)"
+assert_output_contains "resolve nonexistent errors" "not found" "$_out"
+
+rm -rf modules libs
+
+printf '\n=== Dynamic wrapper ===\n'
+# First generate env, then add a new dep
+cat > pike.json << 'JSON'
+{
+  "dependencies": {}
+}
+JSON
+"$PMP" env
+
+# Now add a new dep AFTER env was generated
+mkdir -p libs/dynamic-lib
+cat > libs/dynamic-lib/test.pike << 'PIKE'
+int main() { write("dynamic ok\n"); return 0; }
+PIKE
+cat > pike.json << 'JSON'
+{
+  "dependencies": {
+    "dynamic-lib": "./libs/dynamic-lib"
+  }
+}
+JSON
+"$PMP" install
+
+# Wrapper should pick up the new dep without re-running pmp env
+assert_exists "dynamic dep in modules" "modules/dynamic-lib"
+
+# Verify the wrapper still works
+_out="$({ .pike-env/bin/pike -e 'write("wrapper ok\n");'; } 2>&1)"
+assert "wrapper still works after new dep" "wrapper ok" "$_out"
+
+rm -rf modules libs .pike-env
+
 printf '\n=== Error paths ===\n'
 
 # pmp --version (flag path via Arg.parse)
@@ -587,6 +649,108 @@ case "$_out" in *"pike.json"*) _npj=1 ;; *) _npj=0 ;; esac
 assert "install without pike.json" "1" "$_npj"
 
 rm -rf modules libs pike.lock
+
+# ── New tests: Semver, Lockfile backup, Rollback, Changelog ──────
+
+# Derive module path from the PMP shim location
+_PMP_DIR="$(dirname "$PMP")"
+
+printf '\n=== Semver: parse and compare ===\n'
+TESTDIR="$(mktemp -d)"
+cd "$TESTDIR"
+_out="$(PIKE_MODULE_PATH="$_PMP_DIR" pike -e '
+import Pmp;
+mapping v = parse_semver("v1.2.3");
+write("%d.%d.%d\n", v["major"], v["minor"], v["patch"]);
+write("cmp: %d\n", compare_semver(parse_semver("1.0.0"), parse_semver("2.0.0")));
+write("sorted: %s\n", sort_tags_semver(({"v0.1.0", "v2.0.0", "v1.5.0"})) * ", ");
+write("bump: %s\n", classify_bump("v1.0.0", "v2.0.0"));
+')"
+assert_output_contains "parse major" "1" "$_out"
+assert_output_contains "parse minor" "2" "$_out"
+assert_output_contains "parse patch" "3" "$_out"
+assert_output_contains "compare 1<2" "cmp: -1" "$_out"
+assert_output_contains "sort highest first" "v2.0.0" "$_out"
+assert_output_contains "classify major" "bump: major" "$_out"
+
+printf '\n=== Semver: non-semver tags sort last ===\n'
+_out="$(PIKE_MODULE_PATH="$_PMP_DIR" pike -e '
+import Pmp;
+write("%s\n", sort_tags_semver(({"latest", "v1.0.0", "v0.5.0", "nightly"})) * ", ");
+')"
+# v1.0.0 should be first (highest semver), non-semver last
+case "$_out" in *"v1.0.0"*) _nsv=1 ;; *) _nsv=0 ;; esac
+assert "semver before non-semver" "1" "$_nsv"
+
+printf '\n=== Lockfile backup: pike.lock.prev created ===\n'
+# Create a project with a local dep, install, then reinstall
+mkdir -p libs/bak-lib
+echo '{"name":"bak-test","dependencies":{}}' > libs/bak-lib/pike.json
+echo 'int x = 1;' > libs/bak-lib/module.pmod
+$PMP init
+echo '{"name":"test","dependencies":{"bak-lib":"./libs/bak-lib"}}' > pike.json
+$PMP install
+assert_exists "pike.lock created" "$TESTDIR/pike.lock"
+assert_not_exists "no .prev yet" "$TESTDIR/pike.lock.prev"
+
+# Now reinstall — should create .prev backup
+$PMP install
+assert_exists "pike.lock.prev created" "$TESTDIR/pike.lock.prev"
+# .prev should have content
+_prev_content="$(cat pike.lock.prev)"
+case "$_prev_content" in *"bak-lib"*) _plf=1 ;; *) _plf=0 ;; esac
+assert "pike.lock.prev has module entry" "1" "$_plf"
+
+printf '\n=== Rollback: pmp rollback restores previous ===\n'
+# Modify the dep (change content to force different lockfile)
+echo 'int x = 2;' > libs/bak-lib/module.pmod
+$PMP install
+# Now pike.lock.prev should be the old version
+$PMP rollback
+_rollback_out="$(cat pike.lock)"
+case "$_rollback_out" in *"bak-lib"*) _rb=1 ;; *) _rb=0 ;; esac
+assert "lockfile restored after rollback" "1" "$_rb"
+assert_exists "modules restored" "$TESTDIR/modules/bak-lib"
+
+printf '\n=== Rollback: no .prev fails ===\n'
+rm -f pike.lock.prev
+_rb_err="$($PMP rollback 2>&1 || true)"
+case "$_rb_err" in *"no previous lockfile"*) _rbf=1 ;; *) _rbf=0 ;; esac
+assert "rollback without .prev fails" "1" "$_rbf"
+
+printf '\n=== Changelog: no args fails ===\n'
+_cl_err="$($PMP changelog 2>&1 || true)"
+case "$_cl_err" in *"usage"*) _clna=1 ;; *) _clna=0 ;; esac
+assert "changelog no args" "1" "$_clna"
+
+printf '\n=== Changelog: missing module fails ===\n'
+# Restore a lockfile for this test
+$PMP install
+_cl_err2="$($PMP changelog nonexistent 2>&1 || true)"
+case "$_cl_err2" in *"not found"*) _clnf=1 ;; *) _clnf=0 ;; esac
+assert "changelog missing module" "1" "$_clnf"
+
+printf '\n=== Update summary: pmp update shows table ===\n'
+# Create a project with local dep
+rm -rf modules libs pike.lock pike.lock.prev pike.json .pike-env
+mkdir -p libs/sum-lib
+echo '{"name":"sum-test","dependencies":{}}' > libs/sum-lib/pike.json
+echo 'int x = 1;' > libs/sum-lib/module.pmod
+$PMP init
+echo '{"name":"test","dependencies":{"sum-lib":"./libs/sum-lib"}}' > pike.json
+$PMP install
+# Update (local deps won't change but the command should complete)
+_upd_out="$($PMP update 2>&1)"
+case "$_upd_out" in *"done"*) _upd=1 ;; *) _upd=0 ;; esac
+assert "update completes" "1" "$_upd"
+
+# ── Help text includes new commands ──
+printf '\n=== Help: rollback and changelog ===\n'
+_help="$($PMP --help 2>&1)"
+assert_output_contains "help shows rollback" "rollback" "$_help"
+assert_output_contains "help shows changelog" "changelog" "$_help"
+assert_output_contains "help mentions semver" "semver" "$_help"
+
 printf '\n=== Clean up ===\n'
 rm -rf modules libs pike.lock pike.json .pike-env
 

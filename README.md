@@ -1,6 +1,8 @@
 # pmp — Pike Module Package Manager
 
 [![CI](https://github.com/TheSmuks/pmp/actions/workflows/ci.yml/badge.svg)](https://github.com/TheSmuks/pmp/actions/workflows/ci.yml)
+[![Release](https://github.com/TheSmuks/pmp/actions/workflows/release.yml/badge.svg)](https://github.com/TheSmuks/pmp/actions/workflows/release.yml)
+[![Latest Release](https://img.shields.io/github/v/release/TheSmuks/pmp?label=version&color=brightgreen)](https://github.com/TheSmuks/pmp/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Install, version, and resolve dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths.

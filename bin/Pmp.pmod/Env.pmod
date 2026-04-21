@@ -6,22 +6,11 @@ inherit .Helpers;
 inherit .Manifest;
 
 //! Build module + include paths from project root and global dir.
-array(array(string)) build_paths(mapping ctx) {
+//! Resolve local dependency paths from pike.json.
+//! Returns ({ mod_paths, inc_paths }) for local deps.
+array(array(string)) resolve_local_dep_paths(string project_root) {
     array(string) mod_paths = ({});
     array(string) inc_paths = ({});
-
-    string project_root = find_project_root() || getcwd();
-    string pr_modules = combine_path(project_root, "modules");
-    if (Stdio.is_dir(pr_modules)) {
-        mod_paths += ({ pr_modules });
-        // Check for .h files
-        mapping r = Process.run(
-            ({"find", pr_modules, "-name", "*.h", "-print", "-quit"}));
-        if (r->exitcode == 0 && sizeof(r->stdout) > 0)
-            inc_paths += ({ pr_modules });
-    }
-
-    // Local deps from pike.json
     string pjson = combine_path(project_root, "pike.json");
     if (Stdio.exist(pjson)) {
         foreach (parse_deps(pjson); ; array(string) dep) {
@@ -39,6 +28,28 @@ array(array(string)) build_paths(mapping ctx) {
             }
         }
     }
+    return ({ mod_paths, inc_paths });
+}
+
+array(array(string)) build_paths(mapping ctx) {
+    array(string) mod_paths = ({});
+    array(string) inc_paths = ({});
+
+    string project_root = find_project_root() || getcwd();
+    string pr_modules = combine_path(project_root, "modules");
+    if (Stdio.is_dir(pr_modules)) {
+        mod_paths += ({ pr_modules });
+        // Check for .h files
+        mapping r = Process.run(
+            ({"find", pr_modules, "-name", "*.h", "-print", "-quit"}));
+        if (r->exitcode == 0 && sizeof(r->stdout) > 0)
+            inc_paths += ({ pr_modules });
+    }
+
+    // Local deps from pike.json
+    array(array(string)) local_deps = resolve_local_dep_paths(project_root);
+    mod_paths += local_deps[0];
+    inc_paths += local_deps[1];
 
     if (Stdio.is_dir(ctx["global_dir"])) {
         mod_paths += ({ ctx["global_dir"] });
@@ -117,25 +128,9 @@ void cmd_env(mapping ctx) {
     Stdio.write_file(combine_path(env_dir, "pike-env.cfg"), cfg);
 
     // Resolve local dep paths from pike.json at generation time
-    array(string) local_mod_paths = ({});
-    array(string) local_inc_paths = ({});
-    string pjson = combine_path(project_root, "pike.json");
-    if (Stdio.exist(pjson)) {
-        foreach (parse_deps(pjson); ; array(string) dep) {
-            if (has_prefix(dep[1], "./") || has_prefix(dep[1], "/")) {
-                string lpath = dep[1];
-                if (has_prefix(lpath, "./"))
-                    lpath = combine_path(project_root, lpath);
-                if (!Stdio.is_dir(lpath)) continue;
-                local_mod_paths += ({ lpath });
-                mapping r = Process.run(
-                    ({"find", lpath, "-name", "*.h",
-                      "-print", "-quit"}));
-                if (r->exitcode == 0 && sizeof(r->stdout) > 0)
-                    local_inc_paths += ({ lpath });
-            }
-        }
-    }
+    array(array(string)) local_dep_paths = resolve_local_dep_paths(project_root);
+    array(string) local_mod_paths = local_dep_paths[0];
+    array(string) local_inc_paths = local_dep_paths[1];
 
     // bin/pike — wrapper that sets PIKE_MODULE_PATH / PIKE_INCLUDE_PATH
     string local_mod_block = "";

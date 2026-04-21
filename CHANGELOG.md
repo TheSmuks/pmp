@@ -7,11 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **CRITICAL: `pmp update` now replaces existing modules** — added `ctx["force"]` flag so `install_one` bypasses the version-mismatch guard during updates. Previously `pmp update` was a no-op because `install_one` would "keep existing" and return.
+- **P1: Atomic lockfile writes** — `write_lockfile` now writes to a `.tmp` file and renames, preventing corruption from crashes mid-write
+- **P1: Store `mv` errors are now fatal** — all three `store_install_*` functions check `mv` exit code, clean up partial entries, and die on failure instead of silently proceeding
+- **P1: Lockfile source URL verification** — `lockfile_has_dep` now accepts an optional `source` parameter; `cmd_install_all` verifies source matches so changed dep URLs trigger re-resolution
+- **P1: Deduplication for transitive deps in `pmp update <module>`** — extracted `merge_lock_entries()` helper using multiset-based dedup; shared by both `cmd_install` and `cmd_update`
+- **P2: `pmp store prune` works when `modules/` doesn't exist** — every store entry is correctly reported as unused from the current project
+- **P2: `default:` cases on unknown source types** — both switch blocks in `install_one` now die with an error for unsupported source types instead of silently falling through
+- **P2: `pmp remove` warns when name not found** — tracks whether any removal occurred and warns instead of silently succeeding with exit 0
+- **P2: Store reuse returns stored hash** — `read_stored_hash()` reads content hash from `.pmp-meta` instead of returning the freshly-downloaded hash (which may differ if a tag was force-pushed)
+- **P2: Stale lockfile entries pruned** — `cmd_install_all` filters lockfile entries to only include deps present in `pike.json`
 
 ### Changed
-- **Modularized pmp.pike** — extracted install orchestrators into `Pmp.Install` (390 lines), store command into `Pmp.StoreCmd` (89 lines), project commands into `Pmp.Project` (102 lines), and env/run into `Pmp.Env` (248 lines). `pmp.pike` reduced from 925 to 111 lines (config init + dispatch). Shared state now passed as a context mapping instead of global variables.
-
-### Fixed
+- **DRY: `resolve_local_dep_paths` helper** — extracted shared local-dep path resolution from `build_paths` and `cmd_env` into a single function
 - **P1: Lockfile integrity on partial store miss** — `cmd_install_all` now breaks out of lockfile loop immediately when a store entry is missing, preventing duplicate lockfile entries from accumulating before re-resolution
 - **P1: `pmp update <module>` preserves other lockfile entries** — single-module update now reads existing lockfile, merges the updated entry by name, and writes the combined result instead of destroying all other modules' pinned entries
 - **P1: `pmp install <source>` preserves existing lockfile** — adding a new dependency now reads and merges with the existing lockfile instead of overwriting it with only the new entry

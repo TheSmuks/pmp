@@ -23,14 +23,14 @@ bin/Pmp.pmod/          Module library (13 modules)
   Source.pmod          detect_source_type, source_to_name/version/domain/repo_path/strip_version
   Http.pmod            http_get, http_get_safe, github_auth_headers
   Resolve.pmod         latest_tag_*, resolve_commit_sha
-  Store.pmod           store_entry_name, extract_targz, write_meta, compute_dir_hash, store_install_*
-  Lockfile.pmod        lockfile_add_entry, write_lockfile, read_lockfile, lockfile_has_dep
+  Store.pmod           store_entry_name, extract_targz, write_meta, compute_dir_hash, read_stored_hash, store_install_*
+  Lockfile.pmod        lockfile_add_entry, write_lockfile, read_lockfile, lockfile_has_dep, merge_lock_entries
   Manifest.pmod        add_to_manifest, parse_deps
   Validate.pmod        validate_manifests, strip_comments_and_strings, init_std_libs
   Install.pmod         install_one, cmd_install, cmd_install_all, cmd_install_source, cmd_update, cmd_lock
   StoreCmd.pmod        cmd_store (status + prune)
   Project.pmod         cmd_init, cmd_list, cmd_clean, cmd_remove
-  Env.pmod             cmd_env, build_paths, cmd_run
+  Env.pmod             cmd_env, build_paths, resolve_local_dep_paths, cmd_run
   module.pmod          Re-exports all sub-modules via inherit
 tests/test_install.sh  Test suite (pure sh, 65 tests)
 README.md              User documentation
@@ -67,8 +67,12 @@ Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 - `detect_source_type()` — classifies URL as github/gitlab/selfhosted/local
 - `store_entry_name()` — generates store entry name from source+tag+sha
 - `store_install_*()` — download to store, compute hashes, return result mapping
+- `read_stored_hash()` — read content_sha256 from .pmp-meta of an existing store entry
+- `merge_lock_entries(existing, new)` — dedup-by-name merge using multiset; new entries replace existing with same name
+- `lockfile_has_dep(name, lf, source?)` — check if dep exists in lockfile; optionally verify source URL matches
+- `resolve_local_dep_paths(project_root)` — resolve local dep paths from pike.json; returns ({mod_paths, inc_paths})
 - `validate_manifests()` — warn on undeclared imports/inherits/includes
-- `write_lockfile()` / `read_lockfile()` — lockfile I/O (takes entries + path as params)
+- `write_lockfile()` / `read_lockfile()` — lockfile I/O (takes entries + path as params; write is atomic via tmp+rename)
 - `parse_deps()` — native JSON parsing via Standards.JSON
 - `json_field()` — read a field from a JSON file
 - `strip_comments_and_strings()` — strip comments/strings before import scanning

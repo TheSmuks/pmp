@@ -65,6 +65,7 @@ void cmd_remove(array(string) args, mapping ctx) {
     if (sizeof(rest) == 0)
         die("usage: pmp remove <name>");
     string name = rest[0];
+    int removed = 0;
 
     // Remove from pike.json
     if (Stdio.exist(ctx["pike_json"])) {
@@ -78,6 +79,7 @@ void cmd_remove(array(string) args, mapping ctx) {
                     Stdio.write_file(ctx["pike_json"],
                         Standards.JSON.encode(data, Standards.JSON.HUMAN_READABLE) + "\n");
                     info("removed " + name + " from pike.json");
+                    removed = 1;
                 }
             }
         }
@@ -88,15 +90,22 @@ void cmd_remove(array(string) args, mapping ctx) {
     if (Stdio.exist(link)) {
         rm(link);
         info("removed " + link);
+        removed = 1;
     }
 
     // Update lockfile
     if (Stdio.exist(ctx["lockfile_path"])) {
         array(array(string)) entries = read_lockfile(ctx["lockfile_path"]);
         array(array(string)) new_entries = ({});
+        int had_entry = 0;
         foreach (entries; ; array(string) e)
             if (e[0] != name) new_entries += ({ e });
+            else had_entry = 1;
+        if (had_entry) removed = 1;
         ctx["lock_entries"] = new_entries;
         write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
     }
+
+    if (!removed)
+        warn("nothing to remove: " + name + " not found");
 }

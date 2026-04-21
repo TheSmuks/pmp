@@ -59,6 +59,16 @@ string extract_targz(string tarball_path, string dest_dir) {
     return entries[0];
 }
 
+//! Read content_sha256 from .pmp-meta of an existing store entry.
+string read_stored_hash(string entry_dir) {
+    string meta_file = combine_path(entry_dir, ".pmp-meta");
+    if (!Stdio.exist(meta_file)) return "unknown";
+    foreach (Stdio.read_file(meta_file) / "\n"; ; string line)
+        if (has_prefix(line, "content_sha256\t"))
+            return line[16..];
+    return "unknown";
+}
+
 //! Write .pmp-meta file to a store entry.
 void write_meta(string entry_dir, string source, string tag,
                 string sha, string hash) {
@@ -119,7 +129,7 @@ mapping store_install_github(string store_dir, string repo_path, string ver,
     if (Stdio.is_dir(entry_dir)) {
         info("reusing existing store entry " + entry_name);
         Stdio.recursive_rm(tmpdir);
-        return (["tag": ver, "sha": sha, "hash": hash, "entry": entry_name]);
+        return (["tag": ver, "sha": sha, "hash": read_stored_hash(entry_dir), "entry": entry_name]);
     }
 
     if (Stdio.exist(entry_dir)) rm(entry_dir);
@@ -127,7 +137,12 @@ mapping store_install_github(string store_dir, string repo_path, string ver,
     Stdio.recursive_rm(entry_dir);
     // Move extracted content to store
     string src = combine_path(tmpdir, "extract", extracted);
-    Process.run(({"mv", src, entry_dir}));
+    mapping mv_r = Process.run(({"mv", src, entry_dir}));
+    if (mv_r->exitcode != 0) {
+        Stdio.recursive_rm(tmpdir);
+        Stdio.recursive_rm(entry_dir);
+        die("failed to move to store: " + (mv_r->stderr || ""));
+    }
     Stdio.recursive_rm(tmpdir);
 
     // Write .pmp-meta
@@ -168,14 +183,19 @@ mapping store_install_gitlab(string store_dir, string repo_path, string ver,
     if (Stdio.is_dir(entry_dir)) {
         info("reusing existing store entry " + entry_name);
         Stdio.recursive_rm(tmpdir);
-        return (["tag": ver, "sha": sha, "hash": hash, "entry": entry_name]);
+        return (["tag": ver, "sha": sha, "hash": read_stored_hash(entry_dir), "entry": entry_name]);
     }
 
     if (Stdio.exist(entry_dir)) rm(entry_dir);
     Stdio.mkdirhier(store_dir);
     Stdio.recursive_rm(entry_dir);
     string src = combine_path(tmpdir, "extract", extracted);
-    Process.run(({"mv", src, entry_dir}));
+    mapping mv_r = Process.run(({"mv", src, entry_dir}));
+    if (mv_r->exitcode != 0) {
+        Stdio.recursive_rm(tmpdir);
+        Stdio.recursive_rm(entry_dir);
+        die("failed to move to store: " + (mv_r->stderr || ""));
+    }
     Stdio.recursive_rm(tmpdir);
 
     write_meta(entry_dir, "gitlab.com/" + repo_path, ver, sha, hash);
@@ -217,13 +237,18 @@ mapping store_install_selfhosted(string store_dir, string domain,
     if (Stdio.is_dir(entry_dir)) {
         info("reusing existing store entry " + entry_name);
         Stdio.recursive_rm(tmpdir);
-        return (["tag": ver, "sha": sha, "hash": hash, "entry": entry_name]);
+        return (["tag": ver, "sha": sha, "hash": read_stored_hash(entry_dir), "entry": entry_name]);
     }
 
     if (Stdio.exist(entry_dir)) rm(entry_dir);
     Stdio.mkdirhier(store_dir);
     Stdio.recursive_rm(entry_dir);
-    Process.run(({"mv", repo_dest, entry_dir}));
+    mapping mv_r = Process.run(({"mv", repo_dest, entry_dir}));
+    if (mv_r->exitcode != 0) {
+        Stdio.recursive_rm(tmpdir);
+        Stdio.recursive_rm(entry_dir);
+        die("failed to move to store: " + (mv_r->stderr || ""));
+    }
     Stdio.recursive_rm(tmpdir);
 
     write_meta(entry_dir, domain + "/" + repo_path, ver, sha, hash);

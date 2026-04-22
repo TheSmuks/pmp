@@ -7,20 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Added PUnit as a dev dependency (`pike.json`) with Pike-level unit tests (81 tests) for `Semver`, `Source`, `Lockfile`, and `Helpers` pure-function modules
-- Added `tests/pike_tests.sh` entry point — installs PUnit and runs tests via `sh tests/pike_tests.sh`
-- Added `tests/pike/` directory with `run.pike` harness and 4 test files: `SemverTests.pike`, `SourceTests.pike`, `LockfilePureTests.pike`, `HelpersTests.pike`
+### Fixed
+- **`pmp self-update` now uses semver comparison** — comparing `0.3.0` with `0.10.0` as raw strings incorrectly reported "up to date". Uses `compare_semver()` from `Semver.pmod`.
+- **GitHub/GitLab tag API pagination** — `latest_tag_github` and `latest_tag_gitlab` now paginate through all tags (repos with >100 tags silently missed newer versions before).
+- **`compute_dir_hash` no longer uses `find`** — replaced external `find` command with Pike `get_dir` recursive walk, eliminating a vulnerability where filenames with newlines would corrupt the content hash.
+- **Open redirect protection in HTTP layer** — `http_get` and `http_get_safe` now validate that redirect targets stay on the same domain or a subdomain, preventing SSRF via malicious 302 responses.
+- **Lockfile field validation** — `write_lockfile` now rejects fields containing tab characters, which would silently corrupt the tab-separated format.
+
 ### Added
+- PUnit as a dev dependency (`pike.json`) with Pike-level unit tests (81 tests) for `Semver`, `Source`, `Lockfile`, and `Helpers` pure-function modules
+- `tests/pike_tests.sh` entry point — installs PUnit and runs tests via `sh tests/pike_tests.sh`
+- `tests/pike/` directory with `run.pike` harness and 4 test files: `SemverTests.pike`, `SourceTests.pike`, `LockfilePureTests.pike`, `HelpersTests.pike`
 - Adopted ai-project-template v0.2.0 — added `.editorconfig`, `.gitattributes`, `.architecture.yml`, issue/PR templates, CODEOWNERS, SECURITY.md, dependabot.yml, commit-lint/changelog-check/blob-size-policy workflows, `.omp/` agent definitions, `docs/ci.md`, and ADR 0001
 - Restructured test suite — split `tests/test_install.sh` (803 lines, 97 tests) into a test runner (`tests/runner.sh`) + 25 individual test files with numeric sort ordering
-- Added `tests/helpers.sh` with extracted assertion functions and setup utilities
+- `tests/helpers.sh` with extracted assertion functions and setup utilities
 - `tests/test_install.sh` is now a thin shim that delegates to `tests/runner.sh`
+- `pmp store prune` now deletes unused store entries (with confirmation)
+- `cmd_rollback` now warns and continues on missing store entries instead of aborting
+- PUnit version pinned in `pike.json` to prevent breaking CI on upstream releases
 
 ### Changed
 - Updated `.gitignore` with IDE/OS/environment patterns from template
 - Updated `CONTRIBUTING.md` with branch naming conventions and expanded guidelines
 - Updated `README.md` with changelog badge
 - Updated `AGENTS.md` with CI workflow table, agent behavior section, and template version tracking
+- Rewrote `.agents/skills/pmp-dev/SKILL.md` to reflect current Pike architecture (was describing pre-0.3.0 POSIX sh implementation)
+- Updated `ARCHITECTURE.md` to reflect current version (0.3.0), module list (14 modules), and line counts
+- Updated `install.sh` version pin example to `v0.3.0`
+- Updated `RELEASE.md` with correct syntax check command and Pike test command
+- Updated `CONTRIBUTING.md` and `docs/ci.md` with Pike test commands
 
 ## [0.3.0] - 2026-04-21
 

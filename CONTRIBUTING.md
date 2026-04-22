@@ -6,7 +6,7 @@
 - Pike 8.0+
 
 ### Running Tests
-`sh tests/runner.sh` or `sh tests/test_install.sh`
+`sh tests/runner.sh` or `sh tests/test_install.sh` or `sh tests/pike_tests.sh`
 
 ## How to Contribute
 

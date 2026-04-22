@@ -7,6 +7,7 @@ pmp (Pike Module Package Manager) installs, versions, and resolves dependencies 
 ## Setup commands
 
 - Run all tests: `sh tests/test_install.sh`
+- Run Pike unit tests: `sh tests/pike_tests.sh`
 - Verify syntax: `pike bin/pmp.pike --help`
 - Check version: `pike bin/pmp.pike version` (or `sh bin/pmp version`)
 

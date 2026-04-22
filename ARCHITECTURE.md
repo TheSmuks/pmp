@@ -23,7 +23,9 @@ bin/Pmp.pmod/          Stateless module library (10 files)
   Validate.pmod        validate_manifests, strip_comments_and_strings, init_std_libs
   Semver.pmod          parse_semver, compare_semver, sort_tags_semver, classify_bump
   module.pmod          Re-exports all sub-modules (14 total) via inherit
-tests/test_install.sh  Test suite (pure sh, 60 tests)
+tests/pike_tests.sh     Entry point for Pike unit tests (installs PUnit, runs tests/pike/run.pike)
+tests/pike/             PUnit test files (SemverTests, SourceTests, LockfilePureTests, HelpersTests)
+tests/test_install.sh   Shell integration test suite (114 tests)
 
 ## System Diagram
 

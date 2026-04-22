@@ -20,5 +20,8 @@ jobs:
       - name: Verify Pike
         run: pike --version
 
-      - name: Run tests
+      - name: Run shell tests
         run: sh tests/test_install.sh
+
+      - name: Run Pike unit tests
+        run: sh tests/pike_tests.sh

@@ -523,9 +523,11 @@ void cmd_rollback(mapping ctx) {
                 }
             }
 
-            if (sizeof(found_entry) == 0)
-                die("store entry not found for " + ln + " " + lt
-                    + " — cannot rollback (store entry may have been pruned)");
+            if (sizeof(found_entry) == 0) {
+                warn("store entry not found for " + ln + " " + lt
+                     + " — skipping (store entry may have been pruned)");
+                continue;
+            }
 
             string entry_full = combine_path(ctx["store_dir"], found_entry);
             mapping rmp = resolve_module_path(ln, entry_full);

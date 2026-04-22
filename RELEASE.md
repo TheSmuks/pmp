@@ -11,7 +11,8 @@
 
 - Run `sh tests/test_install.sh` — all tests must pass (see AGENTS.md for current count)
 - Update `CHANGELOG.md` — move relevant items from `[Unreleased]` to a new version section
-- Run `sh -n bin/pmp` — syntax check must pass
+- Run `sh bin/pmp --help` — syntax check must pass
+- Run `sh tests/pike_tests.sh` — all Pike tests must pass
 - Verify AGENTS.md and ARCHITECTURE.md are synchronized (see below)
 
 ## Documentation maintenance protocol

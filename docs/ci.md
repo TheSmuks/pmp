@@ -37,6 +37,9 @@ sh tests/runner.sh
 # Or via the backwards-compat shim
 sh tests/test_install.sh
 
+# Pike unit tests
+sh tests/pike_tests.sh
+
 # Syntax check
 pike bin/pmp.pike --help
 ```

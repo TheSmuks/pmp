@@ -145,28 +145,38 @@ void validate_manifests(string local_dir, multiset(string) std_libs,
                     string clean = strip_comments_and_strings(content);
                     foreach (clean / "\n"; ; string line) {
                         string trimmed = String.trim_whites(line);
-                        // import Foo;
+                        // import Foo; or import Foo.Bar; or import .Foo;
+                        // We extract the first component (the dependency name)
                         array matches =
-                            Regexp("import[ \t]+([A-Za-z_][A-Za-z0-9_]*)")
+                            Regexp("import[ \t]+([.A-Za-z_][A-Za-z0-9_.]*)")
                             ->split(trimmed);
                         if (matches && sizeof(matches) > 0) {
-                            imports[matches[0]] = 1;
+                            // Extract first component (before first dot)
+                            string first = (matches[0] / ".")[0];
+                            // Skip relative imports (leading dot)
+                            if (sizeof(first) > 0)
+                                imports[first] = 1;
                             continue;
                         }
                         // inherit Foo; or inherit Foo.Bar;
+                        // We extract the first component
                         matches =
-                            Regexp("inherit[ \t]+([A-Za-z_][A-Za-z0-9_]*)")
+                            Regexp("inherit[ \t]+([.A-Za-z_][A-Za-z0-9_.]*)")
                             ->split(trimmed);
                         if (matches && sizeof(matches) > 0) {
-                            imports[matches[0]] = 1;
+                            string first = (matches[0] / ".")[0];
+                            if (sizeof(first) > 0)
+                                imports[first] = 1;
                             continue;
                         }
-                        // #include <Foo.pmod/bar.h>
+                        // #include <Foo.pmod/bar.h> or <Foo.Bar.pmod/baz.h>
                         matches =
-                            Regexp("#include[ \t]*<([A-Za-z_][A-Za-z0-9_]*)\\.pmod/")
+                            Regexp("#include[ \t]*<([.A-Za-z_][A-Za-z0-9_.]*).pmod/")
                             ->split(trimmed);
                         if (matches && sizeof(matches) > 0) {
-                            imports[matches[0]] = 1;
+                            string first = (matches[0] / ".")[0];
+                            if (sizeof(first) > 0)
+                                imports[first] = 1;
                             continue;
                         }
                     }

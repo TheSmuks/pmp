@@ -10,7 +10,9 @@ void cmd_init(mapping ctx) {
         die("pike.json already exists in this directory");
 
     string content = "{\n  \"dependencies\": {}\n}\n";
-    Stdio.write_file(ctx["pike_json"], content);
+    int bytes = Stdio.write_file(ctx["pike_json"], content);
+    if (bytes != sizeof(content))
+        die("failed to write pike.json (wrote " + bytes + " of " + sizeof(content) + " bytes)");
     info("created pike.json");
 }
 
@@ -23,6 +25,7 @@ void cmd_list(array(string) args, mapping ctx) {
         return;
     }
 
+    write(sprintf("  %-20s %-12s%s\n", "MODULE", "VERSION", "SOURCE"));
     int found = 0;
     foreach (get_dir(dir) || ({}); ; string mod_name) {
         string moddir = combine_path(dir, mod_name);
@@ -60,12 +63,23 @@ void cmd_list(array(string) args, mapping ctx) {
 }
 
 void cmd_clean(mapping ctx) {
-    if (Stdio.is_dir(ctx["local_dir"])) {
-        Stdio.recursive_rm(ctx["local_dir"]);
-        info("removed " + ctx["local_dir"] + " (store preserved)");
-    } else {
+    if (!Stdio.is_dir(ctx["local_dir"])) {
         info("nothing to clean");
+        return;
     }
+    int count = 0;
+    foreach (get_dir(ctx["local_dir"]) || ({}); ; string name) {
+        string full = combine_path(ctx["local_dir"], name);
+        if (Stdio.is_dir(full)) {
+            count++;
+        } else {
+            mixed err = catch { System.readlink(full); };
+            if (!err) count++;
+        }
+    }
+    Stdio.recursive_rm(ctx["local_dir"]);
+    info(sprintf("removed %s (%d module%s, store preserved)",
+        ctx["local_dir"], count, count == 1 ? "" : "s"));
 }
 
 void cmd_remove(array(string) args, mapping ctx) {
@@ -74,6 +88,11 @@ void cmd_remove(array(string) args, mapping ctx) {
     if (sizeof(rest) == 0)
         die("usage: pmp remove <name>");
     string name = rest[0];
+    // Strip .pmod suffix — users may pass "Foo.pmod" but pike.json keys are bare names
+    if (has_suffix(name, ".pmod")) name = name[..<5];
+    // Path traversal protection
+    if (search(name, "/") >= 0 || search(name, "..") >= 0 || search(name, "\0") >= 0)
+        die("invalid module name: " + name);
     int removed = 0;
 
     // Remove from pike.json

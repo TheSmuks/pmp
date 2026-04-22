@@ -1,16 +1,80 @@
+inherit .Config;
+
+//! Cleanup registry for signal handling and error recovery.
+//! Tracks temp dirs and store lock for cleanup on exit/interrupt.
+private array(string) _cleanup_dirs = ({});
+private string _store_dir_for_lock = "";
+private int _store_locked = 0;
+
+//! Register a temp directory for cleanup on exit/signal.
+void register_cleanup_dir(string dir) {
+    if (sizeof(dir) > 0 && search(_cleanup_dirs, dir) < 0)
+        _cleanup_dirs += ({ dir });
+}
+
+//! Unregister a temp directory (after successful cleanup).
+void unregister_cleanup_dir(string dir) {
+    _cleanup_dirs -= ({ dir });
+}
+
+//! Register store lock state for cleanup.
+void register_store_lock(string store_dir) {
+    _store_dir_for_lock = store_dir;
+    _store_locked = 1;
+}
+
+//! Clear store lock state (after successful unlock).
+void clear_store_lock() {
+    _store_locked = 0;
+}
+
+//! Run all registered cleanup actions. Called on signal and normal exit.
+void run_cleanup() {
+    // Clean up temp dirs
+    foreach (_cleanup_dirs; ; string d) {
+        if (Stdio.is_dir(d)) {
+            Stdio.recursive_rm(d);
+        }
+    }
+    _cleanup_dirs = ({});
+
+    // Release store lock
+    if (_store_locked && sizeof(_store_dir_for_lock) > 0) {
+        string lock_path = combine_path(_store_dir_for_lock, ".lock");
+        if (Stdio.exist(lock_path)) {
+            string existing = String.trim_all_whites(Stdio.read_file(lock_path) || "");
+            if (existing == (string)getpid())
+                rm(lock_path);
+        }
+        _store_locked = 0;
+    }
+}
+
 //! Utility helpers: logging, command checks, JSON reading, SHA-256.
 
-void die(string msg) {
+void die(string msg, void|int code) {
     werror("pmp: %s\n", msg);
-    exit(1);
+    exit(code || EXIT_ERROR);
 }
 
 void info(string msg) {
-    write("pmp: %s\n", msg);
+    if (!PMP_QUIET)
+        write("pmp: %s\n", msg);
 }
 
 void warn(string msg) {
     werror("pmp: warning: %s\n", msg);
+}
+
+//! Debug message — only printed when PMP_VERBOSE is set.
+void debug(string msg) {
+    if (PMP_VERBOSE)
+        write("pmp: debug: %s\n", msg);
+}
+
+void die_internal(string msg) {
+    werror("pmp: internal error: %s\n", msg);
+    exit(EXIT_INTERNAL);
 }
 
 void need_cmd(string name) {
@@ -49,10 +113,19 @@ void|string find_project_root(void|string dir) {
 }
 
 //! Compute SHA-256 hex digest of a file.
+//! Uses streaming reads (64KB chunks) to avoid loading entire file into memory.
+//! Dies on failure — hash computation failure is not recoverable.
 string compute_sha256(string path) {
-    string data = Stdio.read_file(path);
-    if (!data) return "unknown";
-    return String.string2hex(Crypto.SHA256.hash(data));
+    object f = Stdio.File(path, "r");
+    if (!f) die_internal("failed to open file for hashing: " + path);
+    Crypto.SHA256 sha = Crypto.SHA256();
+    while (1) {
+        string chunk = f->read(65536);
+        if (!chunk || sizeof(chunk) == 0) break;
+        sha->update(chunk);
+    }
+    f->close();
+    return String.string2hex(sha->digest());
 }
 
 //! Strip .pmod suffix from a module name for display purposes.

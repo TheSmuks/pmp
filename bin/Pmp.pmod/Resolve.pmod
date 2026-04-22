@@ -62,7 +62,7 @@ array(string) latest_tag_github(string repo_path, void|string version) {
                     sha = commit_data->sha || "";
             }
     }
-    return ({ tag, sha || "unknown" });
+    return ({ tag, sha || "" });
 }
 
 //! Get latest tag from GitLab — returns highest semver, not most-recently-created.
@@ -114,7 +114,7 @@ array(string) latest_tag_gitlab(string repo_path, void|string version) {
         }
     }
 
-    return ({ tag, sha || "unknown" });
+    return ({ tag, sha || "" });
 }
 
 //! Get latest tag from self-hosted git via ls-remote.
@@ -173,6 +173,7 @@ array(string) latest_tag(string type, string domain, string repo_path,
 }
 
 //! Resolve a specific tag to its commit SHA.
+//! Returns 0 if the SHA cannot be resolved.
 string resolve_commit_sha(string type, string domain,
                           string repo_path, string tag,
                           void|string version) {
@@ -186,9 +187,9 @@ string resolve_commit_sha(string type, string domain,
                 mixed data;
                 mixed err = catch { data = Standards.JSON.decode(result[1]); };
                 if (!err && mappingp(data))
-                    return data->sha || "unknown";
+                    return data->sha;
             }
-            return "unknown";
+            return 0;
         }
         case "gitlab": {
             string encoded = replace(repo_path, "/", "%2F");
@@ -199,9 +200,9 @@ string resolve_commit_sha(string type, string domain,
                 mixed data;
                 mixed err = catch { data = Standards.JSON.decode(result[1]); };
                 if (!err && mappingp(data))
-                    return data->id || "unknown";
+                    return data->id;
             }
-            return "unknown";
+            return 0;
         }
         case "selfhosted": {
             need_cmd("git");
@@ -209,8 +210,8 @@ string resolve_commit_sha(string type, string domain,
                 ({"git", "ls-remote", "https://" + domain + "/" + repo_path,
                   "refs/tags/" + tag}));
             if (r->exitcode == 0 && sizeof(r->stdout) > 0)
-                return ((r->stdout / "\t")[0]) || "unknown";
-            return "unknown";
+                return ((r->stdout / "\t")[0]);
+            return 0;
         }
             die("cannot resolve commit SHA for source type: " + type);
     }

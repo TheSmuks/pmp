@@ -1,3 +1,7 @@
+inherit .Helpers;
+
+constant LOCKFILE_VERSION = 1;
+
 //! Add an entry to a lockfile entries array.
 //! Returns a new array (Pike arrays are reference types; += creates a new array).
 array(array(string)) lockfile_add_entry(array(array(string)) entries,
@@ -28,10 +32,10 @@ void write_lockfile(string lockfile_path, array(array(string)) entries) {
     // Validate entries — no field may contain a tab
     foreach (entries; ; array(string) entry) {
         foreach (entry; int i; string field) {
-            if (search(field, "\t") >= 0) {
-                werror("pmp: lockfile field contains tab character: " + field + "\n");
-                exit(1);
-            }
+            if (search(field, "\t") >= 0)
+                die("lockfile field contains tab character: " + field, EXIT_INTERNAL);
+            if (search(field, "\n") >= 0)
+                die("lockfile field contains newline: " + field, EXIT_INTERNAL);
         }
     }
 
@@ -43,19 +47,17 @@ void write_lockfile(string lockfile_path, array(array(string)) entries) {
     }
 
     String.Buffer buf = String.Buffer();
-    buf->add("# pmp lockfile v1 — DO NOT EDIT\n");
+    buf->add("# pmp lockfile v" + LOCKFILE_VERSION + " — DO NOT EDIT\n");
     buf->add("# name\tsource\ttag\tcommit_sha\tcontent_sha256\n");
     foreach (entries; ; array(string) entry) {
         buf->add(entry[0] + "\t" + entry[1] + "\t" + entry[2]
                  + "\t" + entry[3] + "\t" + entry[4] + "\n");
     }
-    // Atomic write: write to tmp file, then rename
+    // Atomic write: write to tmp file, then rename via mv() (wraps rename(2))
     string tmp_path = lockfile_path + ".tmp";
     Stdio.write_file(tmp_path, buf->get());
-    mapping r = Process.run(({"mv", tmp_path, lockfile_path}));
-    if (r->exitcode != 0) {
-        werror("pmp: failed to write lockfile: " + (r->stderr || "unknown error") + "\n");
-        exit(1);
+    if (!mv(tmp_path, lockfile_path)) {
+        die("failed to write lockfile", EXIT_INTERNAL);
     }
 }
 //! Read lockfile entries. Returns array of ({name, source, tag, sha, hash}).
@@ -64,6 +66,23 @@ array(array(string)) read_lockfile(void|string lf) {
     if (!Stdio.exist(path)) return ({});
 
     string raw = Stdio.read_file(path);
+    if (!raw || sizeof(raw) == 0) return ({});
+
+    // Check lockfile format version
+    foreach (raw / "\n"; ; string line) {
+        if (has_prefix(line, "# pmp lockfile v")) {
+            // Extract version number after 'v'
+            string v_str = line[16..];
+            int semi = search(v_str, " ");
+            if (semi >= 0) v_str = v_str[..semi - 1];
+            int v = (int)v_str;
+            if (v > LOCKFILE_VERSION)
+                die("lockfile format v" + v + " is newer than supported (v"
+                    + LOCKFILE_VERSION + ") — update pmp");
+            break;
+        }
+    }
+
     array(array(string)) entries = ({});
     foreach (raw / "\n"; ; string line) {
         if (has_prefix(line, "#") || sizeof(line) == 0) continue;

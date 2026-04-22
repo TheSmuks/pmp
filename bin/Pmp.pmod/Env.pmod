@@ -5,6 +5,20 @@ inherit .Config;
 inherit .Helpers;
 inherit .Manifest;
 
+//! Check if a directory tree contains any .h files.
+//! Uses Pike directory walk — no external find dependency.
+int _has_headers(string dir) {
+    array(string) entries = get_dir(dir) || ({});
+    foreach (entries; ; string name) {
+        string full = combine_path(dir, name);
+        if (has_suffix(name, ".h"))
+            return 1;
+        if (Stdio.is_dir(full) && _has_headers(full))
+            return 1;
+    }
+    return 0;
+}
+
 //! Build module + include paths from project root and global dir.
 //! Returns ({ mod_paths, inc_paths }).
 array(array(string)) build_paths(mapping ctx) {
@@ -15,18 +29,13 @@ array(array(string)) build_paths(mapping ctx) {
     string pr_modules = combine_path(project_root, "modules");
     if (Stdio.is_dir(pr_modules)) {
         mod_paths += ({ pr_modules });
-        mapping r = Process.run(
-            ({"find", pr_modules, "-name", "*.h", "-print", "-quit"}));
-        if (r->exitcode == 0 && sizeof(r->stdout) > 0)
+        if (_has_headers(pr_modules))
             inc_paths += ({ pr_modules });
     }
 
     if (Stdio.is_dir(ctx["global_dir"])) {
         mod_paths += ({ ctx["global_dir"] });
-        mapping r = Process.run(
-            ({"find", ctx["global_dir"], "-name", "*.h",
-              "-print", "-quit"}));
-        if (r->exitcode == 0 && sizeof(r->stdout) > 0)
+        if (_has_headers(ctx["global_dir"]))
             inc_paths += ({ ctx["global_dir"] });
     }
 
@@ -115,7 +124,7 @@ void cmd_env(mapping ctx) {
         "# Project modules — all installed deps are symlinked here by pmp install\n"
         "if [ -d \"$PROJECT_ROOT/modules\" ]; then\n"
         "  MOD_PATHS=\"$PROJECT_ROOT/modules\"\n"
-        "  if find \"$PROJECT_ROOT/modules\" -name '*.h' -print -quit 2>/dev/null | grep -q .; then\n"
+        "  if ls \"$PROJECT_ROOT/modules/\"*/*.h >/dev/null 2>&1; then\n"
         "    INC_PATHS=\"$PROJECT_ROOT/modules\"\n"
         "  fi\n"
         "fi\n"
@@ -126,19 +135,14 @@ void cmd_env(mapping ctx) {
         "fi\n"
         "\n"
         "# Build environment and exec real Pike\n"
-        "_env=\"\"\n"
         "if [ -n \"$MOD_PATHS\" ]; then\n"
-        "  _env=\"PIKE_MODULE_PATH=$MOD_PATHS${PIKE_MODULE_PATH+:$PIKE_MODULE_PATH}\"\n"
+        "  export PIKE_MODULE_PATH=\"$MOD_PATHS${PIKE_MODULE_PATH+:$PIKE_MODULE_PATH}\"\n"
         "fi\n"
         "if [ -n \"$INC_PATHS\" ]; then\n"
-        "  _env=\"${_env:+$_env }PIKE_INCLUDE_PATH=$INC_PATHS${PIKE_INCLUDE_PATH+:$PIKE_INCLUDE_PATH}\"\n"
+        "  export PIKE_INCLUDE_PATH=\"$INC_PATHS${PIKE_INCLUDE_PATH+:$PIKE_INCLUDE_PATH}\"\n"
         "fi\n"
         "\n"
-        "if [ -n \"$_env\" ]; then\n"
-        "  exec env $_env \"$PIKE_BIN\" \"$@\"\n"
-        "else\n"
-        "  exec \"$PIKE_BIN\" \"$@\"\n"
-        "fi\n";
+        "exec \"$PIKE_BIN\" \"$@\"\n";
 
     Stdio.write_file(combine_path(env_bin, "pike"), wrapper);
     Process.run(({"chmod", "+x", combine_path(env_bin, "pike")}));

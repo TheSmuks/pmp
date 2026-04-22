@@ -49,6 +49,9 @@ void install_one(string name, string source, string target,
 
             // Resolve version if not pinned
             if (ver == "") {
+                if (ctx["offline"])
+                    die("offline mode: cannot resolve latest tag for "
+                        + repo_path + " — pin a version in pike.json");
                 array(string) resolved =
                     latest_tag(type, domain, repo_path, PMP_VERSION);
                 if (sizeof(resolved[0]) == 0)
@@ -100,11 +103,11 @@ void install_one(string name, string source, string target,
                                     type, domain, repo_path, ver, PMP_VERSION);
                                 break;
                         }
-                        sha = sha || "unknown";
+                        sha = sha || "";
                         ctx["lock_entries"] = lockfile_add_entry(
                             ctx["lock_entries"], name,
                             source_strip_version(source),
-                            ver, sha, "unknown");
+                            ver, sha, "");
                         return;
                     } else {
                         if (ctx["force"]) {
@@ -130,11 +133,11 @@ void install_one(string name, string source, string target,
                                         type, domain, repo_path, existing_ver, PMP_VERSION);
                                     break;
                             }
-                            kept_sha = kept_sha || "unknown";
+                            kept_sha = kept_sha || "";
                             ctx["lock_entries"] = lockfile_add_entry(
                                 ctx["lock_entries"], name,
                                 source_strip_version(source),
-                                existing_ver, kept_sha, "unknown");
+                                existing_ver, kept_sha, "");
                             return;
                         }
                     }
@@ -199,6 +202,8 @@ void install_one(string name, string source, string target,
 void cmd_install_all(string target, mapping ctx) {
     ctx["visited"] = (<>);
     ctx["lock_entries"] = ({});
+
+    int store_locked = 0;
 
     // Check if lockfile exists and covers all deps
     int use_lockfile = 0;
@@ -265,8 +270,21 @@ void cmd_install_all(string target, mapping ctx) {
                     }
 
                     if (sizeof(found_entry) > 0) {
-                        Stdio.mkdirhier(target);
                         string entry_full = combine_path(ctx["store_dir"], found_entry);
+
+                        // Verify content integrity
+                        if (sizeof(lhash) > 0) {
+                            string stored = read_stored_hash(entry_full);
+                            if (stored && stored != lhash) {
+                                die("integrity mismatch for " + ln + ": "
+                                    + "lockfile hash " + lhash
+                                    + " != stored hash " + (stored || "none"), EXIT_INTERNAL);
+                            } else if (!stored) {
+                                warn("no stored hash for " + ln + " — skipping verification");
+                            }
+                        }
+
+                        Stdio.mkdirhier(target);
                         mapping rmp = resolve_module_path(ln, entry_full);
                         string dest = combine_path(target, rmp->link_name);
                         if (Stdio.exist(dest)) rm(dest);
@@ -286,17 +304,90 @@ void cmd_install_all(string target, mapping ctx) {
                         ln, ls, lt, lsha, lhash);
             }
         } else {
+            if (ctx["frozen_lockfile"])
+                die("frozen lockfile: lockfile does not cover all dependencies — "
+                    + "run 'pmp install' without --frozen-lockfile first");
             info("lockfile is stale — re-resolving missing deps");
             use_lockfile = 0;
         }
     }
 
     if (!use_lockfile) {
+        if (ctx["frozen_lockfile"])
+            die("frozen lockfile: no lockfile found — "
+                + "run 'pmp install' without --frozen-lockfile first");
+        if (ctx["offline"])
+            die("offline mode: no lockfile found — "
+                + "cannot resolve without network");
         ctx["lock_entries"] = ({});
+        store_lock(ctx["store_dir"]);
+        store_locked = 1;
+
+        // Atomic install: snapshot existing state, stage new symlinks,
+        // then swap atomically on success or rollback on failure.
+        string staging = target + ".tmp";
+        // Clean up any leftover staging dir from a previous failed run
+        if (Stdio.is_dir(staging)) Stdio.recursive_rm(staging);
+
+        // Snapshot existing symlinks for rollback
+        mapping(string:string) old_symlinks = ([]);
+        if (Stdio.is_dir(target)) {
+            foreach (get_dir(target) || ({}); ; string name) {
+                string full = combine_path(target, name);
+                mixed err = catch {
+                    string link = System.readlink(full);
+                    if (stringp(link)) old_symlinks[name] = link;
+                };
+            }
+        }
+
         info("installing dependencies from pike.json...");
-        array(array(string)) deps = parse_deps(ctx["pike_json"]);
-        foreach (deps; ; array(string) dep)
-            install_one(dep[0], dep[1], target, ctx);
+        mixed install_err = catch {
+            array(array(string)) deps = parse_deps(ctx["pike_json"]);
+            // Install to staging dir to avoid corrupting ./modules/
+            foreach (deps; ; array(string) dep)
+                install_one(dep[0], dep[1], staging, ctx);
+        };
+
+        if (install_err) {
+            // Rollback: restore old symlinks
+            if (Stdio.is_dir(staging)) Stdio.recursive_rm(staging);
+            if (sizeof(old_symlinks) > 0) {
+                Stdio.mkdirhier(target);
+                foreach (old_symlinks; string name; string link) {
+                    string dest = combine_path(target, name);
+                    if (!Stdio.exist(dest))
+                        System.symlink(link, dest);
+                }
+            }
+            if (store_locked) store_unlock(ctx["store_dir"]);
+            throw(install_err);
+        }
+
+        // Success: swap staging -> target atomically
+        if (Stdio.is_dir(target)) {
+            string backup = target + ".old";
+            if (Stdio.is_dir(backup)) Stdio.recursive_rm(backup);
+            if (!mv(target, backup)) {
+                // Cannot swap — keep staging as-is and warn
+                warn("failed to swap modules directory — staging dir at " + staging);
+                Stdio.recursive_rm(backup);
+            } else {
+                if (!mv(staging, target)) {
+                    // mv failed across filesystems — restore backup
+                    mv(backup, target);
+                    Stdio.recursive_rm(staging);
+                    warn("failed to swap modules directory — kept existing");
+                } else {
+                    Stdio.recursive_rm(backup);
+                }
+            }
+        } else {
+            // No existing modules/ — just rename
+            if (!mv(staging, target)) {
+                warn("failed to rename staging dir to modules");
+            }
+        }
     }
 
     if (target == ctx["local_dir"]) {
@@ -313,6 +404,8 @@ void cmd_install_all(string target, mapping ctx) {
         validate_manifests(ctx["local_dir"], ctx["std_libs"]);
     }
 
+    if (store_locked)
+        store_unlock(ctx["store_dir"]);
     info("done");
 }
 
@@ -327,6 +420,10 @@ void cmd_install(array(string) args, mapping ctx) {
     array(string) rest = opts[Arg.REST];
     int global_flag = opts->g || 0;
     string source = sizeof(rest) > 0 ? rest[0] : "";
+
+    // Flags for CI use
+    if (opts["frozen-lockfile"]) ctx["frozen_lockfile"] = 1;
+    if (opts->offline) ctx["offline"] = 1;
 
     string target;
     if (global_flag)
@@ -545,9 +642,8 @@ void cmd_rollback(mapping ctx) {
     if (prev_content) {
         string tmp_path = ctx["lockfile_path"] + ".tmp";
         Stdio.write_file(tmp_path, prev_content);
-        mapping r = Process.run(({"mv", tmp_path, ctx["lockfile_path"]}));
-        if (r->exitcode != 0)
-            die("failed to restore lockfile: " + (r->stderr || ""));
+        if (!mv(tmp_path, ctx["lockfile_path"]))
+            die("failed to restore lockfile", EXIT_INTERNAL);
     }
 
     info("rollback complete — restored " + sizeof(prev_entries) + " modules");
@@ -677,5 +773,90 @@ void cmd_changelog(array(string) args, mapping ctx) {
             }
             break;
         }
+    }
+}
+
+//! Show which dependencies are outdated.
+//! Compares lockfile versions with latest tags from remotes.
+void cmd_outdated(mapping ctx) {
+    if (!Stdio.exist(ctx["pike_json"]))
+        die("no pike.json found");
+
+    // Read lockfile for current versions
+    mapping(string:array(string)) lock_map = ([]);
+    if (Stdio.exist(ctx["lockfile_path"])) {
+        array(array(string)) lf = read_lockfile(ctx["lockfile_path"]);
+        foreach (lf; ; array(string) e)
+            lock_map[e[0]] = e;
+    }
+
+    array(array(string)) deps = parse_deps(ctx["pike_json"]);
+    if (sizeof(deps) == 0) {
+        info("no dependencies declared");
+        return;
+    }
+
+    int any_outdated = 0;
+    String.Buffer buf = String.Buffer();
+
+    foreach (deps; ; array(string) dep) {
+        string name = dep[0];
+        string source = dep[1];
+        string type = detect_source_type(source);
+
+        if (type == "local") continue;  // Skip local deps
+
+        string repo_path = source_to_repo_path(source);
+        string domain = source_to_domain(source);
+
+        // Get current version from lockfile
+        string current_tag = "-";
+        if (lock_map[name])
+            current_tag = lock_map[name][2];
+
+        // Resolve latest tag
+        mixed err = catch {
+            array(string) resolved =
+                latest_tag(type, domain, repo_path, PMP_VERSION);
+            string latest_tag_str = resolved[0];
+
+            if (sizeof(latest_tag_str) == 0) {
+                buf->add(sprintf("  %-20s %-12s %-12s %s\n",
+                    name, current_tag, "-", "no tags found"));
+                return;
+            }
+
+            if (latest_tag_str != current_tag && current_tag != "-") {
+                string bump = "";
+                mapping cur_v = parse_semver(current_tag);
+                mapping lat_v = parse_semver(latest_tag_str);
+                if (cur_v && lat_v)
+                    bump = classify_bump(current_tag, latest_tag_str);
+                else
+                    bump = "update";
+
+                string label = bump == "major" ? "MAJOR" : bump;
+                buf->add(sprintf("  %-20s %-12s %-12s %s\n",
+                    name, current_tag, latest_tag_str, label));
+                any_outdated = 1;
+            } else if (current_tag == "-") {
+                buf->add(sprintf("  %-20s %-12s %-12s %s\n",
+                    name, "(none)", latest_tag_str, "not installed"));
+                any_outdated = 1;
+            }
+        };
+        if (err) {
+            buf->add(sprintf("  %-20s %-12s %-12s %s\n",
+                name, current_tag, "-", "resolve error"));
+            any_outdated = 1;
+        }
+    }
+
+    if (any_outdated) {
+        write(sprintf("  %-20s %-12s %-12s %s\n",
+            "MODULE", "CURRENT", "LATEST", "CHANGE"));
+        write(buf->get());
+    } else {
+        info("all dependencies up to date");
     }
 }

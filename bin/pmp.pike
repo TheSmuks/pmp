@@ -25,6 +25,12 @@ void print_help() {
           "Local dependency (symlinked)\n");
     write("  pmp install -g <url>                        "
           "Install system-wide\n");
+    write("  pmp install --frozen-lockfile               "
+          "CI: fail if lockfile is missing or stale\n");
+    write("  pmp install --offline                       "
+          "Install from store only (no network)\n");
+    write("  pmp add <url>                               "
+          "Alias for pmp install <url>\n");
     write("  pmp update [module]                         "
           "Update deps to latest tags\n");
     write("  pmp rollback                                "
@@ -35,23 +41,25 @@ void print_help() {
           "Write pike.lock\n");
     write("  pmp store                                   "
           "Show store entries and disk usage\n");
-    write("  pmp store prune                             "
-          "Show unused store entries\n");
+    write("  pmp store prune [--force]                   "
+          "Remove unused store entries\n");
     write("  pmp list [-g]                               "
           "Show installed dependencies\n");
     write("  pmp env                                     "
           "Create .pike-env/ virtual environment\n");
     write("  pmp clean                                   "
           "Remove ./modules/ (keeps store)\n");
-    write("  pmp remove <name>                         "
+    write("  pmp remove <name>                           "
           "Remove a dependency\n");
     write("  pmp run <script>                            "
           "Run script with module paths\n");
-    write("  pmp resolve [module]                       "
+    write("  pmp outdated                                "
+          "Show deps with newer versions available\n");
+    write("  pmp resolve [module]                        "
           "Print resolved module paths\n");
     write("  pmp version                                 "
           "Show version\n");
-    write("  pmp self-update                            "
+    write("  pmp self-update                             "
           "Update pmp to the latest version\n");
     write("\nSource formats:\n");
     write("  github.com/owner/repo                       "
@@ -62,6 +70,19 @@ void print_help() {
           "Self-hosted git\n");
     write("  ./local/path or /abs/path                   "
           "Local module\n");
+    write("\nOptions:\n");
+    write("  --verbose         Enable debug output\n");
+    write("  --quiet           Suppress informational output\n");
+    write("\nExit codes:\n");
+    write("  0  Success\n");
+    write("  1  User error (invalid input, missing deps, network failure)\n");
+    write("  2  Internal error (store corruption, hash mismatch)\n");
+    write("\nEnvironment variables:\n");
+    write("  GITHUB_TOKEN      GitHub API authentication\n");
+    write("  PIKE_BIN          Override Pike binary path\n");
+    write("  TMPDIR            Temp directory (default /tmp)\n");
+    write("  PMP_VERBOSE       Set to 1 for debug output\n");
+    write("  PMP_QUIET         Set to 1 to suppress output\n");
     write("\nVersion resolution uses Semantic Versioning (https://semver.org/).\n");
     write("Only tags matching MAJOR.MINOR.PATCH are sorted correctly.\n");
 }
@@ -126,6 +147,27 @@ void cmd_self_update(mapping ctx) {
 }
 
 int main(int argc, array(string) argv) {
+    // Register signal handlers for cleanup on interrupt
+    void cleanup_handler(int signum) {
+        run_cleanup();
+        werror("pmp: interrupted\n");
+        exit(128 + signum);
+    };
+    signal(signum("SIGINT"), cleanup_handler);
+    signal(signum("SIGTERM"), cleanup_handler);
+
+    mixed err = catch {
+        _main(argv);
+    };
+    if (err) {
+        run_cleanup();
+        werror("pmp: internal error: %s\n", describe_error(err));
+        return EXIT_INTERNAL;
+    }
+    return EXIT_OK;
+}
+
+void _main(array(string) argv) {
     // Configuration
     array(string) search_path = (getenv("PATH") || "/usr/bin:/bin") / ":";
     string pike_bin = getenv("PIKE_BIN")
@@ -154,9 +196,13 @@ int main(int argc, array(string) argv) {
     mapping opts = Arg.parse(argv);
     array(string) rest = opts[Arg.REST];
 
-    if (opts->help) { print_help(); return 0; }
-    if (opts->version) { cmd_version(); return 0; }
-    if (sizeof(rest) == 0) { print_help(); return 0; }
+    // Apply verbosity flags (override env vars)
+    if (opts->verbose) { set_verbose(1); set_quiet(0); }
+    if (opts->quiet)   { set_quiet(1); set_verbose(0); }
+
+    if (opts->help) { print_help(); return; }
+    if (opts->version) { cmd_version(); return; }
+    if (sizeof(rest) == 0) { print_help(); return; }
 
     string cmd = rest[0];
     array(string) args = rest[1..];
@@ -164,6 +210,7 @@ int main(int argc, array(string) argv) {
     switch (cmd) {
         case "init":     cmd_init(ctx); break;
         case "install":  cmd_install(args, ctx); break;
+        case "add":      cmd_install(args, ctx); break;  // alias for install <url>
         case "update":    cmd_update(args, ctx); break;
         case "rollback":  cmd_rollback(ctx); break;
         case "changelog": cmd_changelog(args, ctx); break;
@@ -173,6 +220,7 @@ int main(int argc, array(string) argv) {
         case "clean":     cmd_clean(ctx); break;
         case "remove":    cmd_remove(args, ctx); break;
         case "run":       cmd_run(args, ctx); break;
+        case "outdated":  cmd_outdated(ctx); break;
         case "resolve":   cmd_resolve(args, ctx); break;
         case "env":       cmd_env(ctx); break;
         case "version":    cmd_version(); break;
@@ -180,5 +228,4 @@ int main(int argc, array(string) argv) {
         default:
             die("unknown command '" + cmd + "' (try: pmp --help)");
     }
-    return 0;
 }

@@ -28,8 +28,17 @@ void cmd_list(array(string) args, mapping ctx) {
         string moddir = combine_path(dir, mod_name);
         if (!Stdio.is_dir(moddir)) continue;
 
+        // Display name strips .pmod suffix
+        string show_name = display_name(mod_name);
+
         string ver = "(unknown)";
-        string ver_file = combine_path(moddir, ".version");
+        // Resolve .version through symlink to store entry root
+        string real_dir = moddir;
+        mixed rerr = catch { real_dir = System.readlink(moddir) || moddir; };
+        string ver_file = combine_path(real_dir, ".version");
+        // If symlink points inside store entry (e.g., to subdir), try parent
+        if (!Stdio.exist(ver_file) && has_suffix(mod_name, ".pmod"))
+            ver_file = combine_path(real_dir, "..", ".version");
         if (Stdio.exist(ver_file))
             ver = Stdio.read_file(ver_file) || "(unknown)";
 
@@ -43,7 +52,7 @@ void cmd_list(array(string) args, mapping ctx) {
             }
         };
 
-        write(sprintf("  %-20s %-12s%s\n", mod_name, ver, src));
+        write(sprintf("  %-20s %-12s%s\n", show_name, ver, src));
         found = 1;
     }
 
@@ -85,11 +94,17 @@ void cmd_remove(array(string) args, mapping ctx) {
         }
     }
 
-    // Remove symlink
+    // Remove symlink (try both bare name and .pmod suffix)
     string link = combine_path(ctx["local_dir"], name);
+    string link_pmod = combine_path(ctx["local_dir"], name + ".pmod");
     if (Stdio.exist(link)) {
         rm(link);
         info("removed " + link);
+        removed = 1;
+    }
+    if (Stdio.exist(link_pmod)) {
+        rm(link_pmod);
+        info("removed " + link_pmod);
         removed = 1;
     }
 

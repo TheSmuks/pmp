@@ -97,6 +97,36 @@ string compute_dir_hash(string dir) {
     return String.string2hex(Crypto.SHA256.hash(buf->get()));
 }
 
+//! Given a module name and store entry path, determine the correct
+//! symlink target and link name for Pike module resolution.
+//! Returns (["target": string, "link_name": string]).
+//!
+//! Pike resolves `import Name` via:
+//!   1. Name.pmod (file) — standalone module file
+//!   2. Name.pmod/module.pmod — directory with .pmod suffix
+//! Bare directories (Name/) are NOT resolved by import, so we always
+//! use .pmod-suffixed symlinks when module.pmod exists.
+mapping resolve_module_path(string name, string entry_dir) {
+    // 1. name.pmod/ directory (e.g., PUnit.pmod/) — nested module
+    string pmod_dir = combine_path(entry_dir, name + ".pmod");
+    if (Stdio.is_dir(pmod_dir))
+        return (["target": pmod_dir, "link_name": name + ".pmod"]);
+
+    // 2. name/ directory with module.pmod inside (subdirectory module)
+    //    Use .pmod suffix so Pike can resolve import Name
+    string named_dir = combine_path(entry_dir, name);
+    if (Stdio.is_dir(named_dir) &&
+        Stdio.exist(combine_path(named_dir, "module.pmod")))
+        return (["target": named_dir, "link_name": name + ".pmod"]);
+
+    // 3. module.pmod at entry root — use .pmod suffix for import resolution
+    if (Stdio.exist(combine_path(entry_dir, "module.pmod")))
+        return (["target": entry_dir, "link_name": name + ".pmod"]);
+
+    // 4. Fallback: symlink to entry root (backward compat)
+    return (["target": entry_dir, "link_name": name]);
+}
+
 //! Download from GitHub to store.
 //! Returns (["tag":ver, "sha":sha, "hash":hash, "entry":entry_name]).
 mapping store_install_github(string store_dir, string repo_path, string ver,

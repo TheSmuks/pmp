@@ -1,4 +1,31 @@
+# pmp
 .pike-env/
 modules/
 *.o
 *.pike.o
+pike.lock
+pike.lock.prev
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+logs/

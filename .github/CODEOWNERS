@@ -1,0 +1,20 @@
+# CODEOWNERS
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for everything in the repo
+* @TheSmuks
+
+# CI/CD workflows
+/.github/workflows/ @TheSmuks
+
+# Documentation
+/docs/ @TheSmuks
+
+# Architecture decisions
+/docs/decisions/ @TheSmuks
+
+# Source code
+/bin/ @TheSmuks
+
+# Tests
+/tests/ @TheSmuks

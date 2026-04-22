@@ -126,7 +126,7 @@ Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 - Uses `assert`, `assert_exists`, `assert_not_exists`, `assert_output_contains` helpers
 - Tests create temp dirs and clean up on exit
 - Tests that need the store back up/restore `~/.pike/store/`
-- Every change must pass all 91 tests
+- Every change must pass all 97 tests
 
 ## Commit conventions
 
@@ -154,5 +154,36 @@ Doc-only changes do NOT trigger this checklist.
 ## PR instructions
 
 - Title format: descriptive summary of the change
-- Run `sh tests/test_install.sh` before committing — all 91 tests must pass
+- Run `sh tests/test_install.sh` or `sh tests/runner.sh` before committing — all 97 tests must pass
 - If adding new features, add corresponding test cases
+
+
+## CI/CD
+
+CI uses separate workflow files, one concern per file. See [docs/ci.md](docs/ci.md) for the full guide.
+
+| Workflow | Purpose |
+|----------|--------|
+| `ci.yml` | Pike syntax check + test suite |
+| `release.yml` | Create GitHub release on tag push |
+| `docs-check.yml` | Verify doc sync across AGENTS.md, ARCHITECTURE.md, SKILL.md |
+| `commit-lint.yml` | Conventional commit enforcement |
+| `changelog-check.yml` | Require CHANGELOG.md updates on PRs |
+| `blob-size-policy.yml` | Reject files >1MB on PRs |
+
+## Agent behavior
+
+When an AI agent is working in this repository:
+
+1. Always create PRs for changes. Do not push directly to `main`.
+2. Run available validation before requesting review: `sh tests/runner.sh` and `pike bin/pmp.pike --help`.
+3. Read before editing — context above and below a match determines the correct edit.
+4. Check references before renaming — use `grep` or language-server tools to find every consumer.
+5. One concern per change. A PR should address one issue or feature.
+6. Update documentation in the same change as code behavior changes.
+7. Preserve invariants. Follow existing patterns (error handling, logging, module structure).
+8. Clean up after yourself. Remove unused imports, dead code, temporary files.
+
+## Template version
+
+This project uses conventions from `ai-project-template` v0.2.0. See [`.template-version`](.template-version).

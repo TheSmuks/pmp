@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Adopted ai-project-template v0.2.0 — added `.editorconfig`, `.gitattributes`, `.architecture.yml`, issue/PR templates, CODEOWNERS, SECURITY.md, dependabot.yml, commit-lint/changelog-check/blob-size-policy workflows, `.omp/` agent definitions, `docs/ci.md`, and ADR 0001
+- Restructured test suite — split `tests/test_install.sh` (803 lines, 97 tests) into a test runner (`tests/runner.sh`) + 25 individual test files with numeric sort ordering
+- Added `tests/helpers.sh` with extracted assertion functions and setup utilities
+- `tests/test_install.sh` is now a thin shim that delegates to `tests/runner.sh`
+
+### Changed
+- Updated `.gitignore` with IDE/OS/environment patterns from template
+- Updated `CONTRIBUTING.md` with branch naming conventions and expanded guidelines
+- Updated `README.md` with changelog badge
+- Updated `AGENTS.md` with CI workflow table, agent behavior section, and template version tracking
+
 ## [0.3.0] - 2026-04-21
 
 ### Added

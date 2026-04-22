@@ -54,3 +54,10 @@ string compute_sha256(string path) {
     if (!data) return "unknown";
     return String.string2hex(Crypto.SHA256.hash(data));
 }
+
+//! Strip .pmod suffix from a module name for display purposes.
+string display_name(string name) {
+    if (has_suffix(name, ".pmod"))
+        return name[..<5];
+    return name;
+}

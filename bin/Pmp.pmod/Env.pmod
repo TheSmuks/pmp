@@ -207,15 +207,24 @@ void cmd_resolve(array(string) args, mapping ctx) {
         string name = rest[0];
         string project_root = find_project_root() || getcwd();
         string mod_dir = combine_path(project_root, "modules", name);
+        // Also try .pmod-suffixed symlink
+        string mod_dir_pmod = combine_path(project_root, "modules", name + ".pmod");
         if (Stdio.exist(mod_dir)) {
             string target = mod_dir;
             mixed err = catch { target = System.readlink(mod_dir) || mod_dir; };
             write(target + "\n");
+        } else if (Stdio.exist(mod_dir_pmod)) {
+            string target = mod_dir_pmod;
+            mixed err = catch { target = System.readlink(mod_dir_pmod) || mod_dir_pmod; };
+            write(target + "\n");
         } else {
             // Check global
             string global_mod = combine_path(ctx["global_dir"], name);
+            string global_pmod = combine_path(ctx["global_dir"], name + ".pmod");
             if (Stdio.exist(global_mod)) {
                 write(global_mod + "\n");
+            } else if (Stdio.exist(global_pmod)) {
+                write(global_pmod + "\n");
             } else {
                 die("module not found: " + name);
             }

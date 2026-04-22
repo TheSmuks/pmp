@@ -4,6 +4,7 @@
 [![Release](https://github.com/TheSmuks/pmp/actions/workflows/release.yml/badge.svg)](https://github.com/TheSmuks/pmp/actions/workflows/release.yml)
 [![Latest Release](https://img.shields.io/github/v/release/TheSmuks/pmp?label=version&color=brightgreen)](https://github.com/TheSmuks/pmp/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Changelog](https://img.shields.io/badge/changelog-Keep%20a%20Changelog-blue.svg)](./CHANGELOG.md)
 
 Install, version, and resolve dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths.
 

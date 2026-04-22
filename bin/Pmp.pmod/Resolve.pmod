@@ -3,22 +3,36 @@ inherit .Http;
 inherit .Semver;
 
 //! Get latest tag from GitHub — returns highest semver, not most-recently-created.
+//! Paginates through all tags (GitHub caps at 100 per page).
 array(string) latest_tag_github(string repo_path, void|string version) {
-    // Fetch up to 100 tags (most repos have fewer than 100)
-    string url = "https://api.github.com/repos/" + repo_path
-                 + "/tags?per_page=100";
-    string body = http_get(url, github_auth_headers(), version);
-
-    mixed data;
-    mixed err = catch { data = Standards.JSON.decode(body); };
-    if (err || !arrayp(data) || sizeof(data) == 0)
-        return ({ "", "" });
-
-    // Build tag list and sort by semver (highest first)
     array(string) tag_names = ({});
-    foreach (data; ; mapping entry)
-        if (entry->name)
-            tag_names += ({ entry->name });
+    array(mapping) all_entries = ({});
+
+    // Paginate through all tags
+    int page = 1;
+    while (1) {
+        string url = "https://api.github.com/repos/" + repo_path
+                     + "/tags?per_page=100&page=" + page;
+        string body = http_get(url, github_auth_headers(), version);
+
+        mixed data;
+        mixed err = catch { data = Standards.JSON.decode(body); };
+        if (err || !arrayp(data) || sizeof(data) == 0)
+            break;  // No more pages or error
+
+        foreach (data; ; mapping entry)
+            if (entry->name) {
+                tag_names += ({ entry->name });
+                all_entries += ({ entry });
+            }
+
+        if (sizeof(data) < 100)
+            break;  // Last page
+        page++;
+    }
+
+    if (sizeof(tag_names) == 0)
+        return ({ "", "" });
 
     tag_names = sort_tags_semver(tag_names);
     if (sizeof(tag_names) == 0)
@@ -28,7 +42,7 @@ array(string) latest_tag_github(string repo_path, void|string version) {
 
     // Find the entry for this tag to get its SHA
     string sha = "";
-    foreach (data; ; mapping entry) {
+    foreach (all_entries; ; mapping entry) {
         if (entry->name == tag) {
             if (mappingp(entry->commit))
                 sha = entry->commit->sha || "";
@@ -41,33 +55,48 @@ array(string) latest_tag_github(string repo_path, void|string version) {
         array(int|string) result = http_get_safe(
             "https://api.github.com/repos/" + repo_path + "/commits/" + tag,
             github_auth_headers(), version);
-        if (result[0] == 200) {
-            mixed commit_data;
-            err = catch { commit_data = Standards.JSON.decode(result[1]); };
-            if (!err && mappingp(commit_data))
-                sha = commit_data->sha || "";
-        }
+            if (result[0] == 200) {
+                mixed commit_data;
+                mixed fallback_err = catch { commit_data = Standards.JSON.decode(result[1]); };
+                if (!fallback_err && mappingp(commit_data))
+                    sha = commit_data->sha || "";
+            }
     }
     return ({ tag, sha || "unknown" });
 }
 
 //! Get latest tag from GitLab — returns highest semver, not most-recently-created.
+//! Paginates through all tags (GitLab caps at 100 per page).
 array(string) latest_tag_gitlab(string repo_path, void|string version) {
     string encoded = replace(repo_path, "/", "%2F");
-    string url = "https://gitlab.com/api/v4/projects/"
-                 + encoded + "/repository/tags?per_page=100";
-    string body = http_get(url, 0, version);
-
-    mixed data;
-    mixed err = catch { data = Standards.JSON.decode(body); };
-    if (err || !arrayp(data) || sizeof(data) == 0)
-        return ({ "", "" });
-
-    // Build tag list and sort by semver (highest first)
     array(string) tag_names = ({});
-    foreach (data; ; mapping entry)
-        if (entry->name)
-            tag_names += ({ entry->name });
+    array(mapping) all_entries = ({});
+
+    // Paginate through all tags
+    int page = 1;
+    while (1) {
+        string url = "https://gitlab.com/api/v4/projects/"
+                     + encoded + "/repository/tags?per_page=100&page=" + page;
+        string body = http_get(url, 0, version);
+
+        mixed data;
+        mixed err = catch { data = Standards.JSON.decode(body); };
+        if (err || !arrayp(data) || sizeof(data) == 0)
+            break;
+
+        foreach (data; ; mapping entry)
+            if (entry->name) {
+                tag_names += ({ entry->name });
+                all_entries += ({ entry });
+            }
+
+        if (sizeof(data) < 100)
+            break;
+        page++;
+    }
+
+    if (sizeof(tag_names) == 0)
+        return ({ "", "" });
 
     tag_names = sort_tags_semver(tag_names);
     if (sizeof(tag_names) == 0)
@@ -77,7 +106,7 @@ array(string) latest_tag_gitlab(string repo_path, void|string version) {
 
     // Find the entry for this tag to get its SHA
     string sha = "";
-    foreach (data; ; mapping entry) {
+    foreach (all_entries; ; mapping entry) {
         if (entry->name == tag) {
             if (mappingp(entry->commit))
                 sha = entry->commit->id || "";

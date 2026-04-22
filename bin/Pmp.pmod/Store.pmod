@@ -18,38 +18,17 @@ string store_entry_name(string src, string tag, string sha) {
 }
 
 //! Extract a .tar.gz file to a directory.
-//! Uses gunzip + Filesystem.Tar (Gz not available in all builds).
+//! Uses system tar for reliable extraction across platforms.
 string extract_targz(string tarball_path, string dest_dir) {
-    need_cmd("gunzip");
-
-    // Decompress to temp .tar file
-    string tmp_tar = String.trim_all_whites(Process.popen("mktemp /tmp/pmp_tar_XXXXXX"));
-    object sout = Stdio.File(tmp_tar, "wct");
-    object proc = Process.create_process(
-        ({"gunzip", "-c", tarball_path}),
-        (["stdout": sout]));
-    sout->close();
-    int exitcode = proc->wait();
-
-    if (exitcode != 0) {
-        rm(tmp_tar);
-        die("gunzip failed with exit code " + exitcode);
-    }
-
-    // Extract using Filesystem.Tar
-    object tar;
-    mixed err = catch { tar = Filesystem.Tar(tmp_tar); };
-    if (err || !tar || !sizeof(tar->tar->entries)) {
-        rm(tmp_tar);
-        die("failed to extract archive (not a valid tar)");
-    }
-
     Stdio.mkdirhier(dest_dir);
-    tar->tar->extract("/", dest_dir);
+
+    // Extract using system tar (more reliable than Filesystem.Tar across builds)
+    mapping r = Process.run(({"tar", "xzf", tarball_path, "-C", dest_dir}));
+    if (r->exitcode != 0)
+        die("failed to extract archive: " + (r->stderr || "unknown error"));
 
     // Find the top-level directory in the extracted content
     array(string) entries = get_dir(dest_dir);
-    rm(tmp_tar);
 
     if (!entries || sizeof(entries) == 0)
         die("empty archive");
@@ -170,6 +149,11 @@ mapping store_install_github(string store_dir, string repo_path, string ver,
         Stdio.recursive_rm(tmpdir);
         Stdio.recursive_rm(entry_dir);
         die("failed to move to store: " + (mv_r->stderr || ""));
+    }
+    if (!Stdio.is_dir(entry_dir)) {
+        Stdio.recursive_rm(tmpdir);
+        Stdio.recursive_rm(entry_dir);
+        die("store entry is not a directory after mv: " + entry_dir);
     }
     Stdio.recursive_rm(tmpdir);
 

@@ -1,33 +1,60 @@
 inherit .Helpers;
 
+//! Normalize a source URL: strip URL schemes (https://, http://, git://, ssh://)
+//! and trailing .git suffix. Returns the clean host/path form.
+string _normalize_source(string src) {
+    // Strip scheme
+    if (has_prefix(src, "https://")) src = src[8..];
+    else if (has_prefix(src, "http://")) src = src[7..];
+    else if (has_prefix(src, "git://")) src = src[6..];
+    else if (has_prefix(src, "ssh://")) src = src[6..];
+
+    // Strip credentials user@host
+    int at_pos = search(src, "@");
+    if (at_pos >= 0 && !has_prefix(src, "./") && !has_prefix(src, "/"))
+        src = src[at_pos + 1..];
+
+    // Strip trailing .git
+    if (has_suffix(src, ".git")) src = src[..<4];
+
+    return src;
+}
+
+//! Validate that a source URL has at least domain/owner/repo structure.
+void _validate_source_format(string original, string clean) {
+    array parts = clean / "/";
+    // Filter out empty segments from double slashes
+    parts = filter(parts, lambda(string s) { return sizeof(s) > 0; });
+    if (sizeof(parts) < 3)
+        die("invalid source format: " + original
+            + " (expected domain/owner/repo)");
+    string domain = parts[0];
+    if (!has_value(domain, ".") && !has_value(domain, ":"))
+        die("invalid source domain: " + domain
+            + " (must contain a dot, e.g. github.com/owner/repo)");
+}
+
 //! Classify a source URL as "local", "github", "gitlab", or "selfhosted".
 string detect_source_type(string src) {
     if (has_prefix(src, "./") || has_prefix(src, "/"))
         return "local";
 
-    string clean = (src / "#")[0];
+    string clean = _normalize_source((src / "#")[0]);
+    _validate_source_format(src, clean);
     string domain = (clean / "/")[0];
 
-    if (sizeof(clean / "/") >= 2 && has_value(domain, ".")) {
-        switch (domain) {
-            case "github.com":  return "github";
-            case "gitlab.com":  return "gitlab";
-            default:            return "selfhosted";
-        }
+    switch (domain) {
+        case "github.com":  return "github";
+        case "gitlab.com":  return "gitlab";
+        default:            return "selfhosted";
     }
-
-    if (has_value(clean, "/"))
-        die("unsupported source format: " + src +
-            " (use full URL like github.com/owner/repo)");
-
-    die("registry not supported yet — use full URL "
-        "(e.g. github.com/owner/repo)");
 }
 
 //! Extract module name from last path segment.
 string source_to_name(string src) {
-    string clean = (src / "#")[0];
-    return (clean / "/")[-1];
+    string clean = _normalize_source((src / "#")[0]);
+    array parts = clean / "/";
+    return parts[-1];
 }
 
 //! Extract version from #suffix. Empty if none.
@@ -37,22 +64,20 @@ string source_to_version(string src) {
     return "";
 }
 
-//! Strip #version from source.
+//! Normalize source and strip #version. Used for lockfile storage.
 string source_strip_version(string src) {
-    return (src / "#")[0];
+    return _normalize_source((src / "#")[0]);
 }
 
-//! Extract domain from a host URL.
+//! Extract domain from a normalized source URL.
 string source_to_domain(string src) {
-    string clean = (src / "#")[0];
+    string clean = _normalize_source((src / "#")[0]);
     return (clean / "/")[0];
 }
 
-//! Extract owner/repo path from host URL (after domain).
+//! Extract owner/repo path from a normalized source URL (after domain).
 string source_to_repo_path(string src) {
-    string clean = (src / "#")[0];
-    string domain = (clean / "/")[0];
-    // Everything after domain/
+    string clean = _normalize_source((src / "#")[0]);
     array parts = clean / "/";
     if (sizeof(parts) < 3) return "";
     return parts[1..] * "/";

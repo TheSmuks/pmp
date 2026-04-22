@@ -2,7 +2,7 @@
 
 ## Project overview
 
-pmp (Pike Module Package Manager) installs, versions, and resolves dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths. The architecture is a modular split: `bin/pmp.pike` (~185 lines, entry point with config init and command dispatch) and `bin/Pmp.pmod/` (14 sub-modules re-exported via `module.pmod`), invoked via a POSIX sh shim `bin/pmp`.
+pmp (Pike Module Package Manager) installs, versions, and resolves dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths. The architecture is a modular split: `bin/pmp.pike` (~200 lines, entry point with config init, error handling, and command dispatch) and `bin/Pmp.pmod/` (15 sub-modules re-exported via `module.pmod`), invoked via a POSIX sh shim `bin/pmp`.
 
 ## Setup commands
 
@@ -11,7 +11,7 @@ pmp (Pike Module Package Manager) installs, versions, and resolves dependencies 
 - Verify syntax: `pike bin/pmp.pike --help`
 - Check version: `pike bin/pmp.pike version` (or `sh bin/pmp version`)
 
-Expected result: 114 passed, 0 failed, exit code 0 (shell tests); 81 passed for `sh tests/pike_tests.sh`.
+Expected result: 119 passed, 0 failed, exit code 0 (shell tests via `sh tests/runner.sh`); 81 passed for `sh tests/pike_tests.sh`.
 
 ## Architecture
 
@@ -19,22 +19,22 @@ Expected result: 114 passed, 0 failed, exit code 0 (shell tests); 81 passed for 
 bin/pmp                POSIX sh shim — sets PIKE_MODULE_PATH, delegates to pmp.pike
 bin/pmp.pike           Entry point (~190 lines) — config init, context mapping, command dispatch
 bin/Pmp.pmod/          Module library (14 modules)
-  Config.pmod          PMP_VERSION constant
-  Helpers.pmod         die, info, warn, need_cmd, json_field, find_project_root, compute_sha256
+  Config.pmod          PMP_VERSION constant; EXIT_OK/EXIT_ERROR/EXIT_INTERNAL exit codes; PMP_VERBOSE/PMP_QUIET variables
+  Helpers.pmod         die, die_internal, info, warn, debug, need_cmd, json_field, find_project_root, compute_sha256 (streaming)
   Source.pmod          detect_source_type, source_to_name/version/domain/repo_path/strip_version
-  Http.pmod            http_get, http_get_safe, github_auth_headers
+  Http.pmod            http_get, http_get_safe, github_auth_headers; retry with jitter, Retry-After, split connect/read timeouts, body size limit
   Resolve.pmod         latest_tag_*, resolve_commit_sha
-  Store.pmod           store_entry_name, extract_targz, write_meta, compute_dir_hash, read_stored_hash, store_install_*
-  Lockfile.pmod        lockfile_add_entry, write_lockfile, read_lockfile, lockfile_has_dep, merge_lock_entries
+  Store.pmod           store_entry_name, extract_targz, write_meta, compute_dir_hash, read_stored_hash, store_install_*; O_EXCL lock, Pike mv()
+  Lockfile.pmod        lockfile_add_entry, write_lockfile, read_lockfile, lockfile_has_dep, merge_lock_entries; LOCKFILE_VERSION, tab/newline validation
   Manifest.pmod        add_to_manifest, parse_deps
-  Validate.pmod        validate_manifests, strip_comments_and_strings, init_std_libs
+  Project.pmod         cmd_init (write verification), cmd_list (column headers), cmd_clean (summary), cmd_remove (path traversal protection)
   Semver.pmod          parse_semver, compare_semver, sort_tags_semver, classify_bump
   Install.pmod         install_one, cmd_install, cmd_install_all, cmd_install_source, cmd_update, cmd_lock, cmd_rollback, cmd_changelog, print_update_summary
   StoreCmd.pmod        cmd_store (status + prune)
   Project.pmod         cmd_init, cmd_list, cmd_clean, cmd_remove
-  Env.pmod             cmd_env, build_paths, resolve_local_dep_paths, cmd_run
-  module.pmod          Re-exports all 14 sub-modules via inherit
-tests/test_install.sh  Test suite (pure sh, 114 tests)
+  Env.pmod             cmd_env, build_paths, cmd_run, cmd_resolve (Pike-native _has_headers)
+  module.pmod          Re-exports all sub-modules (15 total) via inherit
+tests/test_install.sh  Test suite (pure sh, delegates to runner.sh)
 install.sh             curl-pipe-sh installer (POSIX sh)
 README.md              User documentation
 ```
@@ -52,7 +52,7 @@ Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 ### Key functions
 
 **In pmp.pike (dispatcher):**
-- `main()` — config init, builds context mapping, Arg.parse, dispatches to command modules
+- `main()` — config init, builds context mapping, Arg.parse, dispatches to command modules. Top-level catch for unhandled exceptions (exit 2).
 - `print_help()` — usage text
 - `cmd_version()` — version output
 - `cmd_self_update()` — update pmp to the latest version (git fetch + tag checkout)

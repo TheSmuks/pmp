@@ -7,10 +7,8 @@ inherit .Resolve;
 string store_entry_name(string src, string tag, string sha) {
     string clean = (src / "#")[0];
     // Convert / to -, remove leading/trailing -
-    string slug = replace(clean, "/", "-");
-    slug = String.Buffer()->add(
-        replace(sprintf("%s", slug),
-                (["//": "-", "--": "-"])))->get();
+    // Convert / to -, collapse repeated dashes
+    string slug = replace(replace(clean, "/", "-"), "--", "-");
     // Trim leading/trailing dashes
     while (has_prefix(slug, "-")) slug = slug[1..];
     while (has_suffix(slug, "-")) slug = slug[..<1];

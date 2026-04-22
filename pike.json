@@ -4,6 +4,6 @@
   "description": "Pike Module Package Manager",
   "source": "github.com/TheSmuks/pmp",
   "dependencies": {
-    "PUnit": "github.com/TheSmuks/punit-tests"
+    "PUnit": "github.com/TheSmuks/punit-tests#v1.2.0"
   }
 }

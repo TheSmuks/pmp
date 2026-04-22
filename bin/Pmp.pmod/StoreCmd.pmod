@@ -14,7 +14,8 @@ void cmd_store(array(string) args, mapping ctx) {
                 info("no store directory");
                 return;
             }
-            int pruned = 0;
+            int force = opts->force || opts->f || 0;
+            array(string) unused = ({});
             foreach (get_dir(ctx["store_dir"]) || ({}); ; string ename) {
                 string entry = combine_path(ctx["store_dir"], ename);
                 if (!Stdio.is_dir(entry)) continue;
@@ -32,20 +33,35 @@ void cmd_store(array(string) args, mapping ctx) {
                             }
                         };
                     }
-                    if (!found) {
-                        // Not linked from this project —
-                        // but could be from others
-                        info("unused store entry: " + ename);
-                        pruned = 1;
-                    }
+                    if (!found)
+                        unused += ({ ename });
                 } else {
                     // No local modules/ — every store entry is unused
                     // from this project (but could be from others)
-                    info("unused store entry: " + ename);
-                    pruned = 1;
+                    unused += ({ ename });
                 }
             }
-            if (!pruned) info("no unused entries found");
+
+            if (sizeof(unused) == 0) {
+                info("no unused entries found");
+                return;
+            }
+
+            // Report unused entries
+            foreach (unused; ; string ename)
+                info("unused store entry: " + ename);
+
+            if (force) {
+                foreach (unused; ; string ename) {
+                    string entry = combine_path(ctx["store_dir"], ename);
+                    Stdio.recursive_rm(entry);
+                    info("removed " + ename);
+                }
+                info(sprintf("pruned %d entries", sizeof(unused)));
+            } else {
+                info(sprintf("%d unused entries (use --force to delete)",
+                    sizeof(unused)));
+            }
             break;
         }
         case "": {

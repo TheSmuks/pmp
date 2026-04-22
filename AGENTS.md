@@ -2,7 +2,7 @@
 
 ## Project overview
 
-pmp (Pike Module Package Manager) installs, versions, and resolves dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths. The architecture is a modular split: `bin/pmp.pike` (~110 lines, entry point with config init and command dispatch) and `bin/Pmp.pmod/` (14 modules — 10 stateless pure-function libraries + 4 stateful command modules), invoked via a POSIX sh shim `bin/pmp`.
+pmp (Pike Module Package Manager) installs, versions, and resolves dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths. The architecture is a modular split: `bin/pmp.pike` (~185 lines, entry point with config init and command dispatch) and `bin/Pmp.pmod/` (14 sub-modules re-exported via `module.pmod`), invoked via a POSIX sh shim `bin/pmp`.
 
 ## Setup commands
 
@@ -11,7 +11,7 @@ pmp (Pike Module Package Manager) installs, versions, and resolves dependencies 
 - Verify syntax: `pike bin/pmp.pike --help`
 - Check version: `pike bin/pmp.pike version` (or `sh bin/pmp version`)
 
-Expected result: 97 passed, 0 failed, exit code 0.
+Expected result: 114 passed, 0 failed, exit code 0 (shell tests); 81 passed for `sh tests/pike_tests.sh`.
 
 ## Architecture
 
@@ -33,8 +33,8 @@ bin/Pmp.pmod/          Module library (14 modules)
   StoreCmd.pmod        cmd_store (status + prune)
   Project.pmod         cmd_init, cmd_list, cmd_clean, cmd_remove
   Env.pmod             cmd_env, build_paths, resolve_local_dep_paths, cmd_run
-  module.pmod          Re-exports all sub-modules via inherit
-tests/test_install.sh  Test suite (pure sh, 97 tests)
+  module.pmod          Re-exports all 14 sub-modules via inherit
+tests/test_install.sh  Test suite (pure sh, 114 tests)
 install.sh             curl-pipe-sh installer (POSIX sh)
 README.md              User documentation
 ```
@@ -127,7 +127,7 @@ Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 - Uses `assert`, `assert_exists`, `assert_not_exists`, `assert_output_contains` helpers
 - Tests create temp dirs and clean up on exit
 - Tests that need the store back up/restore `~/.pike/store/`
-- Every change must pass all 97 tests
+- Every change must pass all 114 shell tests and 81 Pike unit tests
 
 ## Commit conventions
 
@@ -155,7 +155,7 @@ Doc-only changes do NOT trigger this checklist.
 ## PR instructions
 
 - Title format: descriptive summary of the change
-- Run `sh tests/test_install.sh` or `sh tests/runner.sh` before committing — all 97 tests must pass
+- Run `sh tests/test_install.sh` or `sh tests/runner.sh` before committing — all 114 tests must pass; also run `sh tests/pike_tests.sh`
 - If adding new features, add corresponding test cases
 
 

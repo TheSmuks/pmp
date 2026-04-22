@@ -23,7 +23,18 @@ array(array(string)) merge_lock_entries(array(array(string)) existing,
 }
 
 //! Write lockfile entries to disk.
+//! Validates that no field contains tab characters (would corrupt the format).
 void write_lockfile(string lockfile_path, array(array(string)) entries) {
+    // Validate entries — no field may contain a tab
+    foreach (entries; ; array(string) entry) {
+        foreach (entry; int i; string field) {
+            if (search(field, "\t") >= 0) {
+                werror("pmp: lockfile field contains tab character: " + field + "\n");
+                exit(1);
+            }
+        }
+    }
+
     // Backup existing lockfile before overwriting
     if (Stdio.exist(lockfile_path)) {
         string existing = Stdio.read_file(lockfile_path);

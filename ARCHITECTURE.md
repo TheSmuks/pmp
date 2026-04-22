@@ -4,19 +4,19 @@
 
 - **Name**: pmp (Pike Module Package Manager)
 - **Repository**: github.com/TheSmuks/pmp
-- **Version**: 0.2.0
-- **Date**: 2026-04-20
+- **Version**: 0.3.0
+- **Date**: 2026-04-21
 
 ## Project Structure
 
 bin/pmp                POSIX sh shim — delegates to bin/pmp.pike, sets PIKE_MODULE_PATH
-bin/pmp.pike           Entry point (~480 lines) — mutable state + command dispatch
-bin/Pmp.pmod/          Stateless module library (10 files)
+bin/pmp.pike           Entry point (~185 lines) — config init, command dispatch
+bin/Pmp.pmod/          Stateless module library (15 modules: 14 sub-modules + module.pmod)
   Config.pmod          PMP_VERSION constant
   Helpers.pmod         die, info, warn, need_cmd, json_field, find_project_root, compute_sha256
   Source.pmod          detect_source_type, source_to_name/version/domain/repo_path/strip_version
-  Http.pmod            http_get, http_get_safe, github_auth_headers
-  Resolve.pmod         latest_tag_*, resolve_commit_sha
+  Http.pmod            http_get, http_get_safe, github_auth_headers, redirect protection (_url_host, _redirect_allowed_by_host)
+  Resolve.pmod         latest_tag_*, resolve_commit_sha (with pagination)
   Store.pmod           store_entry_name, extract_targz, write_meta, compute_dir_hash, store_install_*
   Lockfile.pmod        lockfile_add_entry, write_lockfile, read_lockfile, lockfile_has_dep
   Manifest.pmod        add_to_manifest, parse_deps
@@ -62,18 +62,18 @@ User → pmp CLI (bin/pmp shim → bin/pmp.pike)
   ├─ lock         resolve + write lockfile without installing
   ├─ store        show entries / prune unused
   ├─ list         show installed modules with versions
+  ├─ remove       remove a module and its store entry
   ├─ clean        remove ./modules/ (keeps store)
   ├─ env          create .pike-env/ virtual environment (dynamic wrapper)
   ├─ resolve      print PIKE_MODULE_PATH/PIKE_INCLUDE_PATH or resolve a module name
   ├─ run          execute script with PIKE_MODULE_PATH
+  ├─ self-update  update pmp to the latest version
   └─ version      show version
 ```
 
 ## Core Components
 
-### bin/pmp.pike
-
-### bin/pmp.pike (entry point, ~480 lines)
+### bin/pmp.pike (entry point, ~185 lines)
 
 Holds all mutable state (`lock_entries`, `visited`, `std_libs`, config paths) and command dispatch. All pure functions are imported from `Pmp.pmod/`.
 
@@ -90,8 +90,8 @@ All modules are pure functions — no mutable global state. State is passed as e
 - **Config.pmod** — `PMP_VERSION` constant
 - **Helpers.pmod** — `die`, `info`, `warn`, `need_cmd`, `json_field`, `find_project_root`, `compute_sha256`
 - **Source.pmod** — `detect_source_type`, `source_to_name`/`version`/`domain`/`repo_path`/`strip_version`
-- **Http.pmod** — `http_get`, `http_get_safe`, `github_auth_headers`
-- **Resolve.pmod** — `latest_tag_github`/`gitlab`/`selfhosted`, `resolve_commit_sha`
+- **Http.pmod** — `http_get`, `http_get_safe`, `github_auth_headers`, redirect protection (`_url_host`, `_redirect_allowed_by_host`)
+- **Resolve.pmod** — `latest_tag_github`/`gitlab`/`selfhosted`, `resolve_commit_sha` (with pagination)
 - **Store.pmod** — `store_entry_name`, `extract_targz`, `write_meta`, `compute_dir_hash`, `store_install_*` (return result mappings)
 - **Lockfile.pmod** — `lockfile_add_entry` (returns new array), `write_lockfile`, `read_lockfile`, `lockfile_has_dep`
 - **Manifest.pmod** — `add_to_manifest`, `parse_deps`
@@ -101,6 +101,10 @@ All modules are pure functions — no mutable global state. State is passed as e
   - Recurses into all nested directories (not just `.pmod`-suffixed)
   - Builds `std_libs` dynamically from the running Pike's module path
 - **Semver.pmod** — `parse_semver`, `compare_semver`, `sort_tags_semver`, `classify_bump`
+- **Install.pmod** — `install_one`, `cmd_install`, `cmd_install_all`, `cmd_install_source`, `cmd_update`, `cmd_lock`, `cmd_rollback`, `cmd_changelog`, `print_update_summary`
+- **Project.pmod** — `cmd_init`, `cmd_list`, `cmd_clean`, `cmd_remove`
+- **StoreCmd.pmod** — `cmd_store` (status + prune)
+- **Env.pmod** — `cmd_env`, `build_paths`, `cmd_run`, `cmd_resolve`
 
 ### Content-addressable store
 
@@ -169,7 +173,7 @@ Runs on `ubuntu-latest` with 3 steps:
 
 ### Local testing
 
-- `sh tests/test_install.sh` — 91 tests
+- `sh tests/test_install.sh` — 114 shell tests + 81 Pike unit tests (`tests/pike_tests.sh`)
 
 ### Test infrastructure
 

@@ -23,7 +23,7 @@ wget -qO- https://github.com/TheSmuks/pmp/install.sh | sh
 Pin to a specific version:
 
 ```bash
-curl -LsSf https://github.com/TheSmuks/pmp/install.sh | env PMP_VERSION=v0.2.0 sh
+curl -LsSf https://github.com/TheSmuks/pmp/install.sh | env PMP_VERSION=v0.3.0 sh
 ```
 
 ### Environment variables
@@ -52,6 +52,7 @@ curl -LsSf https://github.com/TheSmuks/pmp/install.sh | sh
 
 ```bash
 rm -rf ~/.pmp
+rm -rf ~/.pike/store
 ```
 
 Remove the PATH line from your shell rc (`~/.bashrc`, `~/.zshrc`, or `~/.profile`):
@@ -157,8 +158,7 @@ pmp resolves transitive dependencies recursively. The lockfile captures the full
 
 After installing, pmp scans each package's `.pike`/`.pmod` files for `import` statements and warns about imports that reference modules not declared in the package's `pike.json`. This encourages explicit dependency declarations.
 
-Validation is warn-only in v0.2.0 — it will not block installs.
-
+Validation is warn-only — it will not block installs.
 ## pike.json
 
 Project manifest in your project root:

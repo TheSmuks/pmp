@@ -107,12 +107,12 @@ void cmd_self_update(mapping ctx) {
     }
 
     string current = PMP_VERSION;
-    // Strip 'v' prefix for comparison
-    string current_clean = has_prefix(current, "v") ? current[1..] : current;
-    string latest_clean = has_prefix(latest_tag, "v") ? latest_tag[1..] : latest_tag;
+    mapping cur_v = parse_semver(current);
+    mapping lat_v = parse_semver(latest_tag);
 
-    if (current_clean == latest_clean) {
-        info("pmp is up to date (v" + current_clean + ")");
+    if (cur_v && lat_v && compare_semver(cur_v, lat_v) >= 0) {
+        string cur_clean = has_prefix(current, "v") ? current[1..] : current;
+        info("pmp is up to date (v" + cur_clean + ")");
         return;
     }
 
@@ -122,7 +122,7 @@ void cmd_self_update(mapping ctx) {
         die("failed to checkout " + latest_tag);
     }
 
-    info("updated pmp v" + current_clean + " → v" + latest_clean);
+    info("updated pmp " + current + " → " + latest_tag);
 }
 
 int main(int argc, array(string) argv) {

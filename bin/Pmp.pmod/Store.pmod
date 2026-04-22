@@ -55,16 +55,32 @@ void write_meta(string entry_dir, string source, string tag,
     Stdio.write_file(combine_path(entry_dir, ".pmp-meta"), meta);
 }
 
-//! Compute a content hash from a directory by hashing sorted file contents.
-string compute_dir_hash(string dir) {
-    mapping result = Process.run(
-        ({"find", ".", "-type", "f"}),
-        (["cwd": dir]));
-    if (result->exitcode != 0) return "unknown";
+//! Recursively collect all regular files under a directory.
+//! Returns relative paths sorted lexicographically.
+//! Unlike `find`, this handles filenames with newlines correctly.
+array(string) _collect_files(string base, string rel) {
+    array(string) result = ({});
+    string full = combine_path(base, rel);
+    array(string) entries = get_dir(full) || ({});
+    sort(entries);
+    foreach (entries; ; string name) {
+        // Skip .pmp-meta metadata files
+        if (name == ".pmp-meta") continue;
+        string path = sizeof(rel) > 0 ? rel + "/" + name : name;
+        string abs = combine_path(base, path);
+        if (Stdio.is_dir(abs)) {
+            result += _collect_files(base, path);
+        } else if (Stdio.is_file(abs)) {
+            result += ({ path });
+        }
+    }
+    return result;
+}
 
-    array(string) files = filter(result->stdout / "\n",
-                                 lambda(string f) { return sizeof(f) > 0; });
-    sort(files);
+//! Compute a content hash from a directory by hashing sorted file contents.
+//! Uses Pike directory walk instead of `find` to handle all filenames.
+string compute_dir_hash(string dir) {
+    array(string) files = _collect_files(dir, "");
 
     String.Buffer buf = String.Buffer();
     foreach (files; ; string f) {

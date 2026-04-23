@@ -23,7 +23,9 @@ array(array(string)) merge_lock_entries(array(array(string)) existing,
     foreach (new_entries; ; array(string) e)
         if (sizeof(e[0]))
             by_name[e[0]] = e;
-    return values(by_name);
+    // Return sorted by name for deterministic output
+    array(string) names = sort(indices(by_name));
+    return map(names, lambda(string n) { return by_name[n]; });
 }
 //! Write lockfile entries to disk.
 //! Validates that no field contains tab characters (would corrupt the format).

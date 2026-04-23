@@ -678,7 +678,9 @@ void cmd_rollback(mapping ctx) {
         foreach (get_dir(target) || ({}); ; string name) {
             string full = combine_path(target, name);
             mixed err = catch { string link = System.readlink(full); };
-            if (!err && !prev_names[name]) {
+            // Strip .pmod suffix for comparison with lockfile names
+            string bare = has_suffix(name, ".pmod") ? name[..<5] : name;
+            if (!err && !prev_names[bare] && !prev_names[name]) {
                 rm(full);
                 info("removed " + name + " (not in previous lockfile)");
             }

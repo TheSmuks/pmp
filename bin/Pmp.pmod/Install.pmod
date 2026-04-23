@@ -137,8 +137,7 @@ void install_one(string name, string source, string target,
             }
             if (Stdio.exist(dest)) {
                 // Check version — resolve through symlink to store entry root
-                string resolved = dest;
-                mixed rerr = catch { resolved = System.readlink(dest) || dest; };
+                string resolved = get_symlink_target(dest) || dest;
                 string version_dir = resolved;
                 if (has_suffix(dest, ".pmod") && Stdio.exist(combine_path(resolved, ".."))) {
                     // .pmod symlink points inside store entry; .version is at entry root
@@ -388,8 +387,7 @@ void cmd_install_all(string target, mapping ctx) {
         if (Stdio.is_dir(target)) {
             foreach (get_dir(target) || ({}); ; string name) {
                 string full = combine_path(target, name);
-                mixed err = catch { System.readlink(full); };
-                if (!err) rm(full);
+                if (is_symlink(full)) rm(full);
             }
         }
 
@@ -408,10 +406,8 @@ void cmd_install_all(string target, mapping ctx) {
         if (Stdio.is_dir(target)) {
             foreach (get_dir(target) || ({}); ; string name) {
                 string full = combine_path(target, name);
-                mixed err = catch {
-                    string link = System.readlink(full);
-                    if (stringp(link)) old_symlinks[name] = link;
-                };
+                string link = get_symlink_target(full);
+                if (link) old_symlinks[name] = link;
             }
         }
 
@@ -431,7 +427,7 @@ void cmd_install_all(string target, mapping ctx) {
                 foreach (old_symlinks; string name; string link) {
                     string dest = combine_path(target, name);
                     if (!Stdio.exist(dest))
-                        System.symlink(link, dest);
+                        symlink(link, dest);
                 }
             }
             if (store_locked) store_unlock(ctx["store_dir"]);
@@ -677,10 +673,10 @@ void cmd_rollback(mapping ctx) {
     if (Stdio.is_dir(target)) {
         foreach (get_dir(target) || ({}); ; string name) {
             string full = combine_path(target, name);
-            mixed err = catch { string link = System.readlink(full); };
+            string link = get_symlink_target(full);
             // Strip .pmod suffix for comparison with lockfile names
             string bare = has_suffix(name, ".pmod") ? name[..<5] : name;
-            if (!err && !prev_names[bare] && !prev_names[name]) {
+            if (link && !prev_names[bare] && !prev_names[name]) {
                 rm(full);
                 info("removed " + name + " (not in previous lockfile)");
             }

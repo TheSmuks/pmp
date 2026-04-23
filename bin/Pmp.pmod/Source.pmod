@@ -25,17 +25,17 @@ string _normalize_source(string src) {
 }
 
 //! Validate that a source URL has at least domain/owner/repo structure.
-void _validate_source_format(string original, string clean) {
+//! Returns 1 if valid, 0 if not. Does not call die().
+int(0..1) _validate_source_format(string original, string clean) {
     array parts = clean / "/";
     // Filter out empty segments from double slashes
     parts = filter(parts, lambda(string s) { return sizeof(s) > 0; });
     if (sizeof(parts) < 3)
-        die("invalid source format: " + original
-            + " (expected domain/owner/repo)");
+        return 0;
     string domain = parts[0];
     if (!has_value(domain, ".") && !has_value(domain, ":"))
-        die("invalid source domain: " + domain
-            + " (must contain a dot, e.g. github.com/owner/repo)");
+        return 0;
+    return 1;
 }
 
 //! Classify a source URL as "local", "github", "gitlab", or "selfhosted".
@@ -44,7 +44,7 @@ string detect_source_type(string src) {
         return "local";
 
     string clean = _normalize_source((src / "#")[0]);
-    _validate_source_format(src, clean);
+    if (!_validate_source_format(src, clean)) die("invalid source format: " + src + " (expected domain/owner/repo)");
     string domain = (clean / "/")[0];
 
     switch (domain) {
@@ -55,13 +55,13 @@ string detect_source_type(string src) {
 }
 
 //! Extract module name from last path segment.
+//! Hyphens are replaced with underscores for valid Pike identifiers.
 string source_to_name(string src) {
     string clean = _normalize_source((src / "#")[0]);
-    array parts = clean / "/";
-array(string) clean_parts = parts - ({ "" });
-if (sizeof(clean_parts) < 1)
-    die("cannot extract module name from: " + src);
-return clean_parts[-1];
+    array(string) clean_parts = (clean / "/") - ({ "" });
+    if (sizeof(clean_parts) < 1)
+        die("cannot extract module name from: " + src);
+    return replace(clean_parts[-1], "-", "_");
 }
 
 //! Extract version from #suffix. Empty if none.
@@ -91,7 +91,25 @@ string source_to_domain(string src) {
 //! Extract owner/repo path from a normalized source URL (after domain).
 string source_to_repo_path(string src) {
     string clean = _normalize_source((src / "#")[0]);
+    if (!_validate_source_format(src, clean)) return "";
     array parts = clean / "/";
     if (sizeof(parts) < 3) return "";
     return parts[1..] * "/";
+}
+
+//! Validate a version tag for safe use in filenames.
+//! Allows empty strings and valid semver tags.
+//! Rejects tags containing /, \\, .., ;, or null bytes.
+void validate_version_tag(string tag) {
+    if (sizeof(tag) == 0) return;  // empty is allowed
+    if (search(tag, "/") >= 0)
+        die("invalid version tag: contains '/': " + tag);
+    if (search(tag, "\\") >= 0)
+        die("invalid version tag: contains backslash: " + tag);
+    if (search(tag, "..") >= 0)
+        die("invalid version tag: contains '..': " + tag);
+    if (search(tag, ";") >= 0)
+        die("invalid version tag: contains ';': " + tag);
+    if (search(tag, "\0") >= 0)
+        die("invalid version tag: contains null byte: " + tag);
 }

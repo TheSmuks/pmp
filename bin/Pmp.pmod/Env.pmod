@@ -220,12 +220,10 @@ void cmd_resolve(array(string) args, mapping ctx) {
         // Also try .pmod-suffixed symlink
         string mod_dir_pmod = combine_path(project_root, "modules", name + ".pmod");
         if (Stdio.exist(mod_dir)) {
-            string target = mod_dir;
-            mixed err = catch { target = System.readlink(mod_dir) || mod_dir; };
+            string target = get_symlink_target(mod_dir) || mod_dir;
             write(target + "\n");
         } else if (Stdio.exist(mod_dir_pmod)) {
-            string target = mod_dir_pmod;
-            mixed err = catch { target = System.readlink(mod_dir_pmod) || mod_dir_pmod; };
+            string target = get_symlink_target(mod_dir_pmod) || mod_dir_pmod;
             write(target + "\n");
         } else {
             // Check global

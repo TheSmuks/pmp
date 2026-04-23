@@ -19,12 +19,10 @@ total=0
 cleanup() {
   cd /
   [ -n "$TESTDIR" ] && rm -rf "$TESTDIR"
-  # Restore store if we backed it up
-  if [ -n "$STORE_BACKUP" ] && [ -d "$STORE_BACKUP" ]; then
-    rm -rf "$HOME/.pike/store"
-    mv "$STORE_BACKUP/store" "$HOME/.pike/store"
-    rm -rf "$STORE_BACKUP"
-  fi
+  restore_store
+  for _td in $_TRACKED_TEMPDIRS; do
+    [ -d "$_td" ] && rm -rf "$_td"
+  done
 }
 
 # ── Assertions ────────────────────────────────────────────────────
@@ -84,4 +82,33 @@ assert_output_contains() {
       printf '  FAIL: %s — "%s" not in output\n' "$_desc" "$_needle"
       ;;
   esac
+}
+
+
+# ── Store backup ─────────────────────────────────────────────────
+
+# Backup the real store before tests that might modify it
+backup_store() {
+    if [ -d "${HOME:-/tmp}/.pike/store" ]; then
+        _STORE_BACKUP=$(mktemp -d)
+        cp -a "${HOME:-/tmp}/.pike/store" "$_STORE_BACKUP/store"
+        export _STORE_BACKUP
+    fi
+}
+
+restore_store() {
+    if [ -n "$_STORE_BACKUP" ] && [ -d "$_STORE_BACKUP/store" ]; then
+        rm -rf "${HOME:-/tmp}/.pike/store"
+        mv "$_STORE_BACKUP/store" "${HOME:-/tmp}/.pike/store"
+        rm -rf "$_STORE_BACKUP"
+        unset _STORE_BACKUP
+    fi
+}
+
+# ── Temp dir tracking ──────────────────────────────────────────────
+
+# Track additional temp dirs for cleanup
+track_tempdir() {
+    _TRACKED_TEMPDIRS="$_TRACKED_TEMPDIRS $1"
+    export _TRACKED_TEMPDIRS
 }

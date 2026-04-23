@@ -27,7 +27,7 @@ void cmd_store(array(string) args, mapping ctx) {
                         string link = combine_path(ctx["local_dir"], lname);
                         mixed err = catch {
                             string target = System.readlink(link);
-                            if (target && has_value(target, ename)) {
+                            if (target && (has_suffix(target, "/" + ename) || target == ename)) {
                                 found = 1;
                                 break;
                             }
@@ -36,9 +36,8 @@ void cmd_store(array(string) args, mapping ctx) {
                     if (!found)
                         unused += ({ ename });
                 } else {
-                    // No local modules/ — every store entry is unused
-                    // from this project (but could be from others)
-                    unused += ({ ename });
+                    info("no local modules directory found — skipping prune");
+                    return;
                 }
             }
 

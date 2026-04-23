@@ -87,7 +87,7 @@ void install_one(string name, string source, string target,
                     combine_path(version_dir, ".version");
                 if (Stdio.exist(version_file)) {
                     string existing_ver =
-                        Stdio.read_file(version_file);
+                        String.trim_all_whites(Stdio.read_file(version_file) || "");
                     if (existing_ver == ver) {
                         info("skipping " + name + " " + ver
                              + " (already installed)");
@@ -320,7 +320,7 @@ void cmd_install_all(string target, mapping ctx) {
             die("offline mode: no lockfile found — "
                 + "cannot resolve without network");
         ctx["lock_entries"] = ({});
-        store_lock(ctx["store_dir"]);
+        if (!store_locked) store_lock(ctx["store_dir"]);
         store_locked = 1;
 
         // Atomic install: snapshot existing state, stage new symlinks,
@@ -588,6 +588,7 @@ void cmd_rollback(mapping ctx) {
                 string dest_rm = combine_path(target, rmp->link_name);
                 if (Stdio.exist(dest_rm)) rm(dest_rm);
                 System.symlink(rmp->target, dest_rm);
+                if (dest != dest_rm) System.symlink(rmp->target, dest);
                 info("restored " + ln + " -> " + rmp->target);
             }
         } else {
@@ -633,6 +634,7 @@ void cmd_rollback(mapping ctx) {
             if (Stdio.exist(dest)) rm(dest);
             if (Stdio.exist(dest_rm)) rm(dest_rm);
             System.symlink(rmp->target, dest_rm);
+            if (dest != dest_rm) System.symlink(rmp->target, dest);
             info("restored " + ln + " " + lt);
         }
     }
@@ -758,19 +760,8 @@ void cmd_changelog(array(string) args, mapping ctx) {
             break;
         }
         case "selfhosted": {
-            need_cmd("git");
-            string url = "https://" + domain + "/" + repo_path;
-            // git log --oneline between SHAs (shallow clone won't have history)
-            mapping r = Process.run(({"git", "log", "--oneline",
-                prev_sha + ".." + cur_sha, url}));
-            if (r->exitcode == 0 && sizeof(r->stdout) > 0) {
-                foreach (r->stdout / "\n"; ; string line)
-                    if (sizeof(line) > 0)
-                        write("  " + line + "\n");
-            } else {
-                info("could not fetch commit log (git log failed — "
-                    + "likely no local clone available)");
-            }
+            info("changelog not available for self-hosted sources "
+                + "(no compare API available)");
             break;
         }
     }
@@ -823,7 +814,7 @@ void cmd_outdated(mapping ctx) {
             if (sizeof(latest_tag_str) == 0) {
                 buf->add(sprintf("  %-20s %-12s %-12s %s\n",
                     name, current_tag, "-", "no tags found"));
-                return;
+                continue;
             }
 
             if (latest_tag_str != current_tag && current_tag != "-") {

@@ -232,6 +232,6 @@ void test_classify_unknown_both_unparseable() {
 }
 
 void test_classify_same_version() {
-    // Equal versions return "patch" per implementation
-    assert_equal("patch", classify_bump("v1.0.0", "v1.0.0"));
+    // Equal versions return "none"
+    assert_equal("none", classify_bump("v1.0.0", "v1.0.0"));
 }

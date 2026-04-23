@@ -54,11 +54,7 @@ void write_lockfile(string lockfile_path, array(array(string)) entries) {
                  + "\t" + entry[3] + "\t" + entry[4] + "\n");
     }
     // Atomic write: write to tmp file, then rename via mv() (wraps rename(2))
-    string tmp_path = lockfile_path + ".tmp";
-    Stdio.write_file(tmp_path, buf->get());
-    if (!mv(tmp_path, lockfile_path)) {
-        die("failed to write lockfile", EXIT_INTERNAL);
-    }
+    atomic_write(lockfile_path, buf->get());
 }
 //! Read lockfile entries. Returns array of ({name, source, tag, sha, hash}).
 array(array(string)) read_lockfile(void|string lf) {

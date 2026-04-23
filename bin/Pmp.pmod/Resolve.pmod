@@ -213,6 +213,7 @@ string resolve_commit_sha(string type, string domain,
                 return ((r->stdout / "\t")[0]);
             return 0;
         }
-            die("cannot resolve commit SHA for source type: " + type);
+        default:
+            die("unknown source type: " + type);
     }
 }

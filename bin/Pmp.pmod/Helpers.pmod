@@ -134,3 +134,49 @@ string display_name(string name) {
         return name[..<5];
     return name;
 }
+
+
+//! Atomically create or replace a symlink at dest pointing to target.
+//! Uses temp symlink + rename(2) so there is no window where dest is missing.
+//! rename(2) on POSIX atomically replaces the target path.
+void atomic_symlink(string target, string dest) {
+    // If dest is a directory (not a symlink), remove it before installing.
+    // This handles upgrades from bare directories to proper symlinks.
+    if (Stdio.is_dir(dest)) {
+        mixed readlink_err = catch(System.readlink(dest));
+        if (readlink_err)
+            // Not a symlink — it's a real directory. Remove it.
+            Stdio.recursive_rm(dest);
+    }
+    // Use Crypto.Random for strong uniqueness: pid + timestamp + 64-bit random
+    string tmp_link = dest + ".tmp." + getpid() + "." + time() + "."
+        + String.string2hex(Crypto.Random.random_string(8));
+    // Clean up any leftover temp link from a previous crash
+    if (Stdio.exist(tmp_link)) rm(tmp_link);
+    mixed link_err = catch { System.symlink(target, tmp_link); };
+    if (link_err)
+        die("failed to create symlink: " + tmp_link + " (" + describe_error(link_err) + ")", EXIT_INTERNAL);
+    if (!mv(tmp_link, dest)) {
+        rm(tmp_link);
+        die("failed to install symlink: " + dest, EXIT_INTERNAL);
+    }
+}
+
+//! Atomically write content to a file.
+//! Uses write-to-temp + rename(2) to prevent truncation on crash.
+//! Dies on failure (EXIT_INTERNAL).
+void atomic_write(string path, string content) {
+    string tmp_path = path + ".tmp." + getpid();
+    Stdio.write_file(tmp_path, content);
+    if (!mv(tmp_path, path)) {
+        // mv may fail across filesystems — try copy+rm
+        mixed cp_err = catch {
+            Stdio.write_file(path, Stdio.read_file(tmp_path));
+            rm(tmp_path);
+        };
+        if (cp_err) {
+            rm(tmp_path);
+            die("failed to write file atomically: " + path, EXIT_INTERNAL);
+        }
+    }
+}

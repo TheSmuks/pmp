@@ -130,10 +130,11 @@ string read_stored_hash(string entry_dir) {
 //! Write .pmp-meta file to a store entry.
 void write_meta(string entry_dir, string source, string tag,
                 string sha, string hash) {
+    string meta_path = combine_path(entry_dir, ".pmp-meta");
     string meta = sprintf(
         "source\t%s\ntag\t%s\ncommit_sha\t%s\ncontent_sha256\t%s\ninstalled_at\t%d\n",
         source, tag, sha, hash, time());
-    Stdio.write_file(combine_path(entry_dir, ".pmp-meta"), meta);
+    atomic_write(meta_path, meta);
 }
 
 //! Recursively collect all regular files under a directory.
@@ -217,8 +218,6 @@ mapping store_install_github(string store_dir, string repo_path, string ver,
     string tarball = combine_path(tmpdir, "archive.tar.gz");
     Stdio.write_file(tarball, body);
 
-    string hash = compute_sha256(tarball);
-
     // Extract
     string extracted = extract_targz(tarball,
                                      combine_path(tmpdir, "extract"));
@@ -280,8 +279,6 @@ mapping store_install_gitlab(string store_dir, string repo_path, string ver,
     register_cleanup_dir(tmpdir);
     string tarball = combine_path(tmpdir, "archive.tar.gz");
     Stdio.write_file(tarball, body);
-
-    string hash = compute_sha256(tarball);
 
     string extracted = extract_targz(tarball,
                                      combine_path(tmpdir, "extract"));

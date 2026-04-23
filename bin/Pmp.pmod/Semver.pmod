@@ -147,7 +147,7 @@ array(string) sort_tags_semver(array(string) tags) {
 }
 
 //! Classify the version change from old_tag to new_tag.
-//! Returns: "major", "minor", "patch", "prerelease", "downgrade", or "unknown".
+//! Returns: "none", "major", "minor", "patch", "prerelease", "downgrade", or "unknown".
 string classify_bump(string|void old_tag, string|void new_tag) {
     if (!old_tag || !new_tag) return "unknown";
 
@@ -159,7 +159,7 @@ string classify_bump(string|void old_tag, string|void new_tag) {
     int cmp = compare_semver(old_v, new_v);
 
     if (cmp > 0) return "downgrade";
-    if (cmp == 0) return "patch";
+    if (cmp == 0) return "none";
 
     if (new_v["major"] != old_v["major"]) return "major";
     if (new_v["minor"] != old_v["minor"]) return "minor";

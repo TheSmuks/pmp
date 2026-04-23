@@ -119,6 +119,9 @@ void cmd_remove(array(string) args, mapping ctx) {
     // Path traversal protection
     if (search(name, "/") >= 0 || search(name, "..") >= 0 || search(name, "\0") >= 0)
         die("invalid module name: " + name);
+    string lock_path = combine_path(find_project_root() || getcwd(), ".pmp-install.lock");
+    advisory_lock(lock_path, "project");
+
 
     // --- Validate phase: ensure files are readable before we touch anything ---
     string pike_json_path = ctx["pike_json"];
@@ -216,6 +219,8 @@ void cmd_remove(array(string) args, mapping ctx) {
         if (pike_json_raw) atomic_write(pike_json_path, pike_json_raw);
         if (lockfile_raw) atomic_write(lockfile_path, lockfile_raw);
         werror("pmp: remove failed, rolled back to previous state\n");
+        advisory_unlock(lock_path);
         die(describe_error(err));
     }
+    advisory_unlock(lock_path);
 }

@@ -387,6 +387,10 @@ mapping store_install_selfhosted(string store_dir, string domain,
     register_cleanup_dir(tmpdir);
     string repo_dest = combine_path(tmpdir, "repo");
 
+    // SSRF protection — validate domain before git clone
+    if (_is_private_host(domain))
+        die("blocked: SSRF protection — refusing to clone from private/internal address: " + domain);
+
     info("cloning " + url + " at " + ver);
     mapping r = Process.run(
         ({"git", "clone", "--branch", ver, "--depth", "1",

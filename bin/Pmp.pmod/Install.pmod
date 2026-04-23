@@ -182,7 +182,13 @@ void install_one(string name, string source, string target,
             string entry_full = combine_path(ctx["store_dir"], result->entry);
             // Resolve module name from the package's pike.json if available
             string resolved_name = json_field("name", combine_path(entry_full, "pike.json"))
-                || name;
+            || name;
+            // Sanitize package name from pike.json — prevent path traversal
+            if (search(resolved_name, "/") >= 0 || search(resolved_name, "\\") >= 0
+                || search(resolved_name, "..") >= 0 || sizeof(resolved_name) == 0) {
+                warn("package has invalid name '" + resolved_name + "' in pike.json — using dependency key");
+                resolved_name = name;
+            }
             mapping rmp = resolve_module_path(resolved_name, entry_full);
             dest = combine_path(target, rmp->link_name);
             atomic_symlink(rmp->target, dest);
@@ -428,15 +434,6 @@ void cmd_install_all(string target, mapping ctx) {
     }
 
     if (target == ctx["local_dir"] && install_ok) {
-        // Prune entries for deps no longer in pike.json
-        array(array(string)) deps = parse_deps(ctx["pike_json"]);
-        multiset(string) dep_names = (<>);
-        foreach (deps; ; array(string) d)
-            dep_names[d[0]] = 1;
-        array(array(string)) filtered = ({});
-        foreach (ctx["lock_entries"]; ; array(string) e)
-            if (dep_names[e[0]]) filtered += ({ e });
-        ctx["lock_entries"] = filtered;
         write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
         validate_manifests(ctx["local_dir"], ctx["std_libs"]);
     }
@@ -756,11 +753,12 @@ void cmd_rollback(mapping ctx) {
                 restored_entries += ({ entry });
             }
 
-        write_lockfile(ctx["lockfile_path"], restored_entries);
         }
 
+        write_lockfile(ctx["lockfile_path"], restored_entries);
 
-        info("rollback complete — restored " + sizeof(prev_entries) + " modules");
+
+        info("rollback complete — restored " + sizeof(restored_entries) + " modules");
     };
     project_unlock(find_project_root());
     if (err) throw(err);

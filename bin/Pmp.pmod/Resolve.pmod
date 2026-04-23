@@ -123,6 +123,10 @@ array(string) latest_tag_selfhosted(string domain, string repo_path) {
     need_cmd("git");
     string url = "https://" + domain + "/" + repo_path;
 
+    // SSRF protection — validate domain before git ls-remote
+    if (_is_private_host(domain))
+        die("blocked: SSRF protection — refusing to ls-remote from private/internal address: " + domain);
+
     mapping result = Process.run(({"git", "ls-remote", "--sort=-v:refname", "--tags", url}));
     if (result->exitcode != 0)
         return ({ "", "" });
@@ -199,6 +203,10 @@ string resolve_commit_sha(string type, string domain,
         }
         case "selfhosted": {
             need_cmd("git");
+            // SSRF protection — validate domain before git ls-remote
+            if (_is_private_host(domain))
+                die("blocked: SSRF protection — refusing to ls-remote from private/internal address: " + domain);
+
             mapping r = Process.run(
                 ({"git", "ls-remote", "https://" + domain + "/" + repo_path,
                   "refs/tags/" + tag}));

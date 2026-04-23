@@ -24,6 +24,14 @@ string _url_host(string url) {
     int slash_pos = search(rest, "/");
     if (slash_pos >= 0)
         rest = rest[..slash_pos - 1];
+    // Handle bracketed IPv6: [::1] or [::ffff:10.0.0.1]
+    if (sizeof(rest) > 0 && rest[0] == '[') {
+        int close_bracket = search(rest, "]");
+        if (close_bracket >= 0) {
+            rest = rest[1..close_bracket - 1];
+            return lower_case(rest);
+        }
+    }
     // Strip port
     int colon_pos = search(rest, ":");
     if (colon_pos >= 0)
@@ -36,8 +44,16 @@ string _url_host(string url) {
 int _is_private_host(string host) {
     string h = lower_case(host);
     // Literal loopback / wildcard
-    if (h == "localhost" || h == "127.0.0.1" || h == "::1" || h == "0.0.0.0")
+    if (h == "localhost" || has_prefix(h, "127.") || h == "0.0.0.0")
         return 1;
+    // IPv6 loopback
+    if (h == "::1")
+        return 1;
+    // IPv6-mapped IPv4 private addresses
+    if (has_prefix(h, "::ffff:")) {
+        string ipv4 = h[7..];
+        return _is_private_host(ipv4);
+    }
     // 10.0.0.0/8
     if (has_prefix(h, "10."))
         return 1;
@@ -49,7 +65,6 @@ int _is_private_host(string host) {
         return 1;
     // 172.16.0.0/12 — 172.16.x.x through 172.31.x.x
     if (has_prefix(h, "172.")) {
-        // Extract second octet
         string rest = h[4..];
         int dot = search(rest, ".");
         if (dot > 0) {
@@ -58,12 +73,14 @@ int _is_private_host(string host) {
                 return 1;
         }
     }
-    // IPv6 unique local fc00::/7
-    if (has_prefix(h, "fc") || has_prefix(h, "fd"))
-        return 1;
-    // IPv6 link-local fe80::/10
-    if (has_prefix(h, "fe80"))
-        return 1;
+    // IPv6 unique local fc00::/7 and link-local fe80::/10
+    // Only apply to actual IPv6 addresses (contain colons)
+    if (has_value(h, ":")) {
+        if (has_prefix(h, "fc") || has_prefix(h, "fd"))
+            return 1;
+        if (has_prefix(h, "fe80"))
+            return 1;
+    }
     return 0;
 }
 

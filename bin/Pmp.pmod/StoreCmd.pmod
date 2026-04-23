@@ -97,6 +97,7 @@ void cmd_store(array(string) args, mapping ctx) {
                 return;
             }
             int count = 0;
+            int total_size = 0;
             foreach (get_dir(ctx["store_dir"]) || ({}); ; string ename) {
                 string entry = combine_path(ctx["store_dir"], ename);
                 if (!Stdio.is_dir(entry)) continue;
@@ -112,12 +113,14 @@ void cmd_store(array(string) args, mapping ctx) {
                     }
                 }
 
-                string esize = human_size(dir_size(entry));
+                int esize_bytes = dir_size(entry);
+                total_size += esize_bytes;
+                string esize = human_size(esize_bytes);
 
                 write(sprintf("  %-55s %s\n", ename, esize));
                 count++;
             }
-            string total = human_size(dir_size(ctx["store_dir"]));
+            string total = human_size(total_size);
             write(sprintf("\n  %d entries, %s total\n", count, total));
             break;
         }

@@ -45,7 +45,7 @@ void write_lockfile(string lockfile_path, array(array(string)) entries) {
     // Backup existing lockfile before overwriting
     if (Stdio.exist(lockfile_path)) {
         string existing = Stdio.read_file(lockfile_path);
-        if (existing)
+        if (existing != 0)
             atomic_write(lockfile_path + ".prev", existing);
     }
 
@@ -94,8 +94,16 @@ array(array(string)) read_lockfile(void|string lf) {
     foreach (lines; ; string line) {
         if (has_prefix(line, "#") || sizeof(line) == 0) continue;
         array parts = line / "\t";
-        if (sizeof(parts) >= 5 && sizeof(parts[0]) > 0)
+        if (sizeof(parts) >= 5 && sizeof(parts[0]) > 0) {
+            string name = parts[0];
+            if (sizeof(name) == 0 || search(name, "/") >= 0
+                || search(name, "\\") >= 0 || search(name, "..") >= 0
+                || search(name, "\0") >= 0) {
+                warn("lockfile entry has invalid name field: " + name[..60]);
+                continue;
+            }
             entries += ({ parts[..4] });
+        }
     }
     return entries;
 }

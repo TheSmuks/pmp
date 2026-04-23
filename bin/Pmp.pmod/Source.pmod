@@ -11,8 +11,12 @@ string _normalize_source(string src) {
 
     // Strip credentials user@host
     int at_pos = search(src, "@");
-    if (at_pos >= 0 && !has_prefix(src, "./") && !has_prefix(src, "/"))
-        src = src[at_pos + 1..];
+    if (at_pos > 0) {
+        int first_slash = search(src, "/");
+        if (first_slash < 0 || at_pos < first_slash) {
+            src = src[at_pos + 1..];
+        }
+    }
 
     // Strip trailing .git
     if (has_suffix(src, ".git")) src = src[..<4];
@@ -59,8 +63,12 @@ string source_to_name(string src) {
 
 //! Extract version from #suffix. Empty if none.
 string source_to_version(string src) {
-    if (has_value(src, "#"))
-        return (src / "#")[1..] * "#";
+    if (has_value(src, "#")) {
+        string ver = (src / "#")[1..] * "#";
+        if (search(ver, "..") >= 0)
+            die("path traversal in version tag: " + ver);
+        return ver;
+    }
     return "";
 }
 

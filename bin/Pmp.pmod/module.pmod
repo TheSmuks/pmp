@@ -12,3 +12,4 @@ inherit .Install;
 inherit .StoreCmd;
 inherit .Project;
 inherit .Env;
+inherit .Verify;

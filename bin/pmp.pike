@@ -61,6 +61,10 @@ void print_help() {
           "Show version\n");
     write("  pmp self-update                             "
           "Update pmp to the latest version\n");
+    write("  pmp verify                                 "
+          "Verify installed dependencies\n");
+    write("  pmp doctor                                 "
+          "Diagnose common project issues\n");
     write("\nSource formats:\n");
     write("  github.com/owner/repo                       "
           "GitHub\n");
@@ -225,6 +229,8 @@ void _main(array(string) argv) {
         case "env":       cmd_env(ctx); break;
         case "version":    cmd_version(); break;
         case "self-update": cmd_self_update(ctx); break;
+        case "verify":   if (!cmd_verify(ctx)) exit(EXIT_ERROR); break;
+        case "doctor":   if (!cmd_doctor(ctx)) exit(EXIT_ERROR); break;
         default:
             die("unknown command '" + cmd + "' (try: pmp --help)");
     }

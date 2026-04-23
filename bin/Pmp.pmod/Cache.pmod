@@ -141,8 +141,10 @@ void cache_put(string url, string body, void|mapping headers) {
     // Atomic write via tmp + rename
     string tmp_path = path + ".tmp." + getpid();
     Stdio.write_file(tmp_path, buf->get());
-    if (!mv(tmp_path, path))
-        rm(tmp_path);
+    if (!mv(tmp_path, path)) {
+        // Cross-filesystem fallback
+        catch { Stdio.write_file(path, Stdio.read_file(tmp_path)); rm(tmp_path); };
+    }
 }
 
 //! Remove all cached entries.

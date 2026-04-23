@@ -64,6 +64,14 @@ string store_entry_name(string src, string tag, string sha) {
     while (has_prefix(slug, "-")) slug = slug[1..];
     while (has_suffix(slug, "-")) slug = slug[..<1];
 
+    // Sanitize against path traversal
+    if (search(slug, "..") >= 0)
+        die("invalid source: path traversal in slug: " + slug, EXIT_INTERNAL);
+    if (search(tag, "..") >= 0)
+        die("invalid tag: path traversal: " + tag, EXIT_INTERNAL);
+    if (!Regexp("^[a-f0-9]+$")->match(sha))
+        die("invalid sha: expected hex, got: " + sha, EXIT_INTERNAL);
+
     string sha8 = (sizeof(sha) >= 8) ? sha[..7] : sha;
     return sprintf("%s-%s-%s", slug, tag, sha8);
 }
@@ -90,6 +98,20 @@ string extract_targz(string tarball_path, string dest_dir) {
     if (!entries || sizeof(entries) == 0)
         die("empty archive", EXIT_INTERNAL);
 
+    sort(entries);
+    // Ensure the returned entry is actually a directory
+    if (!Stdio.is_dir(combine_path(dest_dir, entries[0]))) {
+        string found;
+        foreach (entries; ; string e) {
+            if (Stdio.is_dir(combine_path(dest_dir, e))) {
+                found = e;
+                break;
+            }
+        }
+        if (!found)
+            die("tarball has no top-level directory", EXIT_INTERNAL);
+        return found;
+    }
     return entries[0];
 }
 
@@ -123,7 +145,7 @@ string read_stored_hash(string entry_dir) {
     if (!Stdio.exist(meta_file)) return 0;
     foreach (Stdio.read_file(meta_file) / "\n"; ; string line)
         if (has_prefix(line, "content_sha256\t"))
-            return line[16..];
+            return String.trim_all_whites(line[16..]);
     return 0;
 }
 
@@ -239,15 +261,20 @@ mapping store_install_github(string store_dir, string repo_path, string ver,
 
     if (Stdio.exist(entry_dir)) rm(entry_dir);
     Stdio.mkdirhier(store_dir);
-    Stdio.recursive_rm(entry_dir);
+    // Symlink-safe removal
+    mixed le = catch { System.readlink(entry_dir); };
+    if (!le) rm(entry_dir);
+    else Stdio.recursive_rm(entry_dir);
     // Move extracted content to store
     string src = combine_path(tmpdir, "extract", extracted);
     if (!mv(src, entry_dir)) {
+        unregister_cleanup_dir(tmpdir);
         Stdio.recursive_rm(tmpdir);
         Stdio.recursive_rm(entry_dir);
         die("failed to move to store: " + src, EXIT_INTERNAL);
     }
     if (!Stdio.is_dir(entry_dir)) {
+        unregister_cleanup_dir(tmpdir);
         Stdio.recursive_rm(tmpdir);
         Stdio.recursive_rm(entry_dir);
         die("store entry is not a directory after mv: " + entry_dir, EXIT_INTERNAL);
@@ -299,9 +326,13 @@ mapping store_install_gitlab(string store_dir, string repo_path, string ver,
 
     if (Stdio.exist(entry_dir)) rm(entry_dir);
     Stdio.mkdirhier(store_dir);
-    Stdio.recursive_rm(entry_dir);
+    // Symlink-safe removal
+    mixed le2 = catch { System.readlink(entry_dir); };
+    if (!le2) rm(entry_dir);
+    else Stdio.recursive_rm(entry_dir);
     string src = combine_path(tmpdir, "extract", extracted);
     if (!mv(src, entry_dir)) {
+        unregister_cleanup_dir(tmpdir);
         Stdio.recursive_rm(tmpdir);
         Stdio.recursive_rm(entry_dir);
         die("failed to move to store: " + src, EXIT_INTERNAL);
@@ -334,6 +365,7 @@ mapping store_install_selfhosted(string store_dir, string domain,
         ({"git", "clone", "--branch", ver, "--depth", "1",
           url, repo_dest}));
     if (r->exitcode != 0) {
+        unregister_cleanup_dir(tmpdir);
         Stdio.recursive_rm(tmpdir);
         die("failed to clone " + url);
     }
@@ -356,8 +388,12 @@ mapping store_install_selfhosted(string store_dir, string domain,
 
     if (Stdio.exist(entry_dir)) rm(entry_dir);
     Stdio.mkdirhier(store_dir);
-    Stdio.recursive_rm(entry_dir);
+    // Symlink-safe removal
+    mixed le3 = catch { System.readlink(entry_dir); };
+    if (!le3) rm(entry_dir);
+    else Stdio.recursive_rm(entry_dir);
     if (!mv(repo_dest, entry_dir)) {
+        unregister_cleanup_dir(tmpdir);
         Stdio.recursive_rm(tmpdir);
         Stdio.recursive_rm(entry_dir);
         die("failed to move to store: " + repo_dest, EXIT_INTERNAL);

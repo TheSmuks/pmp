@@ -39,6 +39,11 @@ int cmd_verify(mapping ctx) {
                 ok = 0;
                 continue;
             }
+            if (!Stdio.is_dir(link_target)) {
+                warn("symlink target is not a directory: " + name + " -> " + link_target);
+                ok = 0;
+                continue;
+            }
             // Verify symlink target is within the store directory or project
             // Local deps symlink directly to project dirs, which is valid
             string norm_store = System.resolvepath(store_dir) || combine_path(store_dir, ".");

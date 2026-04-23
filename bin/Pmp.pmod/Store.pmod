@@ -397,6 +397,8 @@ mapping store_install_selfhosted(string store_dir, string domain,
         die("failed to clone " + url);
     }
 
+    _validate_symlinks(repo_dest, repo_dest);
+
     string sha = resolve_commit_sha("selfhosted", domain, repo_path, ver, version);
     sha = sha || "";
 

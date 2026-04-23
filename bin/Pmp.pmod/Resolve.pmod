@@ -161,7 +161,7 @@ array(string) latest_tag(string type, string domain, string repo_path,
         case "github":     return latest_tag_github(repo_path, version);
         case "gitlab":     return latest_tag_gitlab(repo_path, version);
         case "selfhosted": return latest_tag_selfhosted(domain, repo_path);
-        default: die("cannot resolve tags for source type: " + type);
+        default: die("cannot resolve tags for source type: " + type, EXIT_INTERNAL);
     }
 }
 
@@ -218,6 +218,6 @@ string resolve_commit_sha(string type, string domain,
             return 0;
         }
         default:
-            die("unknown source type: " + type);
+            die("unknown source type: " + type, EXIT_INTERNAL);
     }
 }

@@ -34,7 +34,7 @@ void write_lockfile(string lockfile_path, array(array(string)) entries) {
     foreach (entries; ; array(string) entry) {
         foreach (entry; int i; string field) {
             if (search(field, "\0") >= 0)
-                die("lockfile field contains null byte: " + field[..20]);
+                die("lockfile field contains null byte: " + field[..20], EXIT_INTERNAL);
             if (search(field, "\t") >= 0)
                 die("lockfile field contains tab character: " + field, EXIT_INTERNAL);
             if (search(field, "\n") >= 0)

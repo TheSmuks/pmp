@@ -218,7 +218,11 @@ void atomic_symlink(string target, string dest) {
 void atomic_write(string path, string content) {
     string tmp_path = path + ".tmp." + getpid() + "." + time() + "."
         + String.string2hex(Crypto.Random.random_string(8));
-    Stdio.write_file(tmp_path, content);
+    int bytes = Stdio.write_file(tmp_path, content);
+    if (bytes != sizeof(content)) {
+        rm(tmp_path);
+        die("failed to write file atomically (disk full?): " + path, EXIT_INTERNAL);
+    }
     if (!mv(tmp_path, path)) {
         // mv may fail across filesystems — try harder
         warn("atomic_write: rename failed, attempting copy");

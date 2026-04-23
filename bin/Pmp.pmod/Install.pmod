@@ -174,7 +174,7 @@ void install_one(string name, string source, string target,
                         domain, repo_path, ver, PMP_VERSION);
                     break;
                 default:
-                    die("unsupported source type: " + type);
+                    die("unsupported source type: " + type, EXIT_INTERNAL);
             }
 
             // Symlink from modules/ to store entry
@@ -208,7 +208,7 @@ void install_one(string name, string source, string target,
             break;
         }
         default:
-            die("unsupported source type: " + type);
+            die("unsupported source type: " + type, EXIT_INTERNAL);
     }
 }
 

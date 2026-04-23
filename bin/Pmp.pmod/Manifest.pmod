@@ -51,7 +51,10 @@ array(array(string)) parse_deps(string file) {
 
     mixed data;
     mixed err = catch { data = Standards.JSON.decode(raw); };
-    if (err || !mappingp(data)) return ({});
+    if (err || !mappingp(data)) {
+        if (err) warn("failed to parse " + file + ": " + describe_error(err));
+        return ({});
+    }
 
     mapping deps = data->dependencies;
     if (!mappingp(deps)) return ({});

@@ -148,7 +148,12 @@ int cmd_verify(mapping ctx) {
             string ls = e[1], lt = e[2];
             if (sizeof(ls) > 0 && ls != "-" && !has_prefix(ls, "./") && !has_prefix(ls, "/")) {
                 string slug = replace(ls, "/", "-");
-                string pattern = slug + "-" + lt + "-*";
+                while (has_value(slug, "--")) slug = replace(slug, "--", "-");
+                while (has_prefix(slug, "-")) slug = slug[1..];
+                while (has_suffix(slug, "-")) slug = slug[..<1];
+                string safe_tag = replace(lt, "/", "-");
+                while (has_value(safe_tag, "--")) safe_tag = replace(safe_tag, "--", "-");
+                string pattern = slug + "-" + safe_tag + "-*";
                 foreach (get_dir(store_dir) || ({}); ; string se)
                     if (glob(pattern, se)) referenced[se] = 1;
             }

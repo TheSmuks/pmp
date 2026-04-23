@@ -59,7 +59,8 @@ string store_entry_name(string src, string tag, string sha) {
     string clean = (src / "#")[0];
     // Convert / to -, remove leading/trailing -
     // Convert / to -, collapse repeated dashes
-    string slug = replace(replace(clean, "/", "-"), "--", "-");
+    string slug = replace(clean, "/", "-");
+    while (has_value(slug, "--")) slug = replace(slug, "--", "-");
     // Trim leading/trailing dashes
     while (has_prefix(slug, "-")) slug = slug[1..];
     while (has_suffix(slug, "-")) slug = slug[..<1];
@@ -116,7 +117,8 @@ string extract_targz(string tarball_path, string dest_dir) {
 }
 
 //! Recursively validate that no symlinks under base_dir escape root_dir.
-void _validate_symlinks(string base_dir, string root_dir) {
+void _validate_symlinks(string base_dir, string root_dir, void|int depth) {
+    if (depth > 20) return;
     array(string) entries = get_dir(base_dir) || ({});
     foreach (entries; ; string name) {
         string full = combine_path(base_dir, name);
@@ -134,7 +136,7 @@ void _validate_symlinks(string base_dir, string root_dir) {
             }
         }
         if (Stdio.is_dir(full))
-            _validate_symlinks(full, root_dir);
+            _validate_symlinks(full, root_dir, depth + 1);
     }
 }
 
@@ -143,7 +145,9 @@ void _validate_symlinks(string base_dir, string root_dir) {
 string read_stored_hash(string entry_dir) {
     string meta_file = combine_path(entry_dir, ".pmp-meta");
     if (!Stdio.exist(meta_file)) return 0;
-    foreach (Stdio.read_file(meta_file) / "\n"; ; string line)
+    string raw = Stdio.read_file(meta_file);
+    if (!raw) return 0;
+    foreach (raw / "\n"; ; string line)
         if (has_prefix(line, "content_sha256\t"))
             return String.trim_all_whites(line[16..]);
     return 0;

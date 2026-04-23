@@ -86,6 +86,7 @@ void cmd_run(array(string) args, mapping ctx) {
             putenv(parts[0], parts[1..] * "=");
     }
     Process.exec(ctx["pike_bin"], script, @script_args);
+    die("failed to exec: " + ctx["pike_bin"]);
 }
 
 void cmd_env(mapping ctx) {

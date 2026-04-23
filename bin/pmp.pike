@@ -135,6 +135,13 @@ void cmd_self_update(mapping ctx) {
     mapping cur_v = parse_semver(current);
     mapping lat_v = parse_semver(latest_tag);
 
+
+    if (!lat_v) {
+        warn("latest tag is not a valid semver: " + latest_tag);
+        info("pmp is up to date");
+        return;
+    }
+
     if (cur_v && lat_v && compare_semver(cur_v, lat_v) >= 0) {
         string cur_clean = has_prefix(current, "v") ? current[1..] : current;
         info("pmp is up to date (v" + cur_clean + ")");

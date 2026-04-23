@@ -60,7 +60,7 @@ object _do_get(string url, mapping request_headers,
     float delay = 1.0;
     for (int attempt = 0; attempt < HTTP_MAX_RETRIES; attempt++) {
         if (attempt > 0) {
-            // Add jitter: delay * (0.5 + random * 0.5) gives 50-150% of base
+            // Add jitter: delay * (0.5 + random * 0.5) gives 50-100% of base
             float jittered = delay * (0.5 + random(1.0) * 0.5);
             info(sprintf("retrying %s (attempt %d/%d, waiting %.1fs)",
                 _url_host(url), attempt + 1, HTTP_MAX_RETRIES, jittered));

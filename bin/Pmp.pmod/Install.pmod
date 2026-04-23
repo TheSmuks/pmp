@@ -63,6 +63,7 @@ void project_lock(void|string project_root) {
         }
         rm(lock_path);
     }
+    die("failed to acquire project lock after retry");
 }
 
 //! Release the project-level lock.
@@ -143,7 +144,8 @@ void install_one(string name, string source, string target,
                 string version_dir = resolved;
                 if (has_suffix(dest, ".pmod") && Stdio.exist(combine_path(resolved, ".."))) {
                     // .pmod symlink points inside store entry; .version is at entry root
-                    version_dir = combine_path(resolved, "..");
+                    if (!Stdio.is_file(combine_path(version_dir, ".version")))
+                        version_dir = combine_path(resolved, "..");
                 }
                 string version_file =
                     combine_path(version_dir, ".version");
@@ -510,22 +512,27 @@ void cmd_install(array(string) args, mapping ctx) {
         // Read existing lockfile entries to preserve them
         array(array(string)) existing = read_lockfile(ctx["lockfile_path"]);
 
-        ctx["visited"] = (<>);
-        ctx["lock_entries"] = ({});
-        cmd_install_source(source, target, ctx);
+        project_lock(find_project_root());
+        mixed err = catch {
+            ctx["visited"] = (<>);
+            ctx["lock_entries"] = ({});
+            cmd_install_source(source, target, ctx);
 
-        // Merge new entries into existing (dedup by name)
-        ctx["lock_entries"] = merge_lock_entries(existing, ctx["lock_entries"]);
+            // Merge new entries into existing (dedup by name)
+            ctx["lock_entries"] = merge_lock_entries(existing, ctx["lock_entries"]);
 
-        if (!global_flag) {
-            write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
-            if (Stdio.exist(ctx["pike_json"])) {
-                string name = source_to_name(source);
-                string clean_source = source_strip_version(source);
-                add_to_manifest(ctx["pike_json"], name, clean_source);
+            if (!global_flag) {
+                write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
+                if (Stdio.exist(ctx["pike_json"])) {
+                    string name = source_to_name(source);
+                    string clean_source = source_strip_version(source);
+                    add_to_manifest(ctx["pike_json"], name, clean_source);
+                }
+                validate_manifests(ctx["local_dir"], ctx["std_libs"]);
             }
-            validate_manifests(ctx["local_dir"], ctx["std_libs"]);
-        }
+        };
+        project_unlock(find_project_root());
+        if (err) throw(err);
     }
 }
 
@@ -570,35 +577,40 @@ void cmd_update(array(string) args, mapping ctx) {
     // Save old lockfile entries for summary comparison
     array(array(string)) old_entries = read_lockfile(ctx["lockfile_path"]);
 
-    if (sizeof(mod_name) > 0) {
-        info("updating " + mod_name + "...");
-        string src = "";
-        array(array(string)) deps = parse_deps(ctx["pike_json"]);
-        foreach (deps; ; array(string) dep) {
-            if (dep[0] == mod_name) { src = dep[1]; break; }
+    project_lock(find_project_root());
+    mixed err = catch {
+        if (sizeof(mod_name) > 0) {
+            info("updating " + mod_name + "...");
+            string src = "";
+            array(array(string)) deps = parse_deps(ctx["pike_json"]);
+            foreach (deps; ; array(string) dep) {
+                if (dep[0] == mod_name) { src = dep[1]; break; }
+            }
+            if (sizeof(src) == 0)
+                die("module " + mod_name + " not found in pike.json");
+
+            // Read existing lockfile entries (preserve other modules)
+            array(array(string)) existing = read_lockfile(ctx["lockfile_path"]);
+
+            ctx["visited"] = (<>);
+            ctx["lock_entries"] = ({});
+            ctx["force"] = 1;
+            install_one(mod_name, src, ctx["local_dir"], ctx);
+            m_delete(ctx, "force");
+
+            // Merge: dedup by name — new entries replace existing
+            ctx["lock_entries"] = merge_lock_entries(existing, ctx["lock_entries"]);
+            write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
+        } else {
+            if (!Stdio.exist(ctx["pike_json"]))
+                die("no pike.json found");
+            ctx["force"] = 1;
+            cmd_install_all(ctx["local_dir"], ctx);
+            m_delete(ctx, "force");
         }
-        if (sizeof(src) == 0)
-            die("module " + mod_name + " not found in pike.json");
-
-        // Read existing lockfile entries (preserve other modules)
-        array(array(string)) existing = read_lockfile(ctx["lockfile_path"]);
-
-        ctx["visited"] = (<>);
-        ctx["lock_entries"] = ({});
-        ctx["force"] = 1;
-        install_one(mod_name, src, ctx["local_dir"], ctx);
-        m_delete(ctx, "force");
-
-        // Merge: dedup by name — new entries replace existing
-        ctx["lock_entries"] = merge_lock_entries(existing, ctx["lock_entries"]);
-        write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
-    } else {
-        if (!Stdio.exist(ctx["pike_json"]))
-            die("no pike.json found");
-        ctx["force"] = 1;
-        cmd_install_all(ctx["local_dir"], ctx);
-        m_delete(ctx, "force");
-    }
+    };
+    project_unlock(find_project_root());
+    if (err) throw(err);
 
     // Print update summary
     array(array(string)) new_entries = read_lockfile(ctx["lockfile_path"]);

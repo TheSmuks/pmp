@@ -52,6 +52,18 @@ void cmd_store(array(string) args, mapping ctx) {
                             }
                         };
                     }
+                    if (!found && ctx["global_dir"] && Stdio.is_dir(ctx["global_dir"])) {
+                        foreach (get_dir(ctx["global_dir"]) || ({}); ; string lname) {
+                            string link = combine_path(ctx["global_dir"], lname);
+                            mixed err2 = catch {
+                                string target = System.readlink(link);
+                                if (target && (has_suffix(target, "/" + ename) || target == ename)) {
+                                    found = 1;
+                                    break;
+                                }
+                            };
+                        }
+                    }
                     if (!found)
                         unused += ({ ename });
                 } else {

@@ -127,38 +127,31 @@ array(string) latest_tag_selfhosted(string domain, string repo_path) {
     if (result->exitcode != 0)
         return ({ "", "" });
 
-    // Collect non-^{} tag lines
-    array(string) lines = filter(result->stdout / "\n",
-                                 lambda(string l) {
-                                     return sizeof(l) > 0 &&
-                                            !has_value(l, "^{}");
-                                 });
-    if (sizeof(lines) == 0) return ({ "", "" });
-
-    // Build ({tag, sha}) pairs
-    array(array(string)) tags = ({});
-    foreach (lines; ; string line) {
+    // Parse all lines, collect tag->sha pairs (prefer peeled ^{} SHA)
+    mapping(string:string) peeled = ([]);  // tag -> peeled SHA
+    mapping(string:string) unpeeled = ([]); // tag -> tag object SHA
+    foreach (result->stdout / "\n"; ; string line) {
+        if (sizeof(line) == 0) continue;
         array(string) parts = line / "\t";
         if (sizeof(parts) >= 2) {
-            string sha = parts[0];
-            string tag = replace(parts[-1], "refs/tags/", "");
-            tags += ({ ({ tag, sha }) });
+            string ref = parts[1];
+            string tag = replace(ref, "refs/tags/", "");
+            if (has_suffix(ref, "^{}")) {
+                tag = replace(tag, "^{}", "");
+                peeled[tag] = parts[0];
+            } else {
+                unpeeled[tag] = parts[0];
+            }
         }
     }
 
-    if (sizeof(tags) == 0) return ({ "", "" });
+    // Merge: prefer peeled SHA, fall back to unpeeled
+    array(string) tag_names = sort_tags_semver(indices(unpeeled) | indices(peeled));
+    if (sizeof(tag_names) == 0) return ({ "", "" });
 
-    // Sort by semver (highest first), extract tag names
-    array(string) tag_names = column(tags, 0);
-    tag_names = sort_tags_semver(tag_names);
     string best = tag_names[0];
-
-    // Find the SHA for the best tag
-    foreach (tags; ; array(string) t)
-        if (t[0] == best)
-            return ({ best, t[1] });
-
-    return ({ best, "" });
+    string sha = peeled[best] || unpeeled[best] || "";
+    return ({ best, sha });
 }
 
 //! Resolve latest tag. Returns ({tag, commit_sha}).
@@ -209,8 +202,19 @@ string resolve_commit_sha(string type, string domain,
             mapping r = Process.run(
                 ({"git", "ls-remote", "https://" + domain + "/" + repo_path,
                   "refs/tags/" + tag}));
-            if (r->exitcode == 0 && sizeof(r->stdout) > 0)
-                return ((r->stdout / "\t")[0]);
+            if (r->exitcode == 0 && sizeof(r->stdout) > 0) {
+                string sha;
+                foreach (r->stdout / "\n"; ; string line) {
+                    if (sizeof(line) == 0) continue;
+                    array parts = line / "\t";
+                    if (sizeof(parts) >= 2 && has_suffix(parts[1], "^{}")) {
+                        sha = parts[0];
+                    } else if (!sha && sizeof(parts) >= 2) {
+                        sha = parts[0];
+                    }
+                }
+                if (sha) return sha;
+            }
             return 0;
         }
         default:

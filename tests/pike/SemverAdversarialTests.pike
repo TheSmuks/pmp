@@ -8,23 +8,13 @@ inherit PUnit.TestCase;
 // ── parse_semver ─────────────────────────────────────────────────────
 
 void test_parse_trailing_dash() {
-    // "1.2.3-" — dash present but empty prerelease string after it
-    mapping v = parse_semver("1.2.3-");
-    assert_not_null(v);
-    assert_equal(1, v["major"]);
-    assert_equal(2, v["minor"]);
-    assert_equal(3, v["patch"]);
-    assert_equal("", v["prerelease"]);
+    // "1.2.3-" — dash present but empty prerelease: invalid per semver spec §9
+    assert_equal(0, parse_semver("1.2.3-"));
 }
 
 void test_parse_empty_build_metadata() {
-    // "1.2.3+" — plus present but empty build metadata, stripped per spec
-    mapping v = parse_semver("1.2.3+");
-    assert_not_null(v);
-    assert_equal(1, v["major"]);
-    assert_equal(2, v["minor"]);
-    assert_equal(3, v["patch"]);
-    assert_equal("", v["prerelease"]);
+    // "1.2.3+" — empty build metadata: invalid per semver spec §10
+    assert_equal(0, parse_semver("1.2.3+"));
 }
 
 void test_parse_too_many_parts() {
@@ -46,24 +36,18 @@ void test_parse_double_v() {
 }
 
 void test_parse_double_dot_prerelease() {
-    // Parser doesn't validate prerelease format — ".." is preserved
-    mapping v = parse_semver("1.2.3-alpha..beta");
-    assert_not_null(v);
-    assert_equal("alpha..beta", v["prerelease"]);
+    // Empty identifier between dots: invalid per semver spec §9
+    assert_equal(0, parse_semver("1.2.3-alpha..beta"));
 }
 
 void test_parse_whitespace_prerelease() {
-    // Tab in prerelease — parser treats it as a valid prerelease string
-    mapping v = parse_semver("1.2.3-\t");
-    assert_not_null(v);
-    assert_equal("\t", v["prerelease"]);
+    // Tab in prerelease: not [0-9A-Za-z-], invalid per semver spec §9
+    assert_equal(0, parse_semver("1.2.3-\t"));
 }
 
 void test_parse_unicode_prerelease() {
-    // Greek alpha (U+03B1) and beta (U+03B2) in prerelease
-    mapping v = parse_semver("1.2.3-\x03b1\x03b2");
-    assert_not_null(v);
-    assert_equal("\x03b1\x03b2", v["prerelease"]);
+    // Unicode in prerelease: not [0-9A-Za-z-], invalid per semver spec §9
+    assert_equal(0, parse_semver("1.2.3-\x03b1\x03b2"));
 }
 
 void test_parse_large_patch() {
@@ -76,16 +60,9 @@ void test_parse_large_patch() {
     assert_equal(999999999, v["patch"]);
 }
 void test_parse_semver_partial_version() {
-    // "1" is accepted by the parser with default minor=0, patch=0
-    mapping v1 = parse_semver("1");
-    assert_not_null(v1);
-    assert_equal(1, v1["major"]);
-    assert_equal(0, v1["minor"]);
-    assert_equal(0, v1["patch"]);
-    // "1.2" is accepted by the parser with default patch=0
-    mapping v2 = parse_semver("1.2");
-    assert_not_null(v2);
-    assert_equal(0, v2["patch"]);
+    // Partial versions rejected per strict semver spec §2 (requires X.Y.Z)
+    assert_equal(0, parse_semver("1"));
+    assert_equal(0, parse_semver("1.2"));
 }
 
 void test_parse_semver_bare_v() {
@@ -103,10 +80,8 @@ void test_parse_semver_empty_string() {
 }
 
 void test_parse_semver_prerelease_with_special_chars() {
-    // "1.0.0-alpha/beta" — slash not valid in prerelease per semver spec
-    mapping v = parse_semver("1.0.0-alpha/beta");
-    // Just verify it doesn't crash
-    assert_not_null(v);
+    // "1.0.0-alpha/beta" — slash not valid in prerelease per semver spec §9
+    assert_equal(0, parse_semver("1.0.0-alpha/beta"));
 }
 
 void test_classify_bump_null_inputs() {

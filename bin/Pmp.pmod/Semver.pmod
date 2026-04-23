@@ -17,10 +17,22 @@ mapping parse_semver(string tag) {
     if (sizeof(v) > 0 && (v[0] == 'v' || v[0] == 'V'))
         v = v[1..];
 
-    // Split off build metadata (+suffix) — ignored per semver spec
+    // Strip build metadata (+suffix) — validate identifiers per semver spec
     int plus_idx = search(v, "+");
-    if (plus_idx >= 0)
+    string build_meta = "";
+    if (plus_idx >= 0) {
+        build_meta = v[plus_idx + 1..];
         v = v[..plus_idx - 1];
+        // Empty build metadata (trailing +) is invalid
+        if (sizeof(build_meta) == 0) return 0;
+        foreach (build_meta / "."; ; string id) {
+            if (sizeof(id) == 0) return 0;
+            foreach (id / 1; ; string c)
+                if (!((c >= "0" && c <= "9") || (c >= "A" && c <= "Z") ||
+                      (c >= "a" && c <= "z") || c == "-"))
+                    return 0;
+        }
+    }
 
     // Split off prerelease (-suffix)
     string pre = "";
@@ -28,11 +40,26 @@ mapping parse_semver(string tag) {
     if (pre_idx >= 0) {
         pre = v[pre_idx + 1..];
         v = v[..pre_idx - 1];
+        // Empty prerelease (trailing dash) is invalid per semver spec
+        if (sizeof(pre) == 0) return 0;
+        // Validate prerelease identifiers: non-empty, [0-9A-Za-z-]+, no leading zeros in numeric
+        foreach (pre / "."; ; string id) {
+            if (sizeof(id) == 0) return 0;
+            int all_digits = 1;
+            foreach (id / 1; ; string c) {
+                if (!((c >= "0" && c <= "9") || (c >= "A" && c <= "Z") ||
+                      (c >= "a" && c <= "z") || c == "-"))
+                    return 0;
+                if (c < "0" || c > "9") all_digits = 0;
+            }
+            // Numeric identifiers must not have leading zeros
+            if (all_digits && sizeof(id) > 1 && id[0] == '0') return 0;
+        }
     }
 
-    // Validate: remaining must be digits separated by dots
+    // Strict semver: require exactly MAJOR.MINOR.PATCH
     array(string) parts = v / ".";
-    if (sizeof(parts) < 1 || sizeof(parts) > 3) return 0;
+    if (sizeof(parts) != 3) return 0;
 
     // All parts must be non-empty digit-only strings
     foreach (parts; ; string p) {
@@ -43,10 +70,14 @@ mapping parse_semver(string tag) {
         if (!dig) return 0;
     }
 
+    // Reject leading zeros in numeric version components
+    foreach (parts; ; string p)
+        if (sizeof(p) > 1 && p[0] == '0') return 0;
+
     int major, minor, patch;
     if (sscanf(parts[0], "%d", major) != 1) return 0;
-    minor = sizeof(parts) > 1 ? (int)parts[1] : 0;
-    patch = sizeof(parts) > 2 ? (int)parts[2] : 0;
+    minor = (int)parts[1];
+    patch = (int)parts[2];
 
     return ([
         "major": major,

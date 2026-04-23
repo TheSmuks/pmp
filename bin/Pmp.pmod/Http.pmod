@@ -223,8 +223,10 @@ object _do_get_single(string url, mapping request_headers,
         };
         if (err)
             error_msg = describe_error(err);
+        object lkey = mutex->lock();
         done = 1;
         cond->signal();
+        lkey = 0; // release
     });
 
     mixed wait_err = catch { cond->wait(key, (float)timeout_secs); };

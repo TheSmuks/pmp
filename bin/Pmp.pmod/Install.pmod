@@ -211,7 +211,10 @@ void install_one(string name, string source, string target,
             // Symlink from modules/ to store entry
             Stdio.mkdirhier(target);
             string entry_full = combine_path(ctx["store_dir"], result->entry);
-            mapping rmp = resolve_module_path(name, entry_full);
+            // Resolve module name from the package's pike.json if available
+            string resolved_name = json_field("name", combine_path(entry_full, "pike.json"))
+                || name;
+            mapping rmp = resolve_module_path(resolved_name, entry_full);
             dest = combine_path(target, rmp->link_name);
             if (Stdio.exist(dest)) rm(dest);
             System.symlink(rmp->target, dest);

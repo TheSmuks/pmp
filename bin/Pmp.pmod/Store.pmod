@@ -200,7 +200,10 @@ string compute_dir_hash(string dir) {
 
 //! Given a module name and store entry path, determine the correct
 //! symlink target and link name for Pike module resolution.
-//! Returns (["target": string, "link_name": string]).
+//! Returns ("target": string, "link_name": string).
+//!
+//! The module name is resolved from the entry's pike.json "name" field
+//! when available, falling back to the provided name parameter.
 //!
 //! Pike resolves `import Name` via:
 //!   1. Name.pmod (file) — standalone module file
@@ -224,7 +227,7 @@ mapping resolve_module_path(string name, string entry_dir) {
     if (Stdio.exist(combine_path(entry_dir, "module.pmod")))
         return (["target": entry_dir, "link_name": name + ".pmod"]);
 
-    // 4. Fallback: symlink to entry root (backward compat)
+    // 4. Fallback: symlink to entry root
     return (["target": entry_dir, "link_name": name]);
 }
 
@@ -271,7 +274,7 @@ mapping store_install_github(string store_dir, string repo_path, string ver,
     else Stdio.recursive_rm(entry_dir);
     // Move extracted content to store
     string src = combine_path(tmpdir, "extract", extracted);
-    if (!mv(src, entry_dir)) {
+    if (!Stdio.recursive_mv(src, entry_dir)) {
         unregister_cleanup_dir(tmpdir);
         Stdio.recursive_rm(tmpdir);
         Stdio.recursive_rm(entry_dir);
@@ -335,7 +338,7 @@ mapping store_install_gitlab(string store_dir, string repo_path, string ver,
     if (!le2) rm(entry_dir);
     else Stdio.recursive_rm(entry_dir);
     string src = combine_path(tmpdir, "extract", extracted);
-    if (!mv(src, entry_dir)) {
+    if (!Stdio.recursive_mv(src, entry_dir)) {
         unregister_cleanup_dir(tmpdir);
         Stdio.recursive_rm(tmpdir);
         Stdio.recursive_rm(entry_dir);
@@ -396,7 +399,7 @@ mapping store_install_selfhosted(string store_dir, string domain,
     mixed le3 = catch { System.readlink(entry_dir); };
     if (!le3) rm(entry_dir);
     else Stdio.recursive_rm(entry_dir);
-    if (!mv(repo_dest, entry_dir)) {
+    if (!Stdio.recursive_mv(repo_dest, entry_dir)) {
         unregister_cleanup_dir(tmpdir);
         Stdio.recursive_rm(tmpdir);
         Stdio.recursive_rm(entry_dir);

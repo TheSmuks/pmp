@@ -92,6 +92,9 @@ string extract_targz(string tarball_path, string dest_dir) {
 //! Returns the entry directory name, or "" if not found.
 string _find_store_entry(string store_dir, string source, string tag, string content_hash) {
     string slug = replace(source, "/", "-");
+    while (has_value(slug, "--")) slug = replace(slug, "--", "-");
+    while (has_prefix(slug, "-")) slug = slug[1..];
+    while (has_suffix(slug, "-")) slug = slug[..<1];
     string pattern = slug + "-" + tag + "-*";
     array(string) candidates = ({});
 
@@ -110,7 +113,8 @@ string _find_store_entry(string store_dir, string source, string tag, string con
                 return se;
         }
         if (sizeof(candidates) > 0)
-            warn("no store entry for " + tag + " matches lockfile hash — using first match");
+            warn("no store entry for " + tag + " matches lockfile hash");
+        return "";
     }
 
     // Fallback: use first candidate
@@ -309,7 +313,10 @@ mapping store_install_github(string store_dir, string repo_path, string ver,
     string body = http_get(url, 0, version);
 
     // Write to temp file
-    string tmpdir = String.trim_all_whites(Process.popen("mktemp -d ${TMPDIR:-/tmp}/pmp_install_XXXXXX"));
+    string tmpdir_base = combine_path(getenv("TMPDIR") || "/tmp", "pmp_install_XXXXXX");
+    mapping mktemp_result = Process.run(({"mktemp", "-d", tmpdir_base}));
+    string tmpdir = String.trim_all_whites(mktemp_result->stdout || "");
+    if (sizeof(tmpdir) == 0) die("failed to create temp directory");
     register_cleanup_dir(tmpdir);
     string tarball = combine_path(tmpdir, "archive.tar.gz");
     Stdio.write_file(tarball, body);
@@ -339,7 +346,10 @@ mapping store_install_gitlab(string store_dir, string repo_path, string ver,
     info("downloading " + url);
     string body = http_get(url, 0, version);
 
-    string tmpdir = String.trim_all_whites(Process.popen("mktemp -d ${TMPDIR:-/tmp}/pmp_install_XXXXXX"));
+    string tmpdir_base = combine_path(getenv("TMPDIR") || "/tmp", "pmp_install_XXXXXX");
+    mapping mktemp_result = Process.run(({"mktemp", "-d", tmpdir_base}));
+    string tmpdir = String.trim_all_whites(mktemp_result->stdout || "");
+    if (sizeof(tmpdir) == 0) die("failed to create temp directory");
     register_cleanup_dir(tmpdir);
     string tarball = combine_path(tmpdir, "archive.tar.gz");
     Stdio.write_file(tarball, body);
@@ -363,7 +373,10 @@ mapping store_install_selfhosted(string store_dir, string domain,
     need_cmd("git");
     string url = "https://" + domain + "/" + repo_path;
 
-    string tmpdir = String.trim_all_whites(Process.popen("mktemp -d ${TMPDIR:-/tmp}/pmp_install_XXXXXX"));
+    string tmpdir_base = combine_path(getenv("TMPDIR") || "/tmp", "pmp_install_XXXXXX");
+    mapping mktemp_result = Process.run(({"mktemp", "-d", tmpdir_base}));
+    string tmpdir = String.trim_all_whites(mktemp_result->stdout || "");
+    if (sizeof(tmpdir) == 0) die("failed to create temp directory");
     register_cleanup_dir(tmpdir);
     string repo_dest = combine_path(tmpdir, "repo");
 

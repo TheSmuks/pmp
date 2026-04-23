@@ -53,7 +53,7 @@ void advisory_lock(string lock_path, string description) {
 
     for (int attempt = 0; attempt < 2; attempt++) {
         mixed err = catch {
-            Stdio.File lf = Stdio.File(lock_path, "wct");
+            Stdio.File lf = Stdio.File(lock_path, "wxc");
             lf->write(my_pid);
             lf->close();
         };

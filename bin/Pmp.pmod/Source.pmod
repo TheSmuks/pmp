@@ -15,6 +15,14 @@ string _normalize_source(string src) {
         int first_slash = search(src, "/");
         if (first_slash < 0 || at_pos < first_slash) {
             src = src[at_pos + 1..];
+            // SCP-style: after stripping user@, host:path becomes host/path
+            int colon_pos = search(src, ":");
+            if (colon_pos > 0) {
+                int slash_pos = search(src, "/");
+                // Only convert colon if it appears before any slash (host:path format)
+                if (slash_pos < 0 || colon_pos < slash_pos)
+                    src = src[..colon_pos - 1] + "/" + src[colon_pos + 1..];
+            }
         }
     }
 

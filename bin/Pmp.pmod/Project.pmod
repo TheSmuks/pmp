@@ -157,6 +157,17 @@ void cmd_remove(array(string) args, mapping ctx) {
     if (!found)
         die("nothing to remove: " + name + " not found");
 
+    // Snapshot symlink targets for rollback
+    mapping(string:string) old_symlink_targets = ([]);
+    if (Stdio.exist(link)) {
+        string target = get_symlink_target(link);
+        if (target) old_symlink_targets[link] = target;
+    }
+    if (Stdio.exist(link_pmod)) {
+        string target = get_symlink_target(link_pmod);
+        if (target) old_symlink_targets[link_pmod] = target;
+    }
+
     // --- Execute phase with rollback on failure ---
     mixed err = catch {
         // 1. Update pike.json
@@ -197,7 +208,11 @@ void cmd_remove(array(string) args, mapping ctx) {
         }
     };
     if (err) {
-        // Rollback: restore files to pre-modification state
+        // Restore symlinks first
+        foreach (old_symlink_targets; string path; string target) {
+            catch { atomic_symlink(target, path); };
+        }
+        // Then restore files
         if (pike_json_raw) atomic_write(pike_json_path, pike_json_raw);
         if (lockfile_raw) atomic_write(lockfile_path, lockfile_raw);
         werror("pmp: remove failed, rolled back to previous state\n");

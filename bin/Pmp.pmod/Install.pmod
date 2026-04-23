@@ -238,7 +238,6 @@ void cmd_install_all(string target, mapping ctx) {
 
         if (lockfile_complete) {
             info("installing from " + ctx["lockfile_path"] + " (up to date)");
-            array(array(string)) lf_entries = read_lockfile(ctx["lockfile_path"]);
             foreach (lf_entries; ; array(string) entry) {
                 string ln = entry[0], ls = entry[1],
                        lt = entry[2], lsha = entry[3],
@@ -493,6 +492,8 @@ void cmd_install(array(string) args, mapping ctx) {
 
             // Post-install bookkeeping — if this fails, remove new symlinks
             // to keep project state consistent
+            string old_lockfile = Stdio.exist(ctx["lockfile_path"]) ? Stdio.read_file(ctx["lockfile_path"]) : 0;
+
             mixed post_err = catch {
                 if (!global_flag) {
                     write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
@@ -514,6 +515,10 @@ void cmd_install(array(string) args, mapping ctx) {
                         }
                     }
                 }
+                if (old_lockfile != 0)
+                    atomic_write(ctx["lockfile_path"], old_lockfile);
+                else if (Stdio.exist(ctx["lockfile_path"]))
+                    rm(ctx["lockfile_path"]);
                 throw(post_err);
             }
         };
@@ -564,9 +569,12 @@ void cmd_update(array(string) args, mapping ctx) {
     // Save old lockfile entries for summary comparison
     array(array(string)) old_entries = read_lockfile(ctx["lockfile_path"]);
 
-    project_lock(find_project_root());
     mixed err = catch {
         if (sizeof(mod_name) > 0) {
+            // Single-module path: acquire project + store locks here
+            // (update-all path delegates to cmd_install_all which handles its own locking)
+            project_lock(find_project_root());
+            store_lock(ctx["store_dir"]);
             info("updating " + mod_name + "...");
             string src = "";
             array(array(string)) deps = parse_deps(ctx["pike_json"]);
@@ -588,6 +596,9 @@ void cmd_update(array(string) args, mapping ctx) {
             // Merge: dedup by name — new entries replace existing
             ctx["lock_entries"] = merge_lock_entries(existing, ctx["lock_entries"]);
             write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
+
+            store_unlock(ctx["store_dir"]);
+            project_unlock(find_project_root());
         } else {
             if (!Stdio.exist(ctx["pike_json"]))
                 die("no pike.json found");
@@ -596,7 +607,11 @@ void cmd_update(array(string) args, mapping ctx) {
             m_delete(ctx, "force");
         }
     };
-    project_unlock(find_project_root());
+    if (sizeof(mod_name) > 0) {
+        // Ensure locks released on error in single-module path
+        store_unlock(ctx["store_dir"]);
+        project_unlock(find_project_root());
+    }
     if (err) throw(err);
 
     // Print update summary
@@ -607,16 +622,22 @@ void cmd_update(array(string) args, mapping ctx) {
 void cmd_lock(mapping ctx) {
     if (!Stdio.exist(ctx["pike_json"]))
         die("no pike.json found");
-    ctx["visited"] = (<>);
-    ctx["lock_entries"] = ({});
 
-    info("resolving dependencies...");
-    array(array(string)) deps = parse_deps(ctx["pike_json"]);
-    foreach (deps; ; array(string) dep)
-        install_one(dep[0], dep[1], ctx["local_dir"], ctx);
+    project_lock(find_project_root());
+    mixed err = catch {
+        ctx["visited"] = (<>);
+        ctx["lock_entries"] = ({});
 
-    write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
-    info("lockfile written");
+        info("resolving dependencies...");
+        array(array(string)) deps = parse_deps(ctx["pike_json"]);
+        foreach (deps; ; array(string) dep)
+            install_one(dep[0], dep[1], ctx["local_dir"], ctx);
+
+        write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
+        info("lockfile written");
+    };
+    project_unlock(find_project_root());
+    if (err) throw(err);
 }
 
 //! Rollback all modules to the previous lockfile state.
@@ -630,95 +651,100 @@ void cmd_rollback(mapping ctx) {
     if (sizeof(prev_entries) == 0)
         die("previous lockfile is empty");
 
-    string target = ctx["local_dir"];
-    Stdio.mkdirhier(target);
+    project_lock(find_project_root());
+    mixed err = catch {
+        string target = ctx["local_dir"];
+        Stdio.mkdirhier(target);
 
-    // Remove modules not in previous lockfile
-    multiset(string) prev_names = (<>);
-    foreach (prev_entries; ; array(string) entry)
-        if (sizeof(entry[0]) > 0) prev_names[entry[0]] = 1;
+        // Remove modules not in previous lockfile
+        multiset(string) prev_names = (<>);
+        foreach (prev_entries; ; array(string) entry)
+            if (sizeof(entry[0]) > 0) prev_names[entry[0]] = 1;
 
-    if (Stdio.is_dir(target)) {
-        foreach (get_dir(target) || ({}); ; string name) {
-            string full = combine_path(target, name);
-            string link = get_symlink_target(full);
-            // Strip .pmod suffix for comparison with lockfile names
-            string bare = has_suffix(name, ".pmod") ? name[..<5] : name;
-            if (link && !prev_names[bare] && !prev_names[name]) {
-                rm(full);
-                info("removed " + name + " (not in previous lockfile)");
+        if (Stdio.is_dir(target)) {
+            foreach (get_dir(target) || ({}); ; string name) {
+                string full = combine_path(target, name);
+                string link = get_symlink_target(full);
+                // Strip .pmod suffix for comparison with lockfile names
+                string bare = has_suffix(name, ".pmod") ? name[..<5] : name;
+                if (link && !prev_names[bare] && !prev_names[name]) {
+                    rm(full);
+                    info("removed " + name + " (not in previous lockfile)");
+                }
             }
         }
-    }
 
-    // Write lockfile atomically before restoring symlinks.
-    // If the process crashes mid-rollback, the lockfile reflects
-    // the target state so re-running rollback can be safe.
-    write_lockfile(ctx["lockfile_path"], prev_entries);
+        // Write lockfile atomically before restoring symlinks.
+        // If the process crashes mid-rollback, the lockfile reflects
+        // the target state so re-running rollback can be safe.
+        write_lockfile(ctx["lockfile_path"], prev_entries);
 
-    foreach (prev_entries; ; array(string) entry) {
-        string ln = entry[0], ls = entry[1],
-               lt = entry[2], lsha = entry[3],
-               lhash = entry[4];
-        if (sizeof(ln) == 0) continue;
+        foreach (prev_entries; ; array(string) entry) {
+            string ln = entry[0], ls = entry[1],
+                   lt = entry[2], lsha = entry[3],
+                   lhash = entry[4];
+            if (sizeof(ln) == 0) continue;
 
-        string dest = combine_path(target, ln);
+            string dest = combine_path(target, ln);
 
-        if (ls == "-" || has_prefix(ls, "./") || has_prefix(ls, "/")) {
-            // Local dep — re-symlink
-            if (sizeof(ls) > 0 && ls != "-") {
-                string local_path = ls;
-                string project_root = find_project_root() || getcwd();
-                if (has_prefix(local_path, "./"))
-                    local_path = combine_path(project_root, local_path);
-                if (!Stdio.is_dir(local_path)) {
-                    warn("local dep " + ln + " path " + local_path
-                         + " not found — skipping");
+            if (ls == "-" || has_prefix(ls, "./") || has_prefix(ls, "/")) {
+                // Local dep — re-symlink
+                if (sizeof(ls) > 0 && ls != "-") {
+                    string local_path = ls;
+                    string project_root = find_project_root() || getcwd();
+                    if (has_prefix(local_path, "./"))
+                        local_path = combine_path(project_root, local_path);
+                    if (!Stdio.is_dir(local_path)) {
+                        warn("local dep " + ln + " path " + local_path
+                             + " not found — skipping");
+                        continue;
+                    }
+                    mapping rmp = resolve_module_path(ln, local_path);
+                    string dest_rm = combine_path(target, rmp->link_name);
+                    // Remove complementary symlink variant
+                    if (dest != dest_rm) {
+                        rm(dest);
+                        if (!has_suffix(dest_rm, ".pmod")) {
+                            string pmod_alt = dest_rm + ".pmod";
+                            if (Stdio.exist(pmod_alt)) rm(pmod_alt);
+                        }
+                    }
+                    atomic_symlink(rmp->target, dest_rm);
+                    info("restored " + ln + " -> " + rmp->target);
+                }
+            } else {
+                // Remote dep — find store entry matching source+tag
+                string found_entry = _find_store_entry(
+                    ctx["store_dir"], ls, lt, lhash);
+
+                if (sizeof(found_entry) == 0) {
+                    warn("store entry not found for " + ln + " " + lt
+                         + " — skipping (store entry may have been pruned)");
                     continue;
                 }
-                mapping rmp = resolve_module_path(ln, local_path);
+
+                string entry_full = combine_path(ctx["store_dir"], found_entry);
+                mapping rmp = resolve_module_path(ln, entry_full);
                 string dest_rm = combine_path(target, rmp->link_name);
-                // Remove complementary symlink variant
+                // Remove complementary symlink variant (bare vs .pmod)
                 if (dest != dest_rm) {
-                    rm(dest);
+                    if (Stdio.exist(dest)) rm(dest);
+                    // Also remove .pmod variant if resolved name is bare
                     if (!has_suffix(dest_rm, ".pmod")) {
                         string pmod_alt = dest_rm + ".pmod";
                         if (Stdio.exist(pmod_alt)) rm(pmod_alt);
                     }
                 }
                 atomic_symlink(rmp->target, dest_rm);
-                info("restored " + ln + " -> " + rmp->target);
+                info("restored " + ln + " " + lt);
             }
-        } else {
-            // Remote dep — find store entry matching source+tag
-            string found_entry = _find_store_entry(
-                ctx["store_dir"], ls, lt, lhash);
-
-            if (sizeof(found_entry) == 0) {
-                warn("store entry not found for " + ln + " " + lt
-                     + " — skipping (store entry may have been pruned)");
-                continue;
-            }
-
-            string entry_full = combine_path(ctx["store_dir"], found_entry);
-            mapping rmp = resolve_module_path(ln, entry_full);
-            string dest_rm = combine_path(target, rmp->link_name);
-            // Remove complementary symlink variant (bare vs .pmod)
-            if (dest != dest_rm) {
-                if (Stdio.exist(dest)) rm(dest);
-                // Also remove .pmod variant if resolved name is bare
-                if (!has_suffix(dest_rm, ".pmod")) {
-                    string pmod_alt = dest_rm + ".pmod";
-                    if (Stdio.exist(pmod_alt)) rm(pmod_alt);
-                }
-            }
-            atomic_symlink(rmp->target, dest_rm);
-            info("restored " + ln + " " + lt);
         }
-    }
 
 
-    info("rollback complete — restored " + sizeof(prev_entries) + " modules");
+        info("rollback complete — restored " + sizeof(prev_entries) + " modules");
+    };
+    project_unlock(find_project_root());
+    if (err) throw(err);
 }
 
 //! Show changes between versions for a specific module.

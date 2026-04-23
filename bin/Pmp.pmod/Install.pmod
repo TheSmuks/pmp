@@ -712,9 +712,16 @@ void cmd_rollback(mapping ctx) {
                          + " not found — skipping");
                     continue;
                 }
-                if (Stdio.exist(dest)) rm(dest);
                 mapping rmp = resolve_module_path(ln, local_path);
                 string dest_rm = combine_path(target, rmp->link_name);
+                // Remove complementary symlink variant
+                if (dest != dest_rm) {
+                    rm(dest);
+                    if (!has_suffix(dest_rm, ".pmod")) {
+                        string pmod_alt = dest_rm + ".pmod";
+                        if (Stdio.exist(pmod_alt)) rm(pmod_alt);
+                    }
+                }
                 atomic_symlink(rmp->target, dest_rm);
                 info("restored " + ln + " -> " + rmp->target);
             }
@@ -762,8 +769,15 @@ void cmd_rollback(mapping ctx) {
             string entry_full = combine_path(ctx["store_dir"], found_entry);
             mapping rmp = resolve_module_path(ln, entry_full);
             string dest_rm = combine_path(target, rmp->link_name);
-            // Remove bare-name symlink if different from resolved
-            if (Stdio.exist(dest) && dest != dest_rm) rm(dest);
+            // Remove complementary symlink variant (bare vs .pmod)
+            if (dest != dest_rm) {
+                if (Stdio.exist(dest)) rm(dest);
+                // Also remove .pmod variant if resolved name is bare
+                if (!has_suffix(dest_rm, ".pmod")) {
+                    string pmod_alt = dest_rm + ".pmod";
+                    if (Stdio.exist(pmod_alt)) rm(pmod_alt);
+                }
+            }
             atomic_symlink(rmp->target, dest_rm);
             info("restored " + ln + " " + lt);
         }

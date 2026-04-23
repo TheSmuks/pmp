@@ -74,13 +74,17 @@ string store_entry_name(string src, string tag, string sha) {
     // Sanitize against path traversal
     if (search(slug, "..") >= 0)
         die("invalid source: path traversal in slug: " + slug, EXIT_INTERNAL);
+    // Sanitize tag: replace / with - to prevent nested directories
+    string safe_tag = replace(tag, "/", "-");
+    while (has_value(safe_tag, "--")) safe_tag = replace(safe_tag, "--", "-");
+
     if (search(tag, "..") >= 0)
         die("invalid tag: path traversal: " + tag, EXIT_INTERNAL);
     if (!Regexp("^[a-f0-9]+$")->match(sha))
         die("invalid sha: expected hex, got: " + sha, EXIT_INTERNAL);
 
     string sha8 = (sizeof(sha) >= 8) ? sha[..7] : sha;
-    return sprintf("%s-%s-%s", slug, tag, sha8);
+    return sprintf("%s-%s-%s", slug, safe_tag, sha8);
 }
 
 //! Extract a .tar.gz file to a directory.

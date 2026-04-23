@@ -24,9 +24,8 @@ int cmd_verify(mapping ctx) {
     if (Stdio.is_dir(target)) {
         foreach (get_dir(target) || ({}); ; string name) {
             string full = combine_path(target, name);
-            string link_target;
-            mixed err = catch { link_target = System.readlink(full); };
-            if (err || !stringp(link_target)) { skipped++; continue; }
+            string link_target = get_symlink_target(full);
+            if (!link_target) { skipped++; continue; }
 
             // Resolve relative symlink targets against the symlink's directory
             if (sizeof(link_target) > 0 && link_target[0] != '/') {

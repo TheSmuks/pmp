@@ -133,6 +133,20 @@ string display_name(string name) {
     return name;
 }
 
+//! Check if path is a symbolic link. Portable wrapper.
+//! Uses Stdio.is_link which uses lstat internally.
+int(0..1) is_symlink(string path) {
+    return Stdio.is_link(path);
+}
+
+//! Read the target of a symbolic link.
+//! Returns 0 if path is not a symlink or does not exist.
+mixed get_symlink_target(string path) {
+    if (!Stdio.is_link(path)) return 0;
+    string target = 0;
+    catch { target = readlink(path); };
+    return target;
+}
 
 //! Atomically create or replace a symlink at dest pointing to target.
 //! Uses temp symlink + rename(2) so there is no window where dest is missing.
@@ -140,18 +154,16 @@ string display_name(string name) {
 void atomic_symlink(string target, string dest) {
     // If dest is a directory (not a symlink), remove it before installing.
     // This handles upgrades from bare directories to proper symlinks.
-    if (Stdio.is_dir(dest)) {
-        mixed readlink_err = catch(System.readlink(dest));
-        if (readlink_err)
-            // Not a symlink — it's a real directory. Remove it.
-            Stdio.recursive_rm(dest);
+    if (Stdio.is_dir(dest) && !is_symlink(dest)) {
+        // Not a symlink — it's a real directory. Remove it.
+        Stdio.recursive_rm(dest);
     }
     // Use Crypto.Random for strong uniqueness: pid + timestamp + 64-bit random
     string tmp_link = dest + ".tmp." + getpid() + "." + time() + "."
         + String.string2hex(Crypto.Random.random_string(8));
     // Clean up any leftover temp link from a previous crash
     rm(tmp_link);
-    mixed link_err = catch { System.symlink(target, tmp_link); };
+    mixed link_err = catch { symlink(target, tmp_link); };
     if (link_err)
         die("failed to create symlink: " + tmp_link + " (" + describe_error(link_err) + ")", EXIT_INTERNAL);
     if (!mv(tmp_link, dest)) {

@@ -166,9 +166,15 @@ string classify_bump(string|void old_tag, string|void new_tag) {
     if (new_v["major"] != old_v["major"]) return "major";
     if (new_v["minor"] != old_v["minor"]) return "minor";
 
-    // Same major.minor — could be patch or prerelease change
-    if (sizeof(old_v["prerelease"]) > 0 || sizeof(new_v["prerelease"]) > 0)
-        return "prerelease";
+    // Same major.minor — classify the change
+    // If new version has a prerelease tag, it's a prerelease bump
+    if (sizeof(new_v["prerelease"]) > 0) return "prerelease";
 
-    return "patch";
+    // New is a release — patch difference determines the bump
+    if (new_v["patch"] != old_v["patch"]) return "patch";
+
+    // Same major.minor.patch — old had prerelease, new doesn't
+    if (sizeof(old_v["prerelease"]) > 0) return "prerelease";
+
+    return "none";
 }

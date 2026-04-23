@@ -9,7 +9,14 @@ void cmd_init(mapping ctx) {
     if (Stdio.exist(ctx["pike_json"]))
         die("pike.json already exists in this directory");
 
-    string content = "{\n  \"dependencies\": {}\n}\n";
+    // Extract project name from current working directory
+    string dir_name = (getcwd() / "/")[-1];
+    if (!sizeof(dir_name) || dir_name == ".")
+        dir_name = basename(getcwd());
+    if (!sizeof(dir_name)) dir_name = "my-project";
+
+    string content = sprintf("{\n  \"name\": %s,\n  \"version\": \"0.1.0\",\n  \"dependencies\": {}\n}\n",
+        Standards.JSON.encode(dir_name));
     int bytes = Stdio.write_file(ctx["pike_json"], content);
     if (bytes != sizeof(content))
         die("failed to write pike.json (wrote " + bytes + " of " + sizeof(content) + " bytes)");
@@ -19,13 +26,25 @@ void cmd_init(mapping ctx) {
 void cmd_list(array(string) args, mapping ctx) {
     mapping opts = Arg.parse(({"pmp"}) + args);
     string dir = opts->g ? ctx["global_dir"] : ctx["local_dir"];
+    int json_output = opts->json || 0;
 
     if (!Stdio.is_dir(dir)) {
-        info("no modules installed");
+        if (json_output) write("[]\n");
+        else info("no modules installed");
         return;
     }
 
-    write(sprintf("  %-20s %-12s%s\n", "MODULE", "VERSION", "SOURCE"));
+    if (json_output) {
+        array(mapping) entries = ({});
+        foreach (get_dir(dir) || ({}); ; string mod_name) {
+            string moddir = combine_path(dir, mod_name);
+            if (!Stdio.is_dir(moddir)) continue;
+            string show_name = display_name(mod_name);
+            entries += ({ (["name": show_name]) });
+        }
+        write(Standards.JSON.encode(entries, Standards.JSON.HUMAN_READABLE) + "\n");
+        return;
+    }
     int found = 0;
     foreach (get_dir(dir) || ({}); ; string mod_name) {
         string moddir = combine_path(dir, mod_name);
@@ -36,8 +55,7 @@ void cmd_list(array(string) args, mapping ctx) {
 
         string ver = "(unknown)";
         // Resolve .version through symlink to store entry root
-        string real_dir = moddir;
-        mixed rerr = catch { real_dir = System.readlink(moddir) || moddir; };
+        string real_dir = get_symlink_target(moddir) || moddir;
         string ver_file = combine_path(real_dir, ".version");
         // If symlink points inside store entry (e.g., to subdir), try parent
         if (!Stdio.exist(ver_file) && has_suffix(mod_name, ".pmod"))
@@ -46,14 +64,12 @@ void cmd_list(array(string) args, mapping ctx) {
             ver = Stdio.read_file(ver_file) || "(unknown)";
 
         string src = "";
-        mixed err = catch {
-            string link = System.readlink(moddir);
-            if (link && has_prefix(link, ctx["store_dir"])) {
-                src = " (store: " + (link / "/")[-1] + ")";
-            } else if (link) {
-                src = " -> " + link;
-            }
-        };
+        string link = get_symlink_target(moddir);
+        if (link && has_prefix(link, ctx["store_dir"])) {
+            src = " (store: " + (link / "/")[-1] + ")";
+        } else if (link) {
+            src = " -> " + link;
+        }
 
         write(sprintf("  %-20s %-12s%s\n", show_name, ver, src));
         found = 1;
@@ -68,18 +84,28 @@ void cmd_clean(mapping ctx) {
         return;
     }
     int count = 0;
+    int has_non_symlink = 0;
     foreach (get_dir(ctx["local_dir"]) || ({}); ; string name) {
         string full = combine_path(ctx["local_dir"], name);
-        if (Stdio.is_dir(full)) {
+        if (is_symlink(full)) {
+            // Symlink — safe to remove
             count++;
         } else {
-            mixed err = catch { System.readlink(full); };
-            if (!err) count++;
+            // Real file or directory — preserve
+            has_non_symlink = 1;
         }
     }
-    Stdio.recursive_rm(ctx["local_dir"]);
-    info(sprintf("removed %s (%d module%s, store preserved)",
-        ctx["local_dir"], count, count == 1 ? "" : "s"));
+    // Remove only symlink entries, preserve real content
+    foreach (get_dir(ctx["local_dir"]) || ({}); ; string name) {
+        string full = combine_path(ctx["local_dir"], name);
+        if (is_symlink(full)) rm(full);
+    }
+    if (!has_non_symlink) {
+        // All content was symlinks — remove the directory too
+        Stdio.recursive_rm(ctx["local_dir"]);
+    }
+    info(sprintf("cleaned %d module%s from %s, store preserved",
+        count, count == 1 ? "" : "s", ctx["local_dir"]));
 }
 
 void cmd_remove(array(string) args, mapping ctx) {
@@ -141,5 +167,5 @@ void cmd_remove(array(string) args, mapping ctx) {
     }
 
     if (!removed)
-        warn("nothing to remove: " + name + " not found");
+        die("nothing to remove: " + name + " not found");
 }

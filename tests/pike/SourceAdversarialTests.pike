@@ -200,13 +200,9 @@ void test_validate_tag_empty_is_allowed() {
     assert_equal(0, code);
 }
 
-// ── source_to_repo_path: die on invalid format ───────────────────────
+// ── source_to_repo_path: graceful on invalid format ──────────────────
 
-void test_repo_path_short_dies() {
-    // Only domain — _validate_source_format should die
-    int code = run_subprocess(
-        "import Pmp.Source; "
-        "source_to_repo_path(\"github.com\");"
-    );
-    assert_true(code != 0, "short source should have died");
+void test_repo_path_short_returns_empty() {
+    // Only domain — should return empty string, not die
+    assert_equal("", source_to_repo_path("github.com"));
 }

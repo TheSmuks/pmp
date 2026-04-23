@@ -60,7 +60,7 @@ void store_unlock(string store_dir) {
 }
 
 //! Generate store entry name from source, tag, and SHA.
-//! Format: {domain}-{owner}-{repo}-{tag}-{sha_prefix8}
+//! Format: {domain}-{owner}-{repo}-{tag}-{sha_prefix16}
 string store_entry_name(string src, string tag, string sha) {
     string clean = (src / "#")[0];
     // Convert / to -, remove leading/trailing -
@@ -83,8 +83,8 @@ string store_entry_name(string src, string tag, string sha) {
     if (!Regexp("^[a-f0-9]+$")->match(sha))
         die("invalid sha: expected hex, got: " + sha, EXIT_INTERNAL);
 
-    string sha8 = (sizeof(sha) >= 8) ? sha[..7] : sha;
-    return sprintf("%s-%s-%s", slug, safe_tag, sha8);
+    string sha_prefix = (sizeof(sha) >= 16) ? sha[..15] : sha;
+    return sprintf("%s-%s-%s", slug, safe_tag, sha_prefix);
 }
 
 //! Extract a .tar.gz file to a directory.
@@ -134,9 +134,8 @@ void _validate_symlinks(string base_dir, string root_dir, void|int depth) {
     foreach (entries; ; string name) {
         string full = combine_path(base_dir, name);
         // readlink returns target on success, throws on non-symlink
-        string link_target;
-        mixed err = catch { link_target = System.readlink(full); };
-        if (!err && stringp(link_target)) {
+        string link_target = get_symlink_target(full);
+        if (link_target) {
             // Resolve the symlink target relative to its parent
             string parent = combine_path(full, "..");
             string resolved = combine_path(parent, link_target);
@@ -160,7 +159,7 @@ string read_stored_hash(string entry_dir) {
     if (!raw) return 0;
     foreach (raw / "\n"; ; string line)
         if (has_prefix(line, "content_sha256\t"))
-            return String.trim_all_whites(line[16..]);
+            return String.trim_all_whites(line[15..]);
     return 0;
 }
 
@@ -292,8 +291,7 @@ mapping store_install_github(string store_dir, string repo_path, string ver,
     if (Stdio.exist(entry_dir)) rm(entry_dir);
     Stdio.mkdirhier(store_dir);
     // Symlink-safe removal
-    mixed le = catch { System.readlink(entry_dir); };
-    if (!le) rm(entry_dir);
+    if (is_symlink(entry_dir)) rm(entry_dir);
     else Stdio.recursive_rm(entry_dir);
     // Move extracted content to store
     string src = combine_path(tmpdir, "extract", extracted);
@@ -369,8 +367,7 @@ mapping store_install_gitlab(string store_dir, string repo_path, string ver,
     if (Stdio.exist(entry_dir)) rm(entry_dir);
     Stdio.mkdirhier(store_dir);
     // Symlink-safe removal
-    mixed le2 = catch { System.readlink(entry_dir); };
-    if (!le2) rm(entry_dir);
+    if (is_symlink(entry_dir)) rm(entry_dir);
     else Stdio.recursive_rm(entry_dir);
     string src = combine_path(tmpdir, "extract", extracted);
     if (!Stdio.recursive_mv(src, entry_dir)) {
@@ -443,8 +440,7 @@ mapping store_install_selfhosted(string store_dir, string domain,
     if (Stdio.exist(entry_dir)) rm(entry_dir);
     Stdio.mkdirhier(store_dir);
     // Symlink-safe removal
-    mixed le3 = catch { System.readlink(entry_dir); };
-    if (!le3) rm(entry_dir);
+    if (is_symlink(entry_dir)) rm(entry_dir);
     else Stdio.recursive_rm(entry_dir);
     if (!Stdio.recursive_mv(repo_dest, entry_dir)) {
         unregister_cleanup_dir(tmpdir);

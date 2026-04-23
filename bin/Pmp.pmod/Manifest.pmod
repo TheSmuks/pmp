@@ -8,14 +8,20 @@ inherit .Helpers;
 //! @param source
 //!   Dependency source URL.
 void add_to_manifest(string pike_json, string name, string source) {
-    if (!Stdio.exist(pike_json)) die("pike.json not found: " + pike_json);
+    if (!Stdio.exist(pike_json)) {
+        warn("pike.json not found: " + pike_json);
+        return;
+    }
 
     string raw = Stdio.read_file(pike_json);
-    if (!raw) die("failed to read " + pike_json);
+    if (!raw) { warn("failed to read " + pike_json); return; }
 
     mixed data;
     mixed err = catch { data = Standards.JSON.decode(raw); };
-    if (err || !mappingp(data)) die("failed to parse " + pike_json + ": " + describe_error(err));
+    if (err || !mappingp(data)) {
+        warn("failed to parse " + pike_json + ": " + describe_error(err));
+        return;
+    }
 
     // Check if already present in dependencies (not raw string search)
     // to avoid false positive when name appears in other fields

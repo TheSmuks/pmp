@@ -13,13 +13,21 @@ string strip_comments_and_strings(string content) {
                 i++;
             continue;
         }
-        // Block comment
+        // Block comment — track nesting depth
         if (i + 1 < len && content[i..i] == "/" && content[i+1..i+1] == "*") {
+            int depth = 1;
             i += 2;
-            while (i + 1 < len &&
-                   !(content[i..i] == "*" && content[i+1..i+1] == "/"))
-                i++;
-            i += 2;
+            while (i + 1 < len && depth > 0) {
+                if (content[i..i] == "/" && i + 1 < len && content[i+1..i+1] == "*") {
+                    depth++;
+                    i += 2;
+                } else if (content[i..i] == "*" && i + 1 < len && content[i+1..i+1] == "/") {
+                    depth--;
+                    i += 2;
+                } else {
+                    i++;
+                }
+            }
             continue;
         }
         // String literal
@@ -117,10 +125,7 @@ void validate_manifests(string local_dir, multiset(string) std_libs,
         if (!Stdio.is_dir(moddir)) continue;
 
         // Resolve real path through symlink
-        string real_dir = moddir;
-        mixed err = catch {
-            real_dir = System.readlink(moddir) || moddir;
-        };
+        string real_dir = get_symlink_target(moddir) || moddir;
 
         // Collect imports/inherits/includes from .pike and .pmod files
         multiset(string) imports = (<>);

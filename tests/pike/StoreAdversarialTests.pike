@@ -137,12 +137,19 @@ void test_resolve_module_path_module_pmod() {
 // ── store_entry_name: empty SHA (die in subprocess) ──────────────────
 
 void test_store_entry_name_empty_sha() {
-    // die() calls exit() which is uncatchable, so test in subprocess
-    int code = run_subprocess(
-        "import Pmp.Store; "
-        "store_entry_name(\"github.com/owner/repo\", \"v1.0.0\", \"\");"
-    );
-    assert_true(code != 0, "empty SHA should have died");
+    // Empty SHA now gets a content-derived fallback (SHA resolution can fail transiently)
+    // Verify it produces a valid entry name instead of crashing
+    string code = "import Pmp.Store; write(store_entry_name(\"github.com/owner/repo\", \"v1.0.0\", \"\") + \"\\n\");";
+    mapping result = Process.run(({
+        "pike", "-M", combine_path(getcwd(), "modules"),
+        "-M", combine_path(getcwd(), "bin"),
+        "-e", code
+    }));
+    assert_equal(0, result->exitcode, "empty SHA should not crash");
+    string name = String.trim_all_whites(result->stdout || "");
+    assert_true(sizeof(name) > 0, "empty SHA should produce fallback name");
+    assert_true(has_prefix(name, "github.com-owner-repo-v1.0.0-"),
+        "fallback name should have correct prefix");
 }
 
 // ── read_stored_hash ────────────────────────────────────────────────

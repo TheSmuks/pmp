@@ -42,8 +42,13 @@ string store_entry_name(string src, string tag, string sha) {
 
     if (search(tag, "..") >= 0)
         die("invalid tag: path traversal: " + tag, EXIT_INTERNAL);
-    if (!Regexp("^[a-f0-9]+$")->match(sha))
+    if (sizeof(sha) == 0) {
+        // SHA resolution failed — use hash of source+tag as fallback identifier
+        sha = String.string2hex(Crypto.SHA256.hash(slug + "-" + safe_tag))[..15];
+        debug("SHA unavailable, using content-derived identifier: " + sha);
+    } else if (!Regexp("^[a-f0-9]+$")->match(sha)) {
         die("invalid sha: expected hex, got: " + sha, EXIT_INTERNAL);
+    }
 
     string sha_prefix = (sizeof(sha) >= 16) ? sha[..15] : sha;
     return sprintf("%s-%s-%s", slug, safe_tag, sha_prefix);

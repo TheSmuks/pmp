@@ -31,6 +31,8 @@ string _url_host(string url) {
             rest = rest[1..close_bracket - 1];
             return lower_case(rest);
         }
+        // Malformed bracket — return as-is so IPv6 checks in _is_private_host can match
+        return lower_case(rest);
     }
     // Strip port
     int colon_pos = search(rest, ":");
@@ -51,8 +53,27 @@ int _is_private_host(string host) {
         return 1;
     // IPv6-mapped IPv4 private addresses
     if (has_prefix(h, "::ffff:")) {
-        string ipv4 = h[7..];
-        return _is_private_host(ipv4);
+        string mapped = h[7..];
+        if (has_value(mapped, ".")) {
+            // Dotted-decimal format: ::ffff:127.0.0.1
+            return _is_private_host(mapped);
+        } else {
+            // Hex format: ::ffff:7f00:1 → 127.0.0.1
+            array(string) hex_parts = mapped / ":";
+            if (sizeof(hex_parts) == 2) {
+                int hi = (int)("0x" + hex_parts[0]);
+                int lo = (int)("0x" + hex_parts[1]);
+                if (hi >= 0 && lo >= 0) {
+                    int a = (hi >> 8) & 0xff;
+                    int b = hi & 0xff;
+                    int c = (lo >> 8) & 0xff;
+                    int d = lo & 0xff;
+                    string ipv4 = sprintf("%d.%d.%d.%d", a, b, c, d);
+                    return _is_private_host(ipv4);
+                }
+            }
+            return 1; // Unknown hex format — treat as private (safe default)
+        }
     }
     // 10.0.0.0/8
     if (has_prefix(h, "10."))

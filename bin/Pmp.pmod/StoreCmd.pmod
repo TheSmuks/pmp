@@ -34,6 +34,7 @@ void cmd_store(array(string) args, mapping ctx) {
                 info("no store directory");
                 return;
             }
+            store_lock(ctx["store_dir"]);
             int force = opts->force || opts->f || 0;
             array(string) unused = ({});
             foreach (get_dir(ctx["store_dir"]) || ({}); ; string ename) {
@@ -65,12 +66,14 @@ void cmd_store(array(string) args, mapping ctx) {
                         unused += ({ ename });
                 } else {
                     info("no local modules directory found — skipping prune");
+                    store_unlock(ctx["store_dir"]);
                     return;
                 }
             }
 
             if (sizeof(unused) == 0) {
                 info("no unused entries found");
+                store_unlock(ctx["store_dir"]);
                 return;
             }
 
@@ -79,7 +82,6 @@ void cmd_store(array(string) args, mapping ctx) {
                 info("unused store entry: " + ename);
 
             if (force) {
-                store_lock(ctx["store_dir"]);
                 foreach (unused; ; string ename) {
                     string entry = combine_path(ctx["store_dir"], ename);
                     Stdio.recursive_rm(entry);
@@ -90,6 +92,7 @@ void cmd_store(array(string) args, mapping ctx) {
             } else {
                 info(sprintf("%d unused entries (use --force to delete)",
                     sizeof(unused)));
+                store_unlock(ctx["store_dir"]);
             }
             break;
         }

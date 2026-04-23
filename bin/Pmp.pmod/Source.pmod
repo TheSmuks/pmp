@@ -58,7 +58,10 @@ string detect_source_type(string src) {
 string source_to_name(string src) {
     string clean = _normalize_source((src / "#")[0]);
     array parts = clean / "/";
-    return parts[-1];
+array(string) clean_parts = parts - ({ "" });
+if (sizeof(clean_parts) < 1)
+    die("cannot extract module name from: " + src);
+return clean_parts[-1];
 }
 
 //! Extract version from #suffix. Empty if none.
@@ -67,6 +70,8 @@ string source_to_version(string src) {
         string ver = (src / "#")[1..] * "#";
         if (search(ver, "..") >= 0)
             die("path traversal in version tag: " + ver);
+        if (search(ver, "/") >= 0 || search(ver, "\0") >= 0)
+            die("invalid version tag: " + ver);
         return ver;
     }
     return "";

@@ -185,7 +185,8 @@ void install_one(string name, string source, string target,
             || name;
             // Sanitize package name from pike.json — prevent path traversal
             if (search(resolved_name, "/") >= 0 || search(resolved_name, "\\") >= 0
-                || search(resolved_name, "..") >= 0 || sizeof(resolved_name) == 0) {
+                || search(resolved_name, "..") >= 0 || search(resolved_name, "\0") >= 0
+                || sizeof(resolved_name) == 0) {
                 warn("package has invalid name '" + resolved_name + "' in pike.json — using dependency key");
                 resolved_name = name;
             }
@@ -434,6 +435,63 @@ void cmd_install_all(string target, mapping ctx) {
     }
 
     if (target == ctx["local_dir"] && install_ok) {
+        // Prune stale lockfile entries (deps removed from pike.json)
+        // while preserving transitive deps of remaining direct deps.
+        // Fresh installs already build lock_entries from scratch;
+        // this targets the lockfile-replay path where old entries persist.
+        array(array(string)) deps = parse_deps(ctx["pike_json"]);
+        multiset(string) needed = (<>);
+        array(string) queue = ({});
+        foreach (deps; ; array(string) d) {
+            needed[d[0]] = 1;
+            queue += ({ d[0] });
+        }
+
+        // Build name -> lock_entry lookup for walking transitives
+        mapping(string:array(string)) entry_by_name = ([]);
+        foreach (ctx["lock_entries"]; ; array(string) e)
+            if (sizeof(e[0]) > 0) entry_by_name[e[0]] = e;
+
+        // BFS: walk transitive deps from each installed package's pike.json
+        multiset(string) seen = (<>);
+        while (sizeof(queue) > 0) {
+            string n = queue[0];
+            queue = queue[1..];
+            if (seen[n]) continue;
+            seen[n] = 1;
+            array(string) e = entry_by_name[n];
+            if (!e) continue;
+
+            string pkg_json;
+            if (e[1] == "-" || has_prefix(e[1], "./") || has_prefix(e[1], "/")) {
+                // Local dep — read pike.json from source path
+                string local_path = e[1];
+                string project_root = find_project_root() || getcwd();
+                if (has_prefix(local_path, "./"))
+                    local_path = combine_path(project_root, local_path);
+                pkg_json = combine_path(local_path, "pike.json");
+            } else {
+                // Remote dep — find in store
+                string entry_path =
+                    _find_store_entry(ctx["store_dir"], e[1], e[2], e[4]);
+                if (!entry_path || sizeof(entry_path) == 0) continue;
+                pkg_json = combine_path(ctx["store_dir"], entry_path, "pike.json");
+            }
+            if (!Stdio.exist(pkg_json)) continue;
+            foreach (parse_deps(pkg_json); ; array(string) td) {
+                if (!needed[td[0]]) {
+                    needed[td[0]] = 1;
+                    queue += ({ td[0] });
+                }
+            }
+        }
+
+        // Keep only reachable entries
+        array(array(string)) filtered = ({});
+        foreach (ctx["lock_entries"]; ; array(string) e)
+            if (needed[e[0]]) filtered += ({ e });
+        ctx["lock_entries"] = filtered;
+
         write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
         validate_manifests(ctx["local_dir"], ctx["std_libs"]);
     }

@@ -43,8 +43,37 @@ string _url_host(string url) {
 
 //! Check whether a hostname points to a private/internal address.
 //! Returns 1 if the host should be blocked (SSRF protection).
+//! Normalize octal/hex IPv4 octets to decimal.
+//! Pike's (int) does NOT handle 0x/0 prefixes — use sscanf.
+protected string _normalize_ip_host(string host) {
+    if (has_value(host, ":")) return host;
+    if (!has_value(host, ".")) return host;
+    array(string) parts = host / ".";
+    if (sizeof(parts) != 4) return host;
+    foreach (parts; ; string p) {
+        if (sizeof(p) == 0) return host;
+        if (!((p[0] >= '0' && p[0] <= '9') || has_prefix(p, "0x") || has_prefix(p, "0X")))
+            return host;
+    }
+    array(string) normalized = ({});
+    foreach (parts; ; string p) {
+        int val;
+        if (has_prefix(p, "0x") || has_prefix(p, "0X")) {
+            sscanf(p[2..], "%x", val);
+        } else if (sizeof(p) > 1 && p[0] == '0') {
+            sscanf(p[1..], "%o", val);
+        } else {
+            val = (int)p;
+        }
+        normalized += ({ (string)val });
+    }
+    return normalized * ".";
+}
+
+
 int _is_private_host(string host) {
     string h = lower_case(host);
+    h = _normalize_ip_host(h);
     // Literal loopback / wildcard
     if (h == "localhost" || has_prefix(h, "127.") || h == "0.0.0.0")
         return 1;

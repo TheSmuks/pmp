@@ -7,16 +7,25 @@ inherit .Manifest;
 
 //! Check if a directory tree contains any .h files.
 //! Uses Pike directory walk — no external find dependency.
-int _has_headers(string dir) {
+//! Depth limit prevents infinite recursion on symlink cycles.
+int _has_headers(string dir, void|int depth) {
+    if (!depth) depth = 0;
+    if (depth > 10) return 0;
     array(string) entries = get_dir(dir) || ({});
     foreach (entries; ; string name) {
         string full = combine_path(dir, name);
         if (has_suffix(name, ".h"))
             return 1;
-        if (Stdio.is_dir(full) && _has_headers(full))
+        if (Stdio.is_dir(full) && _has_headers(full, depth + 1))
             return 1;
     }
     return 0;
+}
+
+//! Shell-escape a string using single quotes.
+//! Replaces embedded single quotes with escaped equivalents.
+string shell_escape(string s) {
+    return "'" + replace(s, "'", "'\\''") + "'";
 }
 
 //! Build module + include paths from project root and global dir.
@@ -69,19 +78,14 @@ void cmd_run(array(string) args, mapping ctx) {
         env_vars += ({"PIKE_INCLUDE_PATH=" + new_path});
     }
 
-    if (sizeof(env_vars) > 0) {
-        // Build environment map from current env + overrides
-        mapping(string:string) env = getenv() || ([]);
-        foreach (env_vars; ; string var) {
-            array parts = var / "=";
-            if (sizeof(parts) >= 2)
-                env[parts[0]] = parts[1..] * "=";
-        }
-        Process.exece(ctx["pike_bin"],
-            ({ ctx["pike_bin"], script, @script_args }), env);
-    } else {
-        Process.exec(ctx["pike_bin"], script, @script_args);
+    // Set environment variables in-process, then exec
+    // (Process.exece is unreliable in some Pike builds)
+    foreach (env_vars; ; string var) {
+        array parts = var / "=";
+        if (sizeof(parts) >= 2)
+            putenv(parts[0], parts[1..] * "=");
     }
+    Process.exec(ctx["pike_bin"], script, @script_args);
 }
 
 void cmd_env(mapping ctx) {
@@ -148,10 +152,11 @@ void cmd_env(mapping ctx) {
     Process.run(({"chmod", "+x", combine_path(env_bin, "pike")}));
 
     // activate — idempotent, with proper deactivate (following uv patterns)
+
     string activate =
         "# pmp environment activation. Source this: . .pike-env/activate\n"
         "\n"
-        "_pike_env_dir=\"" + abs_env_dir + "\"\n"
+        "_pike_env_dir=" + shell_escape(abs_env_dir) + "\n"
         "_pike_env_bin=\"$_pike_env_dir/bin\"\n"
         "\n"
         "# Idempotent: bail if already activated in this shell\n"

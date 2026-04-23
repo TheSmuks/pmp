@@ -169,9 +169,24 @@ void cache_prune(void|int ttl_secs) {
     foreach (get_dir(dir) || ({}); ; string f) {
         string full = combine_path(dir, f);
         if (!Stdio.is_file(full)) continue;
-        // Check modification time as proxy for cached_at
-        object stat = file_stat(full);
-        if (stat && (time() - stat->mtime) > ttl_secs) {
+        string raw = Stdio.read_file(full);
+        int cached_at = 0;
+        if (raw && sizeof(raw)) {
+            int sep = search(raw, "\n\n");
+            if (sep >= 0) {
+                string header_block = raw[..sep - 1];
+                foreach (header_block / "\n"; ; string line) {
+                    int colon = search(line, ": ");
+                    if (colon < 0) continue;
+                    if (line[..colon - 1] == "cached_at") {
+                        cached_at = (int)line[colon + 2..];
+                        break;
+                    }
+                }
+            }
+        }
+        // Prune if missing/corrupt or expired
+        if (cached_at <= 0 || (time() - cached_at) > ttl_secs) {
             rm(full);
             pruned++;
         }

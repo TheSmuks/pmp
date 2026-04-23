@@ -17,7 +17,11 @@ void store_lock(string store_dir) {
             lf->write(my_pid);
             lf->close();
         };
-        if (!err) return;  // Lock acquired
+        if (!err) {
+            _store_locked = 1;
+            _store_dir_for_lock = store_dir;
+            return;  // Lock acquired
+        }
 
         // Lock file exists — check if holder is still alive
         string existing = String.trim_all_whites(Stdio.read_file(lock_path) || "");
@@ -51,6 +55,8 @@ void store_unlock(string store_dir) {
         if (existing == (string)getpid())
             rm(lock_path);
     }
+    _store_locked = 0;
+    _store_dir_for_lock = "";
 }
 
 //! Generate store entry name from source, tag, and SHA.
@@ -85,7 +91,7 @@ string extract_targz(string tarball_path, string dest_dir) {
 
     // Extract using system tar with security flags
     mapping r = Process.run(({"tar", "xzf", tarball_path, "-C", dest_dir,
-                              "--no-same-owner"}));
+                              "--no-same-owner", "--no-same-permissions"}));
     if (r->exitcode != 0)
         die("failed to extract archive: " + (r->stderr || "unknown error"), EXIT_INTERNAL);
 
@@ -118,7 +124,8 @@ string extract_targz(string tarball_path, string dest_dir) {
 
 //! Recursively validate that no symlinks under base_dir escape root_dir.
 void _validate_symlinks(string base_dir, string root_dir, void|int depth) {
-    if (depth > 20) return;
+    if (depth > 20)
+        die("archive directory nesting exceeds safety limit (20 levels)", EXIT_INTERNAL);
     array(string) entries = get_dir(base_dir) || ({});
     foreach (entries; ; string name) {
         string full = combine_path(base_dir, name);
@@ -260,10 +267,22 @@ mapping store_install_github(string store_dir, string repo_path, string ver,
     string entry_dir = combine_path(store_dir, entry_name);
 
     if (Stdio.is_dir(entry_dir)) {
-        info("reusing existing store entry " + entry_name);
-        Stdio.recursive_rm(tmpdir);
-        unregister_cleanup_dir(tmpdir);
-        return (["tag": ver, "sha": sha, "hash": read_stored_hash(entry_dir) || "", "entry": entry_name]);
+        if (!Stdio.exist(combine_path(entry_dir, ".pmp-meta"))) {
+            warn("store entry " + entry_name + " missing metadata — re-downloading");
+            Stdio.recursive_rm(entry_dir);
+        } else {
+            string stored_hash = read_stored_hash(entry_dir);
+            string actual_hash = compute_dir_hash(entry_dir);
+            if (stored_hash && actual_hash && stored_hash != actual_hash) {
+                warn("store entry " + entry_name + " has integrity mismatch — re-downloading");
+                Stdio.recursive_rm(entry_dir);
+            } else {
+                info("reusing existing store entry " + entry_name);
+                Stdio.recursive_rm(tmpdir);
+                unregister_cleanup_dir(tmpdir);
+                return (["tag": ver, "sha": sha, "hash": stored_hash || "", "entry": entry_name]);
+            }
+        }
     }
 
     if (Stdio.exist(entry_dir)) rm(entry_dir);
@@ -325,10 +344,22 @@ mapping store_install_gitlab(string store_dir, string repo_path, string ver,
     string entry_dir = combine_path(store_dir, entry_name);
 
     if (Stdio.is_dir(entry_dir)) {
-        info("reusing existing store entry " + entry_name);
-        Stdio.recursive_rm(tmpdir);
-        unregister_cleanup_dir(tmpdir);
-        return (["tag": ver, "sha": sha, "hash": read_stored_hash(entry_dir) || "", "entry": entry_name]);
+        if (!Stdio.exist(combine_path(entry_dir, ".pmp-meta"))) {
+            warn("store entry " + entry_name + " missing metadata — re-downloading");
+            Stdio.recursive_rm(entry_dir);
+        } else {
+            string stored_hash = read_stored_hash(entry_dir);
+            string actual_hash = compute_dir_hash(entry_dir);
+            if (stored_hash && actual_hash && stored_hash != actual_hash) {
+                warn("store entry " + entry_name + " has integrity mismatch — re-downloading");
+                Stdio.recursive_rm(entry_dir);
+            } else {
+                info("reusing existing store entry " + entry_name);
+                Stdio.recursive_rm(tmpdir);
+                unregister_cleanup_dir(tmpdir);
+                return (["tag": ver, "sha": sha, "hash": stored_hash || "", "entry": entry_name]);
+            }
+        }
     }
 
     if (Stdio.exist(entry_dir)) rm(entry_dir);
@@ -387,10 +418,22 @@ mapping store_install_selfhosted(string store_dir, string domain,
     string entry_dir = combine_path(store_dir, entry_name);
 
     if (Stdio.is_dir(entry_dir)) {
-        info("reusing existing store entry " + entry_name);
-        Stdio.recursive_rm(tmpdir);
-        unregister_cleanup_dir(tmpdir);
-        return (["tag": ver, "sha": sha, "hash": read_stored_hash(entry_dir) || "", "entry": entry_name]);
+        if (!Stdio.exist(combine_path(entry_dir, ".pmp-meta"))) {
+            warn("store entry " + entry_name + " missing metadata — re-downloading");
+            Stdio.recursive_rm(entry_dir);
+        } else {
+            string stored_hash = read_stored_hash(entry_dir);
+            string actual_hash = compute_dir_hash(entry_dir);
+            if (stored_hash && actual_hash && stored_hash != actual_hash) {
+                warn("store entry " + entry_name + " has integrity mismatch — re-downloading");
+                Stdio.recursive_rm(entry_dir);
+            } else {
+                info("reusing existing store entry " + entry_name);
+                Stdio.recursive_rm(tmpdir);
+                unregister_cleanup_dir(tmpdir);
+                return (["tag": ver, "sha": sha, "hash": stored_hash || "", "entry": entry_name]);
+            }
+        }
     }
 
     if (Stdio.exist(entry_dir)) rm(entry_dir);

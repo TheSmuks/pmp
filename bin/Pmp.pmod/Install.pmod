@@ -94,9 +94,7 @@ void install_one(string name, string source, string target,
             mapping rmp = resolve_module_path(name, local_path);
             string dest = combine_path(target, rmp->link_name);
             Stdio.mkdirhier(target);
-            // Remove existing symlink/dir if present
-            if (Stdio.exist(dest)) rm(dest);
-            System.symlink(rmp->target, dest);
+            atomic_symlink(rmp->target, dest);
             info("linked " + name + " -> " + rmp->target);
 
             ctx["lock_entries"] = lockfile_add_entry(ctx["lock_entries"],
@@ -216,11 +214,10 @@ void install_one(string name, string source, string target,
                 || name;
             mapping rmp = resolve_module_path(resolved_name, entry_full);
             dest = combine_path(target, rmp->link_name);
-            if (Stdio.exist(dest)) rm(dest);
-            System.symlink(rmp->target, dest);
+            atomic_symlink(rmp->target, dest);
 
             // Write .version for compatibility with list command
-            Stdio.write_file(combine_path(entry_full, ".version"), ver);
+            atomic_write(combine_path(entry_full, ".version"), ver);
 
             info("installed " + name + " " + ver + " -> " + dest);
             ctx["lock_entries"] = lockfile_add_entry(ctx["lock_entries"], name,
@@ -296,27 +293,45 @@ void cmd_install_all(string target, mapping ctx) {
                         Stdio.mkdirhier(target);
                         mapping rmp = resolve_module_path(ln, local_path);
                         string dest = combine_path(target, rmp->link_name);
-                        if (Stdio.exist(dest)) rm(dest);
-                        System.symlink(rmp->target, dest);
+                        atomic_symlink(rmp->target, dest);
                         info("linked " + ln + " -> " + rmp->target);
                     }
                 } else {
-                    // Remote dep — find store entry
+                // Remote dep — find store entry
                     string slug = replace(ls, "/", "-");
                     string pattern = slug + "-" + lt + "-*";
                     string found_entry = "";
+                    array(string) candidates = ({});
 
                     if (Stdio.is_dir(ctx["store_dir"])) {
                         foreach (get_dir(ctx["store_dir"]) || ({}); ;
                                  string se) {
-                            if (glob(pattern, se) &&
-                                Stdio.is_dir(
+                            if (glob(pattern, se) && Stdio.is_dir(
                                     combine_path(ctx["store_dir"], se))) {
+                                candidates += ({ se });
+                            }
+                        }
+                    }
+
+                    // Match by content hash from lockfile
+                    if (sizeof(candidates) > 0 && sizeof(lhash) > 0) {
+                        foreach (candidates; ; string se) {
+                            string stored = read_stored_hash(
+                                combine_path(ctx["store_dir"], se));
+                            if (stored && stored == lhash) {
                                 found_entry = se;
                                 break;
                             }
                         }
+                        if (sizeof(found_entry) == 0)
+                            warn("no store entry for " + ln + " " + lt
+                                 + " matches lockfile hash — using first match");
                     }
+
+                    // Fallback: use first candidate
+                    if (sizeof(found_entry) == 0 && sizeof(candidates) > 0)
+                        found_entry = candidates[0];
+
 
                     if (sizeof(found_entry) > 0) {
                         string entry_full = combine_path(ctx["store_dir"], found_entry);
@@ -336,8 +351,7 @@ void cmd_install_all(string target, mapping ctx) {
                         Stdio.mkdirhier(target);
                         mapping rmp = resolve_module_path(ln, entry_full);
                         string dest = combine_path(target, rmp->link_name);
-                        if (Stdio.exist(dest)) rm(dest);
-                        System.symlink(rmp->target, dest);
+                        atomic_symlink(rmp->target, dest);
                         info("installed " + ln + " " + lt
                              + " (from lockfile)");
                     } else {
@@ -363,11 +377,13 @@ void cmd_install_all(string target, mapping ctx) {
 
     if (!use_lockfile) {
         if (ctx["frozen_lockfile"])
-            die("frozen lockfile: no lockfile found — "
-                + "run 'pmp install' without --frozen-lockfile first");
+                die("frozen lockfile: " + (Stdio.exist(ctx["lockfile_path"]) ?
+                    "store entries missing — cannot satisfy lockfile" : "no lockfile found")
+                    + " — run 'pmp install' without --frozen-lockfile first");
         if (ctx["offline"])
-            die("offline mode: no lockfile found — "
-                + "cannot resolve without network");
+                die("offline mode: " + (Stdio.exist(ctx["lockfile_path"]) ?
+                    "store entries missing — cannot satisfy lockfile" : "no lockfile found")
+                    + " — cannot resolve without network");
         // Clean up any symlinks created during lockfile replay
         if (Stdio.is_dir(target)) {
             foreach (get_dir(target) || ({}); ; string name) {
@@ -516,7 +532,10 @@ void cmd_install(array(string) args, mapping ctx) {
         array(array(string)) existing = read_lockfile(ctx["lockfile_path"]);
 
         project_lock(find_project_root());
+        int store_locked = 0;
         mixed err = catch {
+            store_lock(ctx["store_dir"]);
+            store_locked = 1;
             ctx["visited"] = (<>);
             ctx["lock_entries"] = ({});
             cmd_install_source(source, target, ctx);
@@ -534,6 +553,7 @@ void cmd_install(array(string) args, mapping ctx) {
                 validate_manifests(ctx["local_dir"], ctx["std_libs"]);
             }
         };
+        if (store_locked) store_unlock(ctx["store_dir"]);
         project_unlock(find_project_root());
         if (err) throw(err);
     }
@@ -649,6 +669,22 @@ void cmd_rollback(mapping ctx) {
     string target = ctx["local_dir"];
     Stdio.mkdirhier(target);
 
+    // Remove modules not in previous lockfile
+    multiset(string) prev_names = (<>);
+    foreach (prev_entries; ; array(string) entry)
+        if (sizeof(entry[0]) > 0) prev_names[entry[0]] = 1;
+
+    if (Stdio.is_dir(target)) {
+        foreach (get_dir(target) || ({}); ; string name) {
+            string full = combine_path(target, name);
+            mixed err = catch { string link = System.readlink(full); };
+            if (!err && !prev_names[name]) {
+                rm(full);
+                info("removed " + name + " (not in previous lockfile)");
+            }
+        }
+    }
+
     // Write lockfile atomically before restoring symlinks.
     // If the process crashes mid-rollback, the lockfile reflects
     // the target state so re-running rollback can be safe.
@@ -677,9 +713,7 @@ void cmd_rollback(mapping ctx) {
                 if (Stdio.exist(dest)) rm(dest);
                 mapping rmp = resolve_module_path(ln, local_path);
                 string dest_rm = combine_path(target, rmp->link_name);
-                if (Stdio.exist(dest_rm)) rm(dest_rm);
-                System.symlink(rmp->target, dest_rm);
-                if (dest != dest_rm) System.symlink(rmp->target, dest);
+                atomic_symlink(rmp->target, dest_rm);
                 info("restored " + ln + " -> " + rmp->target);
             }
         } else {
@@ -726,11 +760,9 @@ void cmd_rollback(mapping ctx) {
             string entry_full = combine_path(ctx["store_dir"], found_entry);
             mapping rmp = resolve_module_path(ln, entry_full);
             string dest_rm = combine_path(target, rmp->link_name);
-            // Remove both possible old symlinks (bare and .pmod)
-            if (Stdio.exist(dest)) rm(dest);
-            if (Stdio.exist(dest_rm)) rm(dest_rm);
-            System.symlink(rmp->target, dest_rm);
-            if (dest != dest_rm) System.symlink(rmp->target, dest);
+            // Remove bare-name symlink if different from resolved
+            if (Stdio.exist(dest) && dest != dest_rm) rm(dest);
+            atomic_symlink(rmp->target, dest_rm);
             info("restored " + ln + " " + lt);
         }
     }
@@ -771,6 +803,10 @@ void cmd_changelog(array(string) args, mapping ctx) {
     string prev_sha = prev_entry[3];
 
     if (cur_sha == prev_sha) {
+        if (cur_sha == "-") {
+            info(mod_name + ": local dependency — no remote changelog available");
+            return;
+        }
         info(mod_name + ": no changes (" + cur_tag + " == " + prev_tag + ")");
         return;
     }

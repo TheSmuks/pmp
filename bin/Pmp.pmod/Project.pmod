@@ -104,7 +104,7 @@ void cmd_remove(array(string) args, mapping ctx) {
             if (!err && mappingp(data) && mappingp(data->dependencies)) {
                 if (!zero_type(data->dependencies[name])) {
                     m_delete(data->dependencies, name);
-                    Stdio.write_file(ctx["pike_json"],
+                    atomic_write(ctx["pike_json"],
                         Standards.JSON.encode(data, Standards.JSON.HUMAN_READABLE) + "\n");
                     info("removed " + name + " from pike.json");
                     removed = 1;

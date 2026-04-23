@@ -3,8 +3,8 @@ inherit .Config;
 //! Cleanup registry for signal handling and error recovery.
 //! Tracks temp dirs and store lock for cleanup on exit/interrupt.
 private array(string) _cleanup_dirs = ({});
-private string _store_dir_for_lock = "";
-private int _store_locked = 0;
+protected string _store_dir_for_lock = "";
+protected int _store_locked = 0;
 
 //! Register a temp directory for cleanup on exit/signal.
 void register_cleanup_dir(string dir) {
@@ -164,7 +164,8 @@ void atomic_symlink(string target, string dest) {
 //! Uses write-to-temp + rename(2) to prevent truncation on crash.
 //! Dies on failure (EXIT_INTERNAL).
 void atomic_write(string path, string content) {
-    string tmp_path = path + ".tmp." + getpid() + "." + time() + "." + random(100000);
+    string tmp_path = path + ".tmp." + getpid() + "." + time() + "."
+        + String.string2hex(Crypto.Random.random_string(8));
     Stdio.write_file(tmp_path, content);
     if (!mv(tmp_path, path)) {
         // mv may fail across filesystems — try harder

@@ -28,7 +28,7 @@ void add_to_manifest(string pike_json, string name, string source) {
 
     string encoded = Standards.JSON.encode(data,
                                            Standards.JSON.HUMAN_READABLE);
-    mixed write_err = catch { Stdio.write_file(pike_json, encoded + "\n"); };
+    mixed write_err = catch { atomic_write(pike_json, encoded + "\n"); };
     if (write_err) die("failed to write " + pike_json);
 }
 

@@ -77,7 +77,7 @@ object _do_get(string url, mapping request_headers,
             // Rate limited — respect Retry-After header
             string retry_after = con->headers["retry-after"];
             if (retry_after) {
-                int ra_secs = (int)retry_after;
+                int ra_secs = min((int)retry_after, 60);
                 if (ra_secs > 0) {
                     float wait = (float)max(delay, (float)ra_secs);
                     info(sprintf("rate limited by %s — waiting %.0fs (Retry-After)",

@@ -17,16 +17,6 @@ void unregister_cleanup_dir(string dir) {
     _cleanup_dirs -= ({ dir });
 }
 
-//! Register store lock state for cleanup.
-void register_store_lock(string store_dir) {
-    _store_dir_for_lock = store_dir;
-    _store_locked = 1;
-}
-
-//! Clear store lock state (after successful unlock).
-void clear_store_lock() {
-    _store_locked = 0;
-}
 private int _cleaned_up = 0;
 
 

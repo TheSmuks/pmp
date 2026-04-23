@@ -189,14 +189,6 @@ void validate_manifests(string local_dir, multiset(string) std_libs,
                             imports[matches[0]] = 1;
                             continue;
                         }
-                        // #ifdef Foo — conditional compilation references
-                        matches =
-                            Regexp("#ifdef[ \t]+([A-Za-z_][A-Za-z0-9_]*)")
-                            ->split(trimmed);
-                        if (matches && sizeof(matches) > 0) {
-                            imports[matches[0]] = 1;
-                            continue;
-                        }
                     }
                     // Scan raw content for string imports (import "foo";)
                     // since strip_comments_and_strings removes string contents

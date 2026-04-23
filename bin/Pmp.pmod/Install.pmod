@@ -216,6 +216,7 @@ void cmd_install_all(string target, mapping ctx) {
     ctx["visited"] = (<>);
     ctx["lock_entries"] = ({});
 
+    int install_ok = 0;
     int store_locked = 0;
 
     // Project-level lock: prevents concurrent installs in the same directory
@@ -304,6 +305,7 @@ void cmd_install_all(string target, mapping ctx) {
                     ctx["lock_entries"] = lockfile_add_entry(ctx["lock_entries"],
                         ln, ls, lt, lsha, lhash);
             }
+            install_ok = 1;
         } else {
             if (ctx["frozen_lockfile"])
                 die("frozen lockfile: lockfile does not cover all dependencies — "
@@ -393,11 +395,15 @@ void cmd_install_all(string target, mapping ctx) {
                     };
                     if (cp_err) {
                         // Total failure — try to restore backup
-                        if (Stdio.is_dir(backup)) mv(backup, target);
+                        if (Stdio.is_dir(backup)) {
+                            Stdio.recursive_rm(target);
+                            mv(backup, target);
+                        }
                         die("failed to swap modules directory");
                     }
                 }
                 Stdio.recursive_rm(backup);
+                install_ok = 1;
             }
         } else {
             // No existing modules/ — just rename
@@ -410,13 +416,18 @@ void cmd_install_all(string target, mapping ctx) {
                            combine_path(target, name));
                     Stdio.recursive_rm(staging);
                 };
-                if (cp_err)
+                if (cp_err) {
                     warn("failed to move staging dir to modules");
+                } else {
+                    install_ok = 1;
+                }
+            } else {
+                install_ok = 1;
             }
         }
     }
 
-    if (target == ctx["local_dir"]) {
+    if (target == ctx["local_dir"] && install_ok) {
         // Prune entries for deps no longer in pike.json
         array(array(string)) deps = parse_deps(ctx["pike_json"]);
         multiset(string) dep_names = (<>);
@@ -624,7 +635,11 @@ void cmd_lock(mapping ctx) {
         die("no pike.json found");
 
     project_lock(find_project_root());
+    int store_locked = 0;
     mixed err = catch {
+        store_lock(ctx["store_dir"]);
+        store_locked = 1;
+
         ctx["visited"] = (<>);
         ctx["lock_entries"] = ({});
 
@@ -636,6 +651,7 @@ void cmd_lock(mapping ctx) {
         write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
         info("lockfile written");
     };
+    if (store_locked) store_unlock(ctx["store_dir"]);
     project_unlock(find_project_root());
     if (err) throw(err);
 }

@@ -2,6 +2,7 @@
 // All state is passed via context mapping (ctx).
 
 inherit .Helpers;
+inherit .Store;
 
 int dir_size(string path) {
     int total = 0;
@@ -78,12 +79,14 @@ void cmd_store(array(string) args, mapping ctx) {
                 info("unused store entry: " + ename);
 
             if (force) {
+                store_lock(ctx["store_dir"]);
                 foreach (unused; ; string ename) {
                     string entry = combine_path(ctx["store_dir"], ename);
                     Stdio.recursive_rm(entry);
                     info("removed " + ename);
                 }
                 info(sprintf("pruned %d entries", sizeof(unused)));
+                store_unlock(ctx["store_dir"]);
             } else {
                 info(sprintf("%d unused entries (use --force to delete)",
                     sizeof(unused)));

@@ -3,11 +3,12 @@ inherit .Helpers;
 //! Normalize a source URL: strip URL schemes (https://, http://, git://, ssh://)
 //! and trailing .git suffix. Returns the clean host/path form.
 string _normalize_source(string src) {
+    int had_scheme = 0;
     // Strip scheme
-    if (has_prefix(src, "https://")) src = src[8..];
-    else if (has_prefix(src, "http://")) src = src[7..];
-    else if (has_prefix(src, "git://")) src = src[6..];
-    else if (has_prefix(src, "ssh://")) src = src[6..];
+    if (has_prefix(src, "https://")) { src = src[8..]; had_scheme = 1; }
+    else if (has_prefix(src, "http://")) { src = src[7..]; had_scheme = 1; }
+    else if (has_prefix(src, "git://")) { src = src[6..]; had_scheme = 1; }
+    else if (has_prefix(src, "ssh://")) { src = src[6..]; had_scheme = 1; }
 
     // Strip credentials user@host
     int at_pos = search(src, "@");
@@ -16,12 +17,14 @@ string _normalize_source(string src) {
         if (first_slash < 0 || at_pos < first_slash) {
             src = src[at_pos + 1..];
             // SCP-style: after stripping user@, host:path becomes host/path
-            int colon_pos = search(src, ":");
-            if (colon_pos > 0) {
-                int slash_pos = search(src, "/");
-                // Only convert colon if it appears before any slash (host:path format)
-                if (slash_pos < 0 || colon_pos < slash_pos)
-                    src = src[..colon_pos - 1] + "/" + src[colon_pos + 1..];
+            // Only convert if no scheme was present (SCP-style, not ssh://)
+            if (!had_scheme) {
+                int colon_pos = search(src, ":");
+                if (colon_pos > 0) {
+                    int slash_pos = search(src, "/");
+                    if (slash_pos < 0 || colon_pos < slash_pos)
+                        src = src[..colon_pos - 1] + "/" + src[colon_pos + 1..];
+                }
             }
         }
     }
@@ -80,6 +83,10 @@ string source_to_version(string src) {
             die("path traversal in version tag: " + ver);
         if (search(ver, "/") >= 0 || search(ver, "\0") >= 0)
             die("invalid version tag: " + ver);
+        if (search(ver, "\\") >= 0)
+            die("invalid version tag: contains backslash: " + ver);
+        if (search(ver, ";") >= 0)
+            die("invalid version tag: contains ';': " + ver);
         return ver;
     }
     return "";

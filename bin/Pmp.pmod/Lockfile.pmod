@@ -32,6 +32,8 @@ void write_lockfile(string lockfile_path, array(array(string)) entries) {
     // Validate entries — no field may contain a tab
     foreach (entries; ; array(string) entry) {
         foreach (entry; int i; string field) {
+            if (search(field, "\0") >= 0)
+                die("lockfile field contains null byte: " + field[..20]);
             if (search(field, "\t") >= 0)
                 die("lockfile field contains tab character: " + field, EXIT_INTERNAL);
             if (search(field, "\n") >= 0)
@@ -42,8 +44,8 @@ void write_lockfile(string lockfile_path, array(array(string)) entries) {
     // Backup existing lockfile before overwriting
     if (Stdio.exist(lockfile_path)) {
         string existing = Stdio.read_file(lockfile_path);
-        if (existing && sizeof(existing) > 0)
-            Stdio.write_file(lockfile_path + ".prev", existing);
+        if (existing)
+            atomic_write(lockfile_path + ".prev", existing);
     }
 
     String.Buffer buf = String.Buffer();
@@ -64,8 +66,13 @@ array(array(string)) read_lockfile(void|string lf) {
     string raw = Stdio.read_file(path);
     if (!raw || sizeof(raw) == 0) return ({});
 
+    array(string) lines;
+    // Strip carriage returns before processing
+    lines = map(raw / "\n", lambda(string l) { return replace(l, "\r", ""); });
+
     // Check lockfile format version
-    foreach (raw / "\n"; ; string line) {
+    int found_version = 0;
+    foreach (lines; ; string line) {
         if (has_prefix(line, "# pmp lockfile v")) {
             // Extract version number after 'v'
             string v_str = line[16..];
@@ -75,12 +82,15 @@ array(array(string)) read_lockfile(void|string lf) {
             if (v > LOCKFILE_VERSION)
                 die("lockfile format v" + v + " is newer than supported (v"
                     + LOCKFILE_VERSION + ") — update pmp");
+            found_version = 1;
             break;
         }
     }
+    if (!found_version)
+        warn("lockfile has no version header — format may be unrecognized");
 
     array(array(string)) entries = ({});
-    foreach (raw / "\n"; ; string line) {
+    foreach (lines; ; string line) {
         if (has_prefix(line, "#") || sizeof(line) == 0) continue;
         array parts = line / "\t";
         if (sizeof(parts) >= 5 && sizeof(parts[0]) > 0)

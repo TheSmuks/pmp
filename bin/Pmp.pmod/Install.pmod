@@ -13,6 +13,68 @@ inherit .Manifest;
 inherit .Validate;
 inherit .Semver;
 
+
+private string get_resolved_sha(string type, string domain,
+                                 string repo_path, string ver,
+                                 mapping ctx) {
+    if (ctx["offline"]) return "-";
+    switch (type) {
+        case "github":
+        case "gitlab":
+            return resolve_commit_sha(type, "", repo_path, ver, PMP_VERSION) || "";
+        case "selfhosted":
+            return resolve_commit_sha(type, domain, repo_path, ver, PMP_VERSION) || "";
+        default:
+            return "";
+    }
+}
+
+// ── Project-level lock ───────────────────────────────────────────────
+
+private string _project_lock_path(string project_root) {
+    return combine_path(project_root || getcwd(), ".pmp-install.lock");
+}
+
+//! Acquire a project-level advisory lock. Removes stale locks held by dead processes.
+void project_lock(void|string project_root) {
+    string lock_path = _project_lock_path(project_root);
+    string my_pid = (string)getpid();
+
+    for (int attempt = 0; attempt < 2; attempt++) {
+        mixed err = catch {
+            Stdio.File lf = Stdio.File(lock_path, "wct");
+            lf->write(my_pid);
+            lf->close();
+        };
+        if (!err) return;
+
+        string existing = String.trim_all_whites(Stdio.read_file(lock_path) || "");
+        if (sizeof(existing) > 0) {
+            int pid = (int)existing;
+            if (pid > 0) {
+                mapping r = Process.run(({"kill", "-0", (string)pid}));
+                if (r->exitcode == 0)
+                    die("project is locked by pmp process " + pid
+                        + " — remove " + lock_path + " manually");
+                info("removing stale project lock from process " + pid);
+                rm(lock_path);
+                continue;
+            }
+        }
+        rm(lock_path);
+    }
+}
+
+//! Release the project-level lock.
+void project_unlock(void|string project_root) {
+    string lock_path = _project_lock_path(project_root);
+    if (Stdio.exist(lock_path)) {
+        string existing = String.trim_all_whites(Stdio.read_file(lock_path) || "");
+        if (existing == (string)getpid())
+            rm(lock_path);
+    }}
+
+
 //! Install a single dep from source, including transitive resolution.
 void install_one(string name, string source, string target,
                  mapping ctx) {
@@ -91,19 +153,8 @@ void install_one(string name, string source, string target,
                     if (existing_ver == ver) {
                         info("skipping " + name + " " + ver
                              + " (already installed)");
-                        string sha = "";
-                        switch (type) {
-                            case "github":
-                            case "gitlab":
-                                sha = resolve_commit_sha(
-                                    type, "", repo_path, ver, PMP_VERSION);
-                                break;
-                            case "selfhosted":
-                                sha = resolve_commit_sha(
-                                    type, domain, repo_path, ver, PMP_VERSION);
-                                break;
-                        }
-                        sha = sha || "";
+                        string sha = get_resolved_sha(type, domain,
+                            repo_path, ver, ctx);
                         ctx["lock_entries"] = lockfile_add_entry(
                             ctx["lock_entries"], name,
                             source_strip_version(source),
@@ -121,19 +172,8 @@ void install_one(string name, string source, string target,
                                  + " requested but " + existing_ver
                                  + " already installed — keeping existing");
                             // Record the kept version in lockfile
-                            string kept_sha = "";
-                            switch (type) {
-                                case "github":
-                                case "gitlab":
-                                    kept_sha = resolve_commit_sha(
-                                        type, "", repo_path, existing_ver, PMP_VERSION);
-                                    break;
-                                case "selfhosted":
-                                    kept_sha = resolve_commit_sha(
-                                        type, domain, repo_path, existing_ver, PMP_VERSION);
-                                    break;
-                            }
-                            kept_sha = kept_sha || "";
+                            string kept_sha = get_resolved_sha(type, domain,
+                                repo_path, existing_ver, ctx);
                             ctx["lock_entries"] = lockfile_add_entry(
                                 ctx["lock_entries"], name,
                                 source_strip_version(source),
@@ -204,6 +244,9 @@ void cmd_install_all(string target, mapping ctx) {
     ctx["lock_entries"] = ({});
 
     int store_locked = 0;
+
+    // Project-level lock: prevents concurrent installs in the same directory
+    project_lock(find_project_root());
 
     // Check if lockfile exists and covers all deps
     int use_lockfile = 0;
@@ -319,6 +362,15 @@ void cmd_install_all(string target, mapping ctx) {
         if (ctx["offline"])
             die("offline mode: no lockfile found — "
                 + "cannot resolve without network");
+        // Clean up any symlinks created during lockfile replay
+        if (Stdio.is_dir(target)) {
+            foreach (get_dir(target) || ({}); ; string name) {
+                string full = combine_path(target, name);
+                mixed err = catch { System.readlink(full); };
+                if (!err) rm(full);
+            }
+        }
+
         ctx["lock_entries"] = ({});
         if (!store_locked) store_lock(ctx["store_dir"]);
         store_locked = 1;
@@ -361,6 +413,7 @@ void cmd_install_all(string target, mapping ctx) {
                 }
             }
             if (store_locked) store_unlock(ctx["store_dir"]);
+            project_unlock(find_project_root());
             throw(install_err);
         }
 
@@ -369,23 +422,39 @@ void cmd_install_all(string target, mapping ctx) {
             string backup = target + ".old";
             if (Stdio.is_dir(backup)) Stdio.recursive_rm(backup);
             if (!mv(target, backup)) {
-                // Cannot swap — keep staging as-is and warn
                 warn("failed to swap modules directory — staging dir at " + staging);
                 Stdio.recursive_rm(backup);
             } else {
                 if (!mv(staging, target)) {
-                    // mv failed across filesystems — restore backup
-                    mv(backup, target);
-                    Stdio.recursive_rm(staging);
-                    warn("failed to swap modules directory — kept existing");
-                } else {
-                    Stdio.recursive_rm(backup);
+                    // Cross-filesystem: copy contents then remove source
+                    mixed cp_err = catch {
+                        Stdio.mkdirhier(target);
+                        foreach (get_dir(staging) || ({}); ; string name)
+                            mv(combine_path(staging, name),
+                               combine_path(target, name));
+                        Stdio.recursive_rm(staging);
+                    };
+                    if (cp_err) {
+                        // Total failure — try to restore backup
+                        if (Stdio.is_dir(backup)) mv(backup, target);
+                        die("failed to swap modules directory");
+                    }
                 }
+                Stdio.recursive_rm(backup);
             }
         } else {
             // No existing modules/ — just rename
             if (!mv(staging, target)) {
-                warn("failed to rename staging dir to modules");
+                // Cross-filesystem: copy contents then remove source
+                mixed cp_err = catch {
+                    Stdio.mkdirhier(target);
+                    foreach (get_dir(staging) || ({}); ; string name)
+                        mv(combine_path(staging, name),
+                           combine_path(target, name));
+                    Stdio.recursive_rm(staging);
+                };
+                if (cp_err)
+                    warn("failed to move staging dir to modules");
             }
         }
     }
@@ -406,6 +475,7 @@ void cmd_install_all(string target, mapping ctx) {
 
     if (store_locked)
         store_unlock(ctx["store_dir"]);
+    project_unlock(find_project_root());
     info("done");
 }
 
@@ -563,6 +633,11 @@ void cmd_rollback(mapping ctx) {
     string target = ctx["local_dir"];
     Stdio.mkdirhier(target);
 
+    // Write lockfile atomically before restoring symlinks.
+    // If the process crashes mid-rollback, the lockfile reflects
+    // the target state so re-running rollback can be safe.
+    write_lockfile(ctx["lockfile_path"], prev_entries);
+
     foreach (prev_entries; ; array(string) entry) {
         string ln = entry[0], ls = entry[1],
                lt = entry[2], lsha = entry[3],
@@ -592,34 +667,39 @@ void cmd_rollback(mapping ctx) {
                 info("restored " + ln + " -> " + rmp->target);
             }
         } else {
-            // Remote dep — find store entry matching source+tag+sha
+            // Remote dep — find store entry matching source+tag
             string slug = replace(ls, "/", "-");
-            string pattern = slug + "-" + lt + "-" + (sizeof(lsha) >= 8 ? lsha[..7] : lsha) + "*";
+            string tag_pattern = slug + "-" + lt + "-*";
             string found_entry = "";
+            array(string) candidates = ({});
 
             if (Stdio.is_dir(ctx["store_dir"])) {
                 foreach (get_dir(ctx["store_dir"]) || ({}); ; string se) {
-                    if (glob(pattern, se) && Stdio.is_dir(
+                    if (glob(tag_pattern, se) && Stdio.is_dir(
                             combine_path(ctx["store_dir"], se))) {
+                        candidates += ({ se });
+                    }
+                }
+            }
+
+            // Match by content hash from lockfile
+            if (sizeof(candidates) > 0 && sizeof(lhash) > 0) {
+                foreach (candidates; ; string se) {
+                    string stored = read_stored_hash(
+                        combine_path(ctx["store_dir"], se));
+                    if (stored && stored == lhash) {
                         found_entry = se;
                         break;
                     }
                 }
+                if (sizeof(found_entry) == 0)
+                    warn("no store entry for " + ln + " " + lt
+                         + " matches lockfile hash — using first match");
             }
 
-            // Fallback: match by slug+tag (sha might differ)
-            if (sizeof(found_entry) == 0) {
-                string fallback_pattern = slug + "-" + lt + "-*";
-                if (Stdio.is_dir(ctx["store_dir"])) {
-                    foreach (get_dir(ctx["store_dir"]) || ({}); ; string se) {
-                        if (glob(fallback_pattern, se) && Stdio.is_dir(
-                                combine_path(ctx["store_dir"], se))) {
-                            found_entry = se;
-                            break;
-                        }
-                    }
-                }
-            }
+            // Fallback: use first candidate
+            if (sizeof(found_entry) == 0 && sizeof(candidates) > 0)
+                found_entry = candidates[0];
 
             if (sizeof(found_entry) == 0) {
                 warn("store entry not found for " + ln + " " + lt
@@ -639,14 +719,6 @@ void cmd_rollback(mapping ctx) {
         }
     }
 
-    // Restore lockfile from .prev
-    string prev_content = Stdio.read_file(prev_path);
-    if (prev_content) {
-        string tmp_path = ctx["lockfile_path"] + ".tmp";
-        Stdio.write_file(tmp_path, prev_content);
-        if (!mv(tmp_path, ctx["lockfile_path"]))
-            die("failed to restore lockfile", EXIT_INTERNAL);
-    }
 
     info("rollback complete — restored " + sizeof(prev_entries) + " modules");
 }

@@ -1,3 +1,5 @@
+inherit .Helpers;
+
 //! Add a dependency to a pike.json manifest file.
 //! @param pike_json
 //!   Path to the pike.json file.
@@ -6,14 +8,14 @@
 //! @param source
 //!   Dependency source URL.
 void add_to_manifest(string pike_json, string name, string source) {
-    if (!Stdio.exist(pike_json)) return;
+    if (!Stdio.exist(pike_json)) die("pike.json not found: " + pike_json);
 
     string raw = Stdio.read_file(pike_json);
-    if (!raw) return;
+    if (!raw) die("failed to read " + pike_json);
 
     mixed data;
     mixed err = catch { data = Standards.JSON.decode(raw); };
-    if (err || !mappingp(data)) return;
+    if (err || !mappingp(data)) die("failed to parse " + pike_json + ": " + describe_error(err));
 
     // Check if already present in dependencies (not raw string search)
     // to avoid false positive when name appears in other fields
@@ -26,7 +28,8 @@ void add_to_manifest(string pike_json, string name, string source) {
 
     string encoded = Standards.JSON.encode(data,
                                            Standards.JSON.HUMAN_READABLE);
-    Stdio.write_file(pike_json, encoded + "\n");
+    mixed write_err = catch { Stdio.write_file(pike_json, encoded + "\n"); };
+    if (write_err) die("failed to write " + pike_json);
 }
 
 //! Parse dependencies from a pike.json file.

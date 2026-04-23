@@ -119,12 +119,15 @@ string compute_sha256(string path) {
     object f = Stdio.File(path, "r");
     if (!f) die_internal("failed to open file for hashing: " + path);
     Crypto.SHA256 sha = Crypto.SHA256();
-    while (1) {
-        string chunk = f->read(65536);
-        if (!chunk || sizeof(chunk) == 0) break;
-        sha->update(chunk);
-    }
+    mixed err = catch {
+        while (1) {
+            string chunk = f->read(65536);
+            if (!chunk || sizeof(chunk) == 0) break;
+            sha->update(chunk);
+        }
+    };
     f->close();
+    if (err) throw(err);
     return String.string2hex(sha->digest());
 }
 
@@ -152,7 +155,7 @@ void atomic_symlink(string target, string dest) {
     string tmp_link = dest + ".tmp." + getpid() + "." + time() + "."
         + String.string2hex(Crypto.Random.random_string(8));
     // Clean up any leftover temp link from a previous crash
-    if (Stdio.exist(tmp_link)) rm(tmp_link);
+    rm(tmp_link);
     mixed link_err = catch { System.symlink(target, tmp_link); };
     if (link_err)
         die("failed to create symlink: " + tmp_link + " (" + describe_error(link_err) + ")", EXIT_INTERNAL);
@@ -166,10 +169,11 @@ void atomic_symlink(string target, string dest) {
 //! Uses write-to-temp + rename(2) to prevent truncation on crash.
 //! Dies on failure (EXIT_INTERNAL).
 void atomic_write(string path, string content) {
-    string tmp_path = path + ".tmp." + getpid();
+    string tmp_path = path + ".tmp." + getpid() + "." + time() + "." + random(100000);
     Stdio.write_file(tmp_path, content);
     if (!mv(tmp_path, path)) {
-        // mv may fail across filesystems — try copy+rm
+        // mv may fail across filesystems — try harder
+        warn("atomic_write: rename failed, attempting copy");
         mixed cp_err = catch {
             Stdio.write_file(path, Stdio.read_file(tmp_path));
             rm(tmp_path);

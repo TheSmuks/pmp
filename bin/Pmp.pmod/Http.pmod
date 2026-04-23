@@ -58,12 +58,12 @@ object _do_get(string url, mapping request_headers,
                                              int|void timeout_secs) {
     timeout_secs = timeout_secs || HTTP_READ_TIMEOUT;
     float delay = 1.0;
-    for (int attempt = 0; attempt <= HTTP_MAX_RETRIES; attempt++) {
+    for (int attempt = 0; attempt < HTTP_MAX_RETRIES; attempt++) {
         if (attempt > 0) {
             // Add jitter: delay * (0.5 + random * 0.5) gives 50-150% of base
             float jittered = delay * (0.5 + random(1.0) * 0.5);
             info(sprintf("retrying %s (attempt %d/%d, waiting %.1fs)",
-                _url_host(url), attempt + 1, HTTP_MAX_RETRIES + 1, jittered));
+                _url_host(url), attempt + 1, HTTP_MAX_RETRIES, jittered));
             sleep(jittered);
             delay *= 2.0;
         }
@@ -165,6 +165,7 @@ object _do_get_single(string url, mapping request_headers,
             warn("HTTP request failed: " + error_msg);
         return 0;
     }
+    if (http_thread) catch { http_thread->wait(); };
     return result;
 }
 
@@ -190,7 +191,7 @@ string http_get(string url, void|mapping(string:string) headers,
         if (!con)
             die("failed to fetch " + _url_host(url)
                 + " (timeout or connection error after "
-                + (HTTP_MAX_RETRIES + 1) + " attempts)");
+                + HTTP_MAX_RETRIES + " attempts)");
 
         // Handle redirects
         if (con->status >= 300 && con->status < 400) {
@@ -277,6 +278,6 @@ array(int|string) http_get_safe(string url, void|mapping(string:string) headers,
 void|mapping github_auth_headers() {
     string token = getenv("GITHUB_TOKEN");
     if (!token || token == "") return 0;
-    info("using GITHUB_TOKEN for authentication");
+    debug("using GITHUB_TOKEN for authentication");
     return (["authorization": "token " + token]);
 }

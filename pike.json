@@ -1,1 +1,7 @@
-{"name":"test","dependencies":{"bak-lib":"./libs/bak-lib"}}
+{
+  "dependencies": {
+    "punit-tests": "github.com/TheSmuks/punit-tests",
+    "bak-lib": "./libs/bak-lib"
+  },
+  "name": "test"
+}

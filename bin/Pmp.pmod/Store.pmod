@@ -8,53 +8,15 @@ inherit .Resolve;
 void store_lock(string store_dir) {
     Stdio.mkdirhier(store_dir);
     string lock_path = combine_path(store_dir, ".lock");
-    string my_pid = (string)getpid();
-
-    // Try atomic create (O_EXCL) — fails if file exists
-    for (int attempt = 0; attempt < 2; attempt++) {
-        mixed err = catch {
-            Stdio.File lf = Stdio.File(lock_path, "wct");
-            lf->write(my_pid);
-            lf->close();
-        };
-        if (!err) {
-            _store_locked = 1;
-            _store_dir_for_lock = store_dir;
-            return;  // Lock acquired
-        }
-
-        // Lock file exists — check if holder is still alive
-        string existing = String.trim_all_whites(Stdio.read_file(lock_path) || "");
-        if (sizeof(existing) > 0) {
-            int pid = (int)existing;
-            if (pid > 0) {
-                mapping r = Process.run(({"kill", "-0", (string)pid}));
-                if (r->exitcode == 0) {
-                    die("store is locked by pmp process " + pid
-                        + " — wait for it to finish or remove "
-                        + lock_path + " manually");
-                }
-                // Stale lock — remove and retry
-                info("removing stale store lock from process " + pid);
-                rm(lock_path);
-                continue;
-            }
-        }
-        // Unknown/empty lock file — remove and retry
-        rm(lock_path);
-    }
-    // Two attempts failed
-    die("failed to acquire store lock after retry");
+    advisory_lock(lock_path, "store");
+    _store_locked = 1;
+    _store_dir_for_lock = store_dir;
 }
 
 //! Release the store lock.
 void store_unlock(string store_dir) {
     string lock_path = combine_path(store_dir, ".lock");
-    if (Stdio.exist(lock_path)) {
-        string existing = String.trim_all_whites(Stdio.read_file(lock_path) || "");
-        if (existing == (string)getpid())
-            rm(lock_path);
-    }
+    advisory_unlock(lock_path);
     _store_locked = 0;
     _store_dir_for_lock = "";
 }
@@ -124,6 +86,36 @@ string extract_targz(string tarball_path, string dest_dir) {
         return found;
     }
     return entries[0];
+}
+
+//! Find a store entry matching source, tag, and optionally content hash.
+//! Returns the entry directory name, or "" if not found.
+string _find_store_entry(string store_dir, string source, string tag, string content_hash) {
+    string slug = replace(source, "/", "-");
+    string pattern = slug + "-" + tag + "-*";
+    array(string) candidates = ({});
+
+    if (Stdio.is_dir(store_dir)) {
+        foreach (get_dir(store_dir) || ({}); ; string se) {
+            if (glob(pattern, se) && Stdio.is_dir(combine_path(store_dir, se)))
+                candidates += ({ se });
+        }
+    }
+
+    // Match by content hash
+    if (sizeof(candidates) > 0 && sizeof(content_hash) > 0) {
+        foreach (candidates; ; string se) {
+            string stored = read_stored_hash(combine_path(store_dir, se));
+            if (stored && stored == content_hash)
+                return se;
+        }
+        if (sizeof(candidates) > 0)
+            warn("no store entry for " + tag + " matches lockfile hash — using first match");
+    }
+
+    // Fallback: use first candidate
+    if (sizeof(candidates) > 0) return candidates[0];
+    return "";
 }
 
 //! Recursively validate that no symlinks under base_dir escape root_dir.
@@ -241,6 +233,71 @@ mapping resolve_module_path(string name, string entry_dir) {
     return (["target": entry_dir, "link_name": name]);
 }
 
+//! Common store install logic: check existing entry, move content, write meta.
+//! @param content_dir
+//!   Absolute path to the extracted/cloned content to move into the store.
+//! @param tmpdir
+//!   Temporary directory; cleaned up by this function on all paths.
+//! @returns
+//!   (["tag":ver, "sha":sha, "hash":hash, "entry":entry_name]).
+mapping _store_install_common(string store_dir, string source_label,
+                              string ver, string sha,
+                              string tmpdir, string content_dir) {
+    string entry_name = store_entry_name(source_label, ver, sha);
+    string entry_dir = combine_path(store_dir, entry_name);
+
+    // Check if entry already exists with valid metadata
+    if (Stdio.is_dir(entry_dir)) {
+        if (!Stdio.exist(combine_path(entry_dir, ".pmp-meta"))) {
+            warn("store entry " + entry_name + " missing metadata — re-downloading");
+            Stdio.recursive_rm(entry_dir);
+        } else {
+            string stored_hash = read_stored_hash(entry_dir);
+            string actual_hash = compute_dir_hash(entry_dir);
+            if (stored_hash && actual_hash && stored_hash != actual_hash) {
+                warn("store entry " + entry_name + " has integrity mismatch — re-downloading");
+                Stdio.recursive_rm(entry_dir);
+            } else {
+                info("reusing existing store entry " + entry_name);
+                Stdio.recursive_rm(tmpdir);
+                unregister_cleanup_dir(tmpdir);
+                return (["tag": ver, "sha": sha, "hash": stored_hash || "", "entry": entry_name]);
+            }
+        }
+    }
+
+    // Ensure clean target
+    if (Stdio.exist(entry_dir)) rm(entry_dir);
+    Stdio.mkdirhier(store_dir);
+    // Symlink-safe removal
+    if (is_symlink(entry_dir)) rm(entry_dir);
+    else Stdio.recursive_rm(entry_dir);
+
+    // Move content to store
+    if (!Stdio.recursive_mv(content_dir, entry_dir)) {
+        unregister_cleanup_dir(tmpdir);
+        Stdio.recursive_rm(tmpdir);
+        Stdio.recursive_rm(entry_dir);
+        die("failed to move to store: " + content_dir, EXIT_INTERNAL);
+    }
+    if (!Stdio.is_dir(entry_dir)) {
+        unregister_cleanup_dir(tmpdir);
+        Stdio.recursive_rm(tmpdir);
+        Stdio.recursive_rm(entry_dir);
+        die("store entry is not a directory after mv: " + entry_dir, EXIT_INTERNAL);
+    }
+
+    Stdio.recursive_rm(tmpdir);
+    unregister_cleanup_dir(tmpdir);
+
+    // Write .pmp-meta with directory content hash
+    string dir_hash = compute_dir_hash(entry_dir);
+    write_meta(entry_dir, source_label, ver, sha, dir_hash);
+
+    info("stored " + entry_name);
+    return (["tag": ver, "sha": sha, "hash": dir_hash, "entry": entry_name]);
+}
+
 //! Download from GitHub to store.
 //! Returns (["tag":ver, "sha":sha, "hash":hash, "entry":entry_name]).
 mapping store_install_github(string store_dir, string repo_path, string ver,
@@ -265,57 +322,9 @@ mapping store_install_github(string store_dir, string repo_path, string ver,
     string sha = resolve_commit_sha("github", "", repo_path, ver, version);
     sha = sha || "";
 
-    string entry_name = store_entry_name(
-        "github.com/" + repo_path, ver, sha);
-    string entry_dir = combine_path(store_dir, entry_name);
-
-    if (Stdio.is_dir(entry_dir)) {
-        if (!Stdio.exist(combine_path(entry_dir, ".pmp-meta"))) {
-            warn("store entry " + entry_name + " missing metadata — re-downloading");
-            Stdio.recursive_rm(entry_dir);
-        } else {
-            string stored_hash = read_stored_hash(entry_dir);
-            string actual_hash = compute_dir_hash(entry_dir);
-            if (stored_hash && actual_hash && stored_hash != actual_hash) {
-                warn("store entry " + entry_name + " has integrity mismatch — re-downloading");
-                Stdio.recursive_rm(entry_dir);
-            } else {
-                info("reusing existing store entry " + entry_name);
-                Stdio.recursive_rm(tmpdir);
-                unregister_cleanup_dir(tmpdir);
-                return (["tag": ver, "sha": sha, "hash": stored_hash || "", "entry": entry_name]);
-            }
-        }
-    }
-
-    if (Stdio.exist(entry_dir)) rm(entry_dir);
-    Stdio.mkdirhier(store_dir);
-    // Symlink-safe removal
-    if (is_symlink(entry_dir)) rm(entry_dir);
-    else Stdio.recursive_rm(entry_dir);
-    // Move extracted content to store
-    string src = combine_path(tmpdir, "extract", extracted);
-    if (!Stdio.recursive_mv(src, entry_dir)) {
-        unregister_cleanup_dir(tmpdir);
-        Stdio.recursive_rm(tmpdir);
-        Stdio.recursive_rm(entry_dir);
-        die("failed to move to store: " + src, EXIT_INTERNAL);
-    }
-    if (!Stdio.is_dir(entry_dir)) {
-        unregister_cleanup_dir(tmpdir);
-        Stdio.recursive_rm(tmpdir);
-        Stdio.recursive_rm(entry_dir);
-        die("store entry is not a directory after mv: " + entry_dir, EXIT_INTERNAL);
-    }
-    Stdio.recursive_rm(tmpdir);
-    unregister_cleanup_dir(tmpdir);
-
-    // Write .pmp-meta with directory content hash
-    string dir_hash = compute_dir_hash(entry_dir);
-    write_meta(entry_dir, "github.com/" + repo_path, ver, sha, dir_hash);
-
-    info("stored " + entry_name);
-    return (["tag": ver, "sha": sha, "hash": dir_hash, "entry": entry_name]);
+    string content_dir = combine_path(tmpdir, "extract", extracted);
+    return _store_install_common(store_dir, "github.com/" + repo_path,
+                                  ver, sha, tmpdir, content_dir);
 }
 
 //! Download from GitLab to store.
@@ -324,7 +333,7 @@ mapping store_install_gitlab(string store_dir, string repo_path, string ver,
                              void|string version) {
     string repo_name = (repo_path / "/")[-1];
     string url = "https://gitlab.com/" + repo_path
-                 + "/-/archive/" + ver + "/" + repo_name + "-" + ver
+                 + "-/archive/" + ver + "/" + repo_name + "-" + ver
                  + ".tar.gz";
 
     info("downloading " + url);
@@ -341,50 +350,9 @@ mapping store_install_gitlab(string store_dir, string repo_path, string ver,
     string sha = resolve_commit_sha("gitlab", "", repo_path, ver, version);
     sha = sha || "";
 
-    string entry_name = store_entry_name(
-        "gitlab.com/" + repo_path, ver, sha);
-    string entry_dir = combine_path(store_dir, entry_name);
-
-    if (Stdio.is_dir(entry_dir)) {
-        if (!Stdio.exist(combine_path(entry_dir, ".pmp-meta"))) {
-            warn("store entry " + entry_name + " missing metadata — re-downloading");
-            Stdio.recursive_rm(entry_dir);
-        } else {
-            string stored_hash = read_stored_hash(entry_dir);
-            string actual_hash = compute_dir_hash(entry_dir);
-            if (stored_hash && actual_hash && stored_hash != actual_hash) {
-                warn("store entry " + entry_name + " has integrity mismatch — re-downloading");
-                Stdio.recursive_rm(entry_dir);
-            } else {
-                info("reusing existing store entry " + entry_name);
-                Stdio.recursive_rm(tmpdir);
-                unregister_cleanup_dir(tmpdir);
-                return (["tag": ver, "sha": sha, "hash": stored_hash || "", "entry": entry_name]);
-            }
-        }
-    }
-
-    if (Stdio.exist(entry_dir)) rm(entry_dir);
-    Stdio.mkdirhier(store_dir);
-    // Symlink-safe removal
-    if (is_symlink(entry_dir)) rm(entry_dir);
-    else Stdio.recursive_rm(entry_dir);
-    string src = combine_path(tmpdir, "extract", extracted);
-    if (!Stdio.recursive_mv(src, entry_dir)) {
-        unregister_cleanup_dir(tmpdir);
-        Stdio.recursive_rm(tmpdir);
-        Stdio.recursive_rm(entry_dir);
-        die("failed to move to store: " + src, EXIT_INTERNAL);
-    }
-    Stdio.recursive_rm(tmpdir);
-    unregister_cleanup_dir(tmpdir);
-
-    // Write .pmp-meta with directory content hash
-    string dir_hash = compute_dir_hash(entry_dir);
-    write_meta(entry_dir, "gitlab.com/" + repo_path, ver, sha, dir_hash);
-
-    info("stored " + entry_name);
-    return (["tag": ver, "sha": sha, "hash": dir_hash, "entry": entry_name]);
+    string content_dir = combine_path(tmpdir, "extract", extracted);
+    return _store_install_common(store_dir, "gitlab.com/" + repo_path,
+                                  ver, sha, tmpdir, content_dir);
 }
 
 //! Clone from self-hosted git to store.
@@ -412,48 +380,6 @@ mapping store_install_selfhosted(string store_dir, string domain,
     string sha = resolve_commit_sha("selfhosted", domain, repo_path, ver, version);
     sha = sha || "";
 
-    // Content hash computed after move to store (below)
-
-    string entry_name = store_entry_name(
-        domain + "/" + repo_path, ver, sha);
-    string entry_dir = combine_path(store_dir, entry_name);
-
-    if (Stdio.is_dir(entry_dir)) {
-        if (!Stdio.exist(combine_path(entry_dir, ".pmp-meta"))) {
-            warn("store entry " + entry_name + " missing metadata — re-downloading");
-            Stdio.recursive_rm(entry_dir);
-        } else {
-            string stored_hash = read_stored_hash(entry_dir);
-            string actual_hash = compute_dir_hash(entry_dir);
-            if (stored_hash && actual_hash && stored_hash != actual_hash) {
-                warn("store entry " + entry_name + " has integrity mismatch — re-downloading");
-                Stdio.recursive_rm(entry_dir);
-            } else {
-                info("reusing existing store entry " + entry_name);
-                Stdio.recursive_rm(tmpdir);
-                unregister_cleanup_dir(tmpdir);
-                return (["tag": ver, "sha": sha, "hash": stored_hash || "", "entry": entry_name]);
-            }
-        }
-    }
-
-    if (Stdio.exist(entry_dir)) rm(entry_dir);
-    Stdio.mkdirhier(store_dir);
-    // Symlink-safe removal
-    if (is_symlink(entry_dir)) rm(entry_dir);
-    else Stdio.recursive_rm(entry_dir);
-    if (!Stdio.recursive_mv(repo_dest, entry_dir)) {
-        unregister_cleanup_dir(tmpdir);
-        Stdio.recursive_rm(tmpdir);
-        Stdio.recursive_rm(entry_dir);
-        die("failed to move to store: " + repo_dest, EXIT_INTERNAL);
-    }
-    Stdio.recursive_rm(tmpdir);
-    unregister_cleanup_dir(tmpdir);
-
-    string hash = compute_dir_hash(entry_dir);
-    write_meta(entry_dir, domain + "/" + repo_path, ver, sha, hash);
-
-    info("stored " + entry_name);
-    return (["tag": ver, "sha": sha, "hash": hash, "entry": entry_name]);
+    return _store_install_common(store_dir, domain + "/" + repo_path,
+                                  ver, sha, tmpdir, repo_dest);
 }

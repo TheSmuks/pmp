@@ -31,9 +31,47 @@ string _url_host(string url) {
     return lower_case(rest);
 }
 
-//! Validate that a redirect target stays on the same domain or a subdomain.
+//! Check whether a hostname points to a private/internal address.
+//! Returns 1 if the host should be blocked (SSRF protection).
+int _is_private_host(string host) {
+    string h = lower_case(host);
+    // Literal loopback / wildcard
+    if (h == "localhost" || h == "127.0.0.1" || h == "::1" || h == "0.0.0.0")
+        return 1;
+    // 10.0.0.0/8
+    if (has_prefix(h, "10."))
+        return 1;
+    // 192.168.0.0/16
+    if (has_prefix(h, "192.168."))
+        return 1;
+    // 169.254.0.0/16 (link-local / cloud metadata)
+    if (has_prefix(h, "169.254."))
+        return 1;
+    // 172.16.0.0/12 — 172.16.x.x through 172.31.x.x
+    if (has_prefix(h, "172.")) {
+        // Extract second octet
+        string rest = h[4..];
+        int dot = search(rest, ".");
+        if (dot > 0) {
+            int second_octet = (int)rest[..dot - 1];
+            if (second_octet >= 16 && second_octet <= 31)
+                return 1;
+        }
+    }
+    // IPv6 unique local fc00::/7
+    if (has_prefix(h, "fc") || has_prefix(h, "fd"))
+        return 1;
+    // IPv6 link-local fe80::/10
+    if (has_prefix(h, "fe80"))
+        return 1;
+    return 0;
+}
+
 int _redirect_allowed_by_host(string original_host, string redirect_url) {
     string redir_host = _url_host(redirect_url);
+    // Block private/internal redirect targets even if domain matches
+    if (_is_private_host(redir_host))
+        return 0;
     if (original_host == redir_host)
         return 1;
     // Allow subdomain redirects (e.g., github.com -> codeload.github.com)
@@ -182,6 +220,8 @@ string http_get(string url, void|mapping(string:string) headers,
         request_headers |= headers;
 
     string original_host = _url_host(url);
+    if (_is_private_host(original_host))
+        die("blocked: SSRF protection — refusing to fetch private/internal address: " + original_host);
 
     // Follow up to 5 HTTP 3xx redirects
     int max_redirects = 5;
@@ -236,6 +276,10 @@ array(int|string) http_get_safe(string url, void|mapping(string:string) headers,
         request_headers |= headers;
 
     string original_host = _url_host(url);
+    if (_is_private_host(original_host)) {
+        werror("pmp: blocked: SSRF protection — refusing to fetch private/internal address: " + original_host + "\n");
+        return ({ 0, "" });
+    }
 
     // Follow up to 5 HTTP 3xx redirects
     int max_redirects = 5;

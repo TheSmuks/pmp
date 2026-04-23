@@ -45,6 +45,46 @@ void run_cleanup() {
     }
 }
 
+//! Advisory lock primitives for file-based locking.
+//! Uses PID-based lock files with stale-lock detection.
+
+void advisory_lock(string lock_path, string description) {
+    string my_pid = (string)getpid();
+
+    for (int attempt = 0; attempt < 2; attempt++) {
+        mixed err = catch {
+            Stdio.File lf = Stdio.File(lock_path, "wct");
+            lf->write(my_pid);
+            lf->close();
+        };
+        if (!err) return;
+
+        string existing = String.trim_all_whites(Stdio.read_file(lock_path) || "");
+        if (sizeof(existing) > 0) {
+            int pid = (int)existing;
+            if (pid > 0) {
+                mapping r = Process.run(({"kill", "-0", (string)pid}));
+                if (r->exitcode == 0)
+                    die(description + " is locked by pmp process " + pid
+                        + " — remove " + lock_path + " manually");
+                info("removing stale " + description + " lock from process " + pid);
+                rm(lock_path);
+                continue;
+            }
+        }
+        rm(lock_path);
+    }
+    die("failed to acquire " + description + " lock after retry");
+}
+
+void advisory_unlock(string lock_path) {
+    if (Stdio.exist(lock_path)) {
+        string existing = String.trim_all_whites(Stdio.read_file(lock_path) || "");
+        if (existing == (string)getpid())
+            rm(lock_path);
+    }
+}
+
 //! Utility helpers: logging, command checks, JSON reading, SHA-256.
 
 void die(string msg, void|int code) {

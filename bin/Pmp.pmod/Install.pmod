@@ -10,8 +10,8 @@ inherit .Resolve;
 inherit .Store;
 inherit .Lockfile;
 inherit .Manifest;
-inherit .Validate;
 inherit .Semver;
+inherit .Validate;
 
 
 private string get_resolved_sha(string type, string domain,
@@ -38,42 +38,14 @@ private string _project_lock_path(string project_root) {
 //! Acquire a project-level advisory lock. Removes stale locks held by dead processes.
 void project_lock(void|string project_root) {
     string lock_path = _project_lock_path(project_root);
-    string my_pid = (string)getpid();
-
-    for (int attempt = 0; attempt < 2; attempt++) {
-        mixed err = catch {
-            Stdio.File lf = Stdio.File(lock_path, "wct");
-            lf->write(my_pid);
-            lf->close();
-        };
-        if (!err) return;
-
-        string existing = String.trim_all_whites(Stdio.read_file(lock_path) || "");
-        if (sizeof(existing) > 0) {
-            int pid = (int)existing;
-            if (pid > 0) {
-                mapping r = Process.run(({"kill", "-0", (string)pid}));
-                if (r->exitcode == 0)
-                    die("project is locked by pmp process " + pid
-                        + " — remove " + lock_path + " manually");
-                info("removing stale project lock from process " + pid);
-                rm(lock_path);
-                continue;
-            }
-        }
-        rm(lock_path);
-    }
-    die("failed to acquire project lock after retry");
+    advisory_lock(lock_path, "project");
 }
 
 //! Release the project-level lock.
 void project_unlock(void|string project_root) {
     string lock_path = _project_lock_path(project_root);
-    if (Stdio.exist(lock_path)) {
-        string existing = String.trim_all_whites(Stdio.read_file(lock_path) || "");
-        if (existing == (string)getpid())
-            rm(lock_path);
-    }}
+    advisory_unlock(lock_path);
+}
 
 
 //! Install a single dep from source, including transitive resolution.
@@ -297,40 +269,8 @@ void cmd_install_all(string target, mapping ctx) {
                     }
                 } else {
                 // Remote dep — find store entry
-                    string slug = replace(ls, "/", "-");
-                    string pattern = slug + "-" + lt + "-*";
-                    string found_entry = "";
-                    array(string) candidates = ({});
-
-                    if (Stdio.is_dir(ctx["store_dir"])) {
-                        foreach (get_dir(ctx["store_dir"]) || ({}); ;
-                                 string se) {
-                            if (glob(pattern, se) && Stdio.is_dir(
-                                    combine_path(ctx["store_dir"], se))) {
-                                candidates += ({ se });
-                            }
-                        }
-                    }
-
-                    // Match by content hash from lockfile
-                    if (sizeof(candidates) > 0 && sizeof(lhash) > 0) {
-                        foreach (candidates; ; string se) {
-                            string stored = read_stored_hash(
-                                combine_path(ctx["store_dir"], se));
-                            if (stored && stored == lhash) {
-                                found_entry = se;
-                                break;
-                            }
-                        }
-                        if (sizeof(found_entry) == 0)
-                            warn("no store entry for " + ln + " " + lt
-                                 + " matches lockfile hash — using first match");
-                    }
-
-                    // Fallback: use first candidate
-                    if (sizeof(found_entry) == 0 && sizeof(candidates) > 0)
-                        found_entry = candidates[0];
-
+                    string found_entry = _find_store_entry(
+                        ctx["store_dir"], ls, lt, lhash);
 
                     if (sizeof(found_entry) > 0) {
                         string entry_full = combine_path(ctx["store_dir"], found_entry);
@@ -534,19 +474,47 @@ void cmd_install(array(string) args, mapping ctx) {
             store_locked = 1;
             ctx["visited"] = (<>);
             ctx["lock_entries"] = ({});
+
+            // Snapshot existing symlinks so we can roll back new ones
+            // if lockfile/manifest writes fail
+            mapping(string:string) old_symlinks = ([]);
+            if (Stdio.is_dir(target)) {
+                foreach (get_dir(target) || ({}); ; string n) {
+                    string full = combine_path(target, n);
+                    string link = get_symlink_target(full);
+                    if (link) old_symlinks[n] = link;
+                }
+            }
+
             cmd_install_source(source, target, ctx);
 
             // Merge new entries into existing (dedup by name)
             ctx["lock_entries"] = merge_lock_entries(existing, ctx["lock_entries"]);
 
-            if (!global_flag) {
-                write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
-                if (Stdio.exist(ctx["pike_json"])) {
-                    string name = source_to_name(source);
-                    string clean_source = source_strip_version(source);
-                    add_to_manifest(ctx["pike_json"], name, clean_source);
+            // Post-install bookkeeping — if this fails, remove new symlinks
+            // to keep project state consistent
+            mixed post_err = catch {
+                if (!global_flag) {
+                    write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
+                    if (Stdio.exist(ctx["pike_json"])) {
+                        string name = source_to_name(source);
+                        string clean_source = source_strip_version(source);
+                        add_to_manifest(ctx["pike_json"], name, clean_source);
+                    }
+                    validate_manifests(ctx["local_dir"], ctx["std_libs"]);
                 }
-                validate_manifests(ctx["local_dir"], ctx["std_libs"]);
+            };
+            if (post_err) {
+                // Remove symlinks created by this install
+                if (Stdio.is_dir(target)) {
+                    foreach (get_dir(target) || ({}); ; string n) {
+                        if (!old_symlinks[n]) {
+                            string full = combine_path(target, n);
+                            if (is_symlink(full)) rm(full);
+                        }
+                    }
+                }
+                throw(post_err);
             }
         };
         if (store_locked) store_unlock(ctx["store_dir"]);
@@ -723,38 +691,8 @@ void cmd_rollback(mapping ctx) {
             }
         } else {
             // Remote dep — find store entry matching source+tag
-            string slug = replace(ls, "/", "-");
-            string tag_pattern = slug + "-" + lt + "-*";
-            string found_entry = "";
-            array(string) candidates = ({});
-
-            if (Stdio.is_dir(ctx["store_dir"])) {
-                foreach (get_dir(ctx["store_dir"]) || ({}); ; string se) {
-                    if (glob(tag_pattern, se) && Stdio.is_dir(
-                            combine_path(ctx["store_dir"], se))) {
-                        candidates += ({ se });
-                    }
-                }
-            }
-
-            // Match by content hash from lockfile
-            if (sizeof(candidates) > 0 && sizeof(lhash) > 0) {
-                foreach (candidates; ; string se) {
-                    string stored = read_stored_hash(
-                        combine_path(ctx["store_dir"], se));
-                    if (stored && stored == lhash) {
-                        found_entry = se;
-                        break;
-                    }
-                }
-                if (sizeof(found_entry) == 0)
-                    warn("no store entry for " + ln + " " + lt
-                         + " matches lockfile hash — using first match");
-            }
-
-            // Fallback: use first candidate
-            if (sizeof(found_entry) == 0 && sizeof(candidates) > 0)
-                found_entry = candidates[0];
+            string found_entry = _find_store_entry(
+                ctx["store_dir"], ls, lt, lhash);
 
             if (sizeof(found_entry) == 0) {
                 warn("store entry not found for " + ln + " " + lt

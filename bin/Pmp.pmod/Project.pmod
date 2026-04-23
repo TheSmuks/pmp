@@ -119,53 +119,88 @@ void cmd_remove(array(string) args, mapping ctx) {
     // Path traversal protection
     if (search(name, "/") >= 0 || search(name, "..") >= 0 || search(name, "\0") >= 0)
         die("invalid module name: " + name);
-    int removed = 0;
 
-    // Remove from pike.json
-    if (Stdio.exist(ctx["pike_json"])) {
-        string raw = Stdio.read_file(ctx["pike_json"]);
-        if (raw) {
-            mixed data;
-            mixed err = catch { data = Standards.JSON.decode(raw); };
-            if (!err && mappingp(data) && mappingp(data->dependencies)) {
-                if (!zero_type(data->dependencies[name])) {
-                    m_delete(data->dependencies, name);
-                    atomic_write(ctx["pike_json"],
-                        Standards.JSON.encode(data, Standards.JSON.HUMAN_READABLE) + "\n");
-                    info("removed " + name + " from pike.json");
-                    removed = 1;
-                }
-            }
-        }
+    // --- Validate phase: ensure files are readable before we touch anything ---
+    string pike_json_path = ctx["pike_json"];
+    string lockfile_path = ctx["lockfile_path"];
+    string pike_json_raw = 0;
+    if (Stdio.exist(pike_json_path)) {
+        pike_json_raw = Stdio.read_file(pike_json_path);
+        if (!pike_json_raw)
+            die("cannot read " + pike_json_path);
+    }
+    string lockfile_raw = 0;
+    if (Stdio.exist(lockfile_path)) {
+        lockfile_raw = Stdio.read_file(lockfile_path);
+        if (!lockfile_raw)
+            die("cannot read " + lockfile_path);
     }
 
-    // Remove symlink (try both bare name and .pmod suffix)
+    // Pre-check that name exists somewhere
+    int found = 0;
+    if (pike_json_raw) {
+        mixed data;
+        mixed jerr = catch { data = Standards.JSON.decode(pike_json_raw); };
+        if (!jerr && mappingp(data) && mappingp(data->dependencies)
+            && !zero_type(data->dependencies[name]))
+            found = 1;
+    }
     string link = combine_path(ctx["local_dir"], name);
     string link_pmod = combine_path(ctx["local_dir"], name + ".pmod");
-    if (Stdio.exist(link)) {
-        rm(link);
-        info("removed " + link);
-        removed = 1;
-    }
-    if (Stdio.exist(link_pmod)) {
-        rm(link_pmod);
-        info("removed " + link_pmod);
-        removed = 1;
-    }
-
-    // Update lockfile
-    if (Stdio.exist(ctx["lockfile_path"])) {
-        array(array(string)) entries = read_lockfile(ctx["lockfile_path"]);
-        array(array(string)) new_entries = ({});
-        int had_entry = 0;
+    if (Stdio.exist(link) || Stdio.exist(link_pmod))
+        found = 1;
+    if (lockfile_raw) {
+        array(array(string)) entries = read_lockfile(lockfile_path);
         foreach (entries; ; array(string) e)
-            if (e[0] != name) new_entries += ({ e });
-            else had_entry = 1;
-        if (had_entry) removed = 1;
-        ctx["lock_entries"] = new_entries;
-        write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
+            if (e[0] == name) { found = 1; break; }
     }
-
-    if (!removed)
+    if (!found)
         die("nothing to remove: " + name + " not found");
+
+    // --- Execute phase with rollback on failure ---
+    mixed err = catch {
+        // 1. Update pike.json
+        if (pike_json_raw) {
+            mixed data;
+            mixed jerr = catch { data = Standards.JSON.decode(pike_json_raw); };
+            if (!jerr && mappingp(data) && mappingp(data->dependencies)
+                && !zero_type(data->dependencies[name])) {
+                m_delete(data->dependencies, name);
+                atomic_write(pike_json_path,
+                    Standards.JSON.encode(data, Standards.JSON.HUMAN_READABLE) + "\n");
+                info("removed " + name + " from pike.json");
+            }
+        }
+
+        // 2. Remove symlinks
+        if (Stdio.exist(link)) {
+            rm(link);
+            info("removed " + link);
+        }
+        if (Stdio.exist(link_pmod)) {
+            rm(link_pmod);
+            info("removed " + link_pmod);
+        }
+
+        // 3. Update lockfile (only if dep was actually present)
+        if (lockfile_raw) {
+            array(array(string)) entries = read_lockfile(lockfile_path);
+            array(array(string)) new_entries = ({});
+            int had_entry = 0;
+            foreach (entries; ; array(string) e)
+                if (e[0] != name) new_entries += ({ e });
+                else had_entry = 1;
+            if (had_entry) {
+                ctx["lock_entries"] = new_entries;
+                write_lockfile(lockfile_path, ctx["lock_entries"]);
+            }
+        }
+    };
+    if (err) {
+        // Rollback: restore files to pre-modification state
+        if (pike_json_raw) atomic_write(pike_json_path, pike_json_raw);
+        if (lockfile_raw) atomic_write(lockfile_path, lockfile_raw);
+        werror("pmp: remove failed, rolled back to previous state\n");
+        die(describe_error(err));
+    }
 }

@@ -5,7 +5,7 @@
 #   PMP_VERSION=v0.3.0         pin to a specific tag
 #   PMP_MODIFY_PATH=1          opt in to shell rc PATH modification
 
-set -euo pipefail
+set -eu
 
 PMP_REPO="https://github.com/TheSmuks/pmp.git"
 

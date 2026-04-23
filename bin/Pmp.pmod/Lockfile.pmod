@@ -102,6 +102,10 @@ array(array(string)) read_lockfile(void|string lf) {
                 warn("lockfile entry has invalid name field: " + name[..60]);
                 continue;
             }
+            if (name == ".") {
+                warn("lockfile entry with invalid name '.' — skipping");
+                continue;
+            }
             entries += ({ parts[..4] });
         }
     }

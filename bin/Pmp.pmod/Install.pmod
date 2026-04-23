@@ -381,8 +381,8 @@ void cmd_install_all(string target, mapping ctx) {
             string backup = target + ".old";
             if (Stdio.is_dir(backup)) Stdio.recursive_rm(backup);
             if (!mv(target, backup)) {
-                warn("failed to swap modules directory — staging dir at " + staging);
-                Stdio.recursive_rm(backup);
+                Stdio.recursive_rm(staging);
+                die("failed to swap modules directory — install aborted");
             } else {
                 if (!mv(staging, target)) {
                     // Cross-filesystem: copy contents then remove source
@@ -417,7 +417,7 @@ void cmd_install_all(string target, mapping ctx) {
                     Stdio.recursive_rm(staging);
                 };
                 if (cp_err) {
-                    warn("failed to move staging dir to modules");
+                    die("failed to move staging dir to modules");
                 } else {
                     install_ok = 1;
                 }
@@ -690,10 +690,9 @@ void cmd_rollback(mapping ctx) {
             }
         }
 
-        // Write lockfile atomically before restoring symlinks.
-        // If the process crashes mid-rollback, the lockfile reflects
-        // the target state so re-running rollback can be safe.
-        write_lockfile(ctx["lockfile_path"], prev_entries);
+        // Track which entries are actually restored so the lockfile
+        // reflects reality if some entries are skipped.
+        array(array(string)) restored_entries = ({});
 
         foreach (prev_entries; ; array(string) entry) {
             string ln = entry[0], ls = entry[1],
@@ -727,6 +726,7 @@ void cmd_rollback(mapping ctx) {
                     }
                     atomic_symlink(rmp->target, dest_rm);
                     info("restored " + ln + " -> " + rmp->target);
+                    restored_entries += ({ entry });
                 }
             } else {
                 // Remote dep — find store entry matching source+tag
@@ -753,7 +753,10 @@ void cmd_rollback(mapping ctx) {
                 }
                 atomic_symlink(rmp->target, dest_rm);
                 info("restored " + ln + " " + lt);
+                restored_entries += ({ entry });
             }
+
+        write_lockfile(ctx["lockfile_path"], restored_entries);
         }
 
 

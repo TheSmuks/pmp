@@ -100,7 +100,9 @@ string _find_store_entry(string store_dir, string source, string tag, string con
     while (has_value(slug, "--")) slug = replace(slug, "--", "-");
     while (has_prefix(slug, "-")) slug = slug[1..];
     while (has_suffix(slug, "-")) slug = slug[..<1];
-    string pattern = slug + "-" + tag + "-*";
+    string safe_tag = replace(tag, "/", "-");
+    while (has_value(safe_tag, "--")) safe_tag = replace(safe_tag, "--", "-");
+    string pattern = slug + "-" + safe_tag + "-*";
     array(string) candidates = ({});
 
     if (Stdio.is_dir(store_dir)) {

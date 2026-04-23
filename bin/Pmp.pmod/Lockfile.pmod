@@ -101,8 +101,10 @@ array(array(string)) read_lockfile(void|string lf) {
 
 //! Check if a dependency exists in the lockfile, optionally verifying source.
 //! When source is provided, both name and source must match.
-int lockfile_has_dep(string name, void|string lf, void|string source) {
-    foreach (read_lockfile(lf); ; array(string) entry)
+int lockfile_has_dep(string name, void|string lf, void|string source,
+                        void|array(array(string)) entries) {
+    if (!entries) entries = read_lockfile(lf);
+    foreach (entries; ; array(string) entry)
         if (entry[0] == name)
             return source ? entry[1] == source : 1;
     return 0;

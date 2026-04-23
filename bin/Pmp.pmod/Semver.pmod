@@ -132,8 +132,10 @@ array(string) sort_tags_semver(array(string) tags) {
     foreach (tags; ; string t)
         pairs += ({ ({ parse_semver(t), t }) });
 
-    // Sort: highest semver first, non-semver last.
-    // Array.sort_array comparator: returns true = swap (a goes after b).
+    // sort_array comparator: returns true when elements should be swapped.
+    // We want highest-first. If a > b (compare returns 1), we DON'T swap (return false = 1 < 0 = false).
+    // If a < b (compare returns -1), we DO swap (return true = -1 < 0 = true).
+    // Result: higher versions sort to the front.
     pairs = Array.sort_array(pairs, lambda(array a, array b) {
         mixed pa = a[0];
         mixed pb = b[0];

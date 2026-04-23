@@ -3,6 +3,25 @@
 
 inherit .Helpers;
 
+int dir_size(string path) {
+    int total = 0;
+    foreach (get_dir(path) || ({}); ; string name) {
+        string full = combine_path(path, name);
+        Stdio.Stat st = file_stat(full);
+        if (!st) continue;
+        if (st->isdir) total += dir_size(full);
+        else total += st->size;
+    }
+    return total;
+}
+
+string human_size(int bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return sprintf("%.1f KB", (float)bytes / 1024.0);
+    if (bytes < 1024 * 1024 * 1024) return sprintf("%.1f MB", (float)bytes / (1024.0 * 1024.0));
+    return sprintf("%.1f GB", (float)bytes / (1024.0 * 1024.0 * 1024.0));
+}
+
 void cmd_store(array(string) args, mapping ctx) {
     mapping opts = Arg.parse(({"pmp"}) + args);
     array(string) rest = opts[Arg.REST];
@@ -85,21 +104,12 @@ void cmd_store(array(string) args, mapping ctx) {
                     }
                 }
 
-                // Get size using du
-                mapping r = Process.run(
-                    ({"du", "-sh", entry}));
-                string esize = "";
-                if (r->exitcode == 0 && sizeof(r->stdout) > 0)
-                    esize = (r->stdout / "\t")[0];
+                string esize = human_size(dir_size(entry));
 
                 write(sprintf("  %-55s %s\n", ename, esize));
                 count++;
             }
-            // Total size
-            mapping r = Process.run(({"du", "-sh", ctx["store_dir"]}));
-            string total = "";
-            if (r->exitcode == 0 && sizeof(r->stdout) > 0)
-                total = (r->stdout / "\t")[0];
+            string total = human_size(dir_size(ctx["store_dir"]));
             write(sprintf("\n  %d entries, %s total\n", count, total));
             break;
         }

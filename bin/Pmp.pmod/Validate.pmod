@@ -151,11 +151,11 @@ void validate_manifests(string local_dir, multiset(string) std_libs,
                             Regexp("import[ \t]+([.A-Za-z_][A-Za-z0-9_.]*)")
                             ->split(trimmed);
                         if (matches && sizeof(matches) > 0) {
-                            // Extract first component (before first dot)
-                            string first = (matches[0] / ".")[0];
                             // Skip relative imports (leading dot)
-                            if (sizeof(first) > 0)
+                            if (matches[0][0] != '.') {
+                                string first = (matches[0] / ".")[0];
                                 imports[first] = 1;
+                            }
                             continue;
                         }
                         // inherit Foo; or inherit Foo.Bar;
@@ -164,9 +164,11 @@ void validate_manifests(string local_dir, multiset(string) std_libs,
                             Regexp("inherit[ \t]+([.A-Za-z_][A-Za-z0-9_.]*)")
                             ->split(trimmed);
                         if (matches && sizeof(matches) > 0) {
-                            string first = (matches[0] / ".")[0];
-                            if (sizeof(first) > 0)
+                            // Skip relative inherits (leading dot)
+                            if (matches[0][0] != '.') {
+                                string first = (matches[0] / ".")[0];
                                 imports[first] = 1;
+                            }
                             continue;
                         }
                         // #include <Foo.pmod/bar.h> or <Foo.Bar.pmod/baz.h>
@@ -178,6 +180,49 @@ void validate_manifests(string local_dir, multiset(string) std_libs,
                             if (sizeof(first) > 0)
                                 imports[first] = 1;
                             continue;
+                        }
+                        // #if constant(Foo) — conditional compilation references
+                        matches =
+                            Regexp("#if[ \t]+constant[ \t]*[(][ \t]*([A-Za-z_][A-Za-z0-9_]*)[)]")
+                            ->split(trimmed);
+                        if (matches && sizeof(matches) > 0) {
+                            imports[matches[0]] = 1;
+                            continue;
+                        }
+                        // #ifdef Foo — conditional compilation references
+                        matches =
+                            Regexp("#ifdef[ \t]+([A-Za-z_][A-Za-z0-9_]*)")
+                            ->split(trimmed);
+                        if (matches && sizeof(matches) > 0) {
+                            imports[matches[0]] = 1;
+                            continue;
+                        }
+                    }
+                    // Scan raw content for string imports (import "foo";)
+                    // since strip_comments_and_strings removes string contents
+                    foreach (content / "\n"; ; string line) {
+                        string trimmed = String.trim_whites(line);
+                        array matches =
+                            Regexp("import[ \t]+\"([^\"]+)\"")
+                            ->split(trimmed);
+                        if (matches && sizeof(matches) > 0) {
+                            // Resolve the string path relative to the importing file
+                            string resolved =
+                                combine_path(dir, matches[0]);
+                            // Extract the top-level module name from the resolved path
+                            array(string) parts = resolved / "/";
+                            foreach (parts; ; string p) {
+                                if (sizeof(p) > 0) {
+                                    // Strip .pmod/.pike suffix if present
+                                    if (has_suffix(p, ".pmod"))
+                                        p = p[..<5];
+                                    else if (has_suffix(p, ".pike"))
+                                        p = p[..<5];
+                                    if (sizeof(p) > 0)
+                                        imports[p] = 1;
+                                    break;
+                                }
+                            }
                         }
                     }
                 }

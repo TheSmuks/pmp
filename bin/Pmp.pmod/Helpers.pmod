@@ -27,9 +27,14 @@ void register_store_lock(string store_dir) {
 void clear_store_lock() {
     _store_locked = 0;
 }
+private int _cleaned_up = 0;
+
 
 //! Run all registered cleanup actions. Called on signal and normal exit.
+//! Guarded against double-invocation (e.g. signal during cleanup).
 void run_cleanup() {
+    if (_cleaned_up) return;
+    _cleaned_up = 1;
     // Clean up temp dirs
     foreach (_cleanup_dirs; ; string d) {
         if (Stdio.is_dir(d)) {

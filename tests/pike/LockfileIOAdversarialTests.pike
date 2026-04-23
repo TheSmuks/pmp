@@ -139,24 +139,24 @@ void test_read_duplicate_entries() {
     assert_equal("sha2", entries[1][3]);
 }
 
-// ── lockfile_has_dep_entries (in-memory, no disk) ───────────────────
+// ── lockfile_has_dep (in-memory, no disk) ───────────────────
 
 void test_has_dep_entries_empty() {
-    assert_equal(0, lockfile_has_dep_entries("anything", ({})));
+    assert_equal(0, lockfile_has_dep("anything", 0, 0, ({})));
 }
 
 void test_has_dep_entries_match() {
     array(array(string)) entries = ({
         ({"foo", "github.com/o/r", "v1", "sha", "hash"}),
     });
-    assert_equal(1, lockfile_has_dep_entries("foo", entries));
+    assert_equal(1, lockfile_has_dep("foo", 0, 0, entries));
 }
 
 void test_has_dep_entries_source_mismatch() {
     array(array(string)) entries = ({
         ({"foo", "github.com/o/r1", "v1", "sha", "hash"}),
     });
-    assert_equal(0, lockfile_has_dep_entries("foo", entries, "github.com/o/r2"));
+    assert_equal(0, lockfile_has_dep("foo", 0, "github.com/o/r2", entries));
 }
 
 // ── Unversioned lockfile handling ──────────────────────────────────

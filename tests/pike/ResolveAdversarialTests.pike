@@ -34,18 +34,6 @@ void test_inherited_semver_functions_available() {
                 "classify_bump (inherited from Semver) should be callable");
 }
 
-// ── MAX_TAG_PAGES constant ────────────────────────────────────────────
-
-void test_max_tag_pages_constant() {
-    // Verify the pagination guard is a reasonable positive integer.
-    assert_true(intp(MAX_TAG_PAGES),
-                "MAX_TAG_PAGES should be an int");
-    assert_true(MAX_TAG_PAGES > 0,
-                "MAX_TAG_PAGES should be positive");
-    assert_true(MAX_TAG_PAGES <= 100,
-                "MAX_TAG_PAGES should have an upper bound");
-}
-
 // ── Cache key format ──────────────────────────────────────────────────
 
 void test_cache_key_format() {

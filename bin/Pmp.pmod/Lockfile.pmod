@@ -14,18 +14,17 @@ array(array(string)) lockfile_add_entry(array(array(string)) entries,
 //! New entries replace existing ones with the same name.
 array(array(string)) merge_lock_entries(array(array(string)) existing,
                                               array(array(string)) new_entries) {
-    multiset(string) seen = (<>);
-    // Walk new entries first — they take priority
-    array(array(string)) result = new_entries + ({});
-    foreach (new_entries; ; array(string) e)
-        seen[e[0]] = 1;
-    // Keep existing entries whose names are not overridden
+    mapping(string:array(string)) by_name = ([]);
+    // Walk existing first
     foreach (existing; ; array(string) e)
-        if (!seen[e[0]])
-            result += ({ e });
-    return result;
+        if (sizeof(e[0]))
+            by_name[e[0]] = e;
+    // Walk new — last wins for same name, overrides existing
+    foreach (new_entries; ; array(string) e)
+        if (sizeof(e[0]))
+            by_name[e[0]] = e;
+    return values(by_name);
 }
-
 //! Write lockfile entries to disk.
 //! Validates that no field contains tab characters (would corrupt the format).
 void write_lockfile(string lockfile_path, array(array(string)) entries) {

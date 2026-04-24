@@ -50,6 +50,15 @@ protected string _normalize_ip_host(string host) {
     if (has_value(host, ":")) return host;
     if (!has_value(host, ".")) return host;
     array(string) parts = host / ".";
+    // Expand 1/2/3-part inet_aton formats to 4-part
+    // Per inet_aton: a → 0.0.0.a; a.b → a.0.0.b; a.b.c → a.b.0.c
+    if (sizeof(parts) == 1) {
+        parts = ({"0", "0", "0", parts[0]});
+    } else if (sizeof(parts) == 2) {
+        parts = ({parts[0], "0", "0", parts[1]});
+    } else if (sizeof(parts) == 3) {
+        parts = ({parts[0], parts[1], "0", parts[2]});
+    }
     if (sizeof(parts) != 4) return host;
     foreach (parts; ; string p) {
         if (sizeof(p) == 0) return host;

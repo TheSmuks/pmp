@@ -58,14 +58,12 @@ void install_one(string name, string source, string target,
     switch (type) {
         case "local": {
             string local_path = source;
+            // Block path traversal before resolving
+            if (search(local_path, "..") >= 0)
+                die("local dependency path contains '..' traversal: " + local_path);
             string project_root = find_project_root() || getcwd();
             if (has_prefix(local_path, "./"))
                 local_path = combine_path(project_root, local_path);
-            // Prevent path traversal in local dep resolution
-            if (search(local_path, "..") >= 0) {
-                warn("local dep path contains '..' traversal: " + source + " — skipping");
-                break;
-            }
 
             if (!Stdio.is_dir(local_path))
                 die("local path not found: " + local_path);

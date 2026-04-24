@@ -7,6 +7,7 @@
 //   4. Orphaned store entries (not referenced by any project)
 
 inherit .Helpers;
+inherit .Source;
 inherit .Store;
 inherit .Lockfile;
 
@@ -148,7 +149,7 @@ int cmd_verify(mapping ctx) {
         array(array(string)) lf = read_lockfile(ctx["lockfile_path"]);
         foreach (lf; ; array(string) e) {
             string ls = e[1], lt = e[2];
-            if (sizeof(ls) > 0 && ls != "-" && !has_prefix(ls, "./") && !has_prefix(ls, "/")) {
+            if (sizeof(ls) > 0 && !is_local_source(ls)) {
                 string slug = normalize_slug(ls);
                 string safe_tag = normalize_tag(lt);
                 string pattern = slug + "-" + safe_tag + "-*";

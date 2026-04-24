@@ -70,8 +70,7 @@ void install_one(string name, string source, string target,
             // Block path traversal before resolving
             if (has_value(local_path, ".."))
                 die("local dependency path contains '..' traversal: " + local_path);
-            if (has_prefix(local_path, "./"))
-                local_path = resolve_local_path(local_path);
+            local_path = resolve_local_path(local_path);
 
             if (!Stdio.is_dir(local_path))
                 die("local path not found: " + local_path);
@@ -298,8 +297,7 @@ void cmd_install_all(string target, mapping ctx) {
                     // Local dep — just symlink
                     if (sizeof(ls) > 0 && ls != "-") {
                         string local_path = ls;
-                        if (has_prefix(local_path, "./"))
-                            local_path = resolve_local_path(local_path);
+                        local_path = resolve_local_path(local_path);
 
                         if (!Stdio.is_dir(local_path)) {
                             warn("local dep " + ln + " path "
@@ -481,8 +479,7 @@ void cmd_install_all(string target, mapping ctx) {
             if (e[1] == "-" || has_prefix(e[1], "./") || has_prefix(e[1], "/")) {
                 // Local dep — read pike.json from source path
                 string local_path = e[1];
-                if (has_prefix(local_path, "./"))
-                    local_path = resolve_local_path(local_path);
+                local_path = resolve_local_path(local_path);
                 pkg_json = combine_path(local_path, "pike.json");
             } else {
                 // Remote dep — find in store
@@ -804,8 +801,7 @@ void cmd_rollback(mapping ctx) {
                 // Local dep — re-symlink
                 if (sizeof(ls) > 0 && ls != "-") {
                     string local_path = ls;
-                    if (has_prefix(local_path, "./"))
-                        local_path = resolve_local_path(local_path);
+                    local_path = resolve_local_path(local_path);
                     if (!Stdio.is_dir(local_path)) {
                         warn("local dep " + ln + " path " + local_path
                              + " not found — skipping");

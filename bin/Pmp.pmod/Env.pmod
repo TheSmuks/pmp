@@ -22,7 +22,6 @@ int _has_headers(string dir, void|int depth) {
     return 0;
 }
 
-//! Shell-escape a string using single quotes.
 //! Shell-escape a string using Process.sh_quote.
 string shell_escape(string s) {
     return Process.sh_quote(s);

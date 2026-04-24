@@ -1,8 +1,12 @@
 inherit .Helpers;
 
-//! Normalize a source URL: strip URL schemes (https://, http://, git://, ssh://)
-//! and trailing .git suffix. Returns the clean host/path form.
+//! Normalize a source URL: strip URL schemes (https://, http://, git://, ssh://),
+//! trailing .git suffix, and #version suffix. Returns the clean host/path form.
 string _normalize_source(string src) {
+    // Strip #version suffix before normalizing
+    if (has_value(src, "#"))
+        src = (src / "#")[0];
+
     int had_scheme = 0;
     foreach (({"https://", "http://", "git://", "ssh://"}); ; string scheme)
         if (has_prefix(src, scheme)) {
@@ -68,7 +72,7 @@ string detect_source_type(string src) {
     if (has_prefix(src, "./") || has_prefix(src, "/"))
         return "local";
 
-    string clean = _normalize_source((src / "#")[0]);
+    string clean = _normalize_source(src);
     if (!_validate_source_format(src, clean)) die("invalid source format: " + src + " (expected domain/owner/repo)");
     string domain = (clean / "/")[0];
 
@@ -82,7 +86,7 @@ string detect_source_type(string src) {
 //! Extract module name from last path segment.
 //! Hyphens are replaced with underscores for valid Pike identifiers.
 string source_to_name(string src) {
-    string clean = _normalize_source((src / "#")[0]);
+    string clean = _normalize_source(src);
     array(string) clean_parts = (clean / "/") - ({ "" });
     if (sizeof(clean_parts) < 1)
         die("cannot extract module name from: " + src);
@@ -101,18 +105,18 @@ string source_to_version(string src) {
 
 //! Normalize source and strip #version. Used for lockfile storage.
 string source_strip_version(string src) {
-    return _normalize_source((src / "#")[0]);
+    return _normalize_source(src);
 }
 
 //! Extract domain from a normalized source URL.
 string source_to_domain(string src) {
-    string clean = _normalize_source((src / "#")[0]);
+    string clean = _normalize_source(src);
     return (clean / "/")[0];
 }
 
 //! Extract owner/repo path from a normalized source URL (after domain).
 string source_to_repo_path(string src) {
-    string clean = _normalize_source((src / "#")[0]);
+    string clean = _normalize_source(src);
     if (!_validate_source_format(src, clean)) return "";
     array parts = clean / "/";
     if (sizeof(parts) < 3) return "";

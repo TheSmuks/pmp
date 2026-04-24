@@ -30,9 +30,9 @@ int cmd_verify(mapping ctx) {
             // Resolve relative symlink targets against the symlink's directory
             if (sizeof(link_target) > 0 && link_target[0] != '/') {
                 link_target = combine_path(combine_path(full, ".."), link_target);
-                mixed rp_err = catch { link_target = System.resolvepath(link_target) || link_target; };
+                catch { link_target = System.resolvepath(link_target) || link_target; };
             } else if (sizeof(link_target) > 0) {
-                mixed rp_err = catch { link_target = System.resolvepath(link_target) || link_target; };
+                catch { link_target = System.resolvepath(link_target) || link_target; };
             }
             if (!Stdio.exist(link_target)) {
                 warn("broken symlink: " + name + " -> " + link_target);

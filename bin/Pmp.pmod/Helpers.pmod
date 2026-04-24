@@ -1,3 +1,10 @@
+//! Strip UTF-8 BOM from raw file content if present.
+private string _strip_bom(string raw) {
+    if (sizeof(raw) >= 3 && has_prefix(raw, "\xef\xbb\xbf"))
+        return raw[3..];
+    return raw;
+}
+
 inherit .Config;
 
 //! Cleanup registry for signal handling and error recovery.
@@ -168,8 +175,8 @@ void need_cmd(string name) {
 //!   Path to the JSON file (required — no global fallback).
 void|string json_field(string field, string file) {
     if (!Stdio.exist(file)) return 0;
-    string raw = Stdio.read_file(file);
-    if (!raw) return 0;
+    string raw = _strip_bom(Stdio.read_file(file) || "");
+    if (raw == "") return 0;
     mapping|mixed data;
     mixed err = catch { data = Standards.JSON.decode(raw); };
     if (err || !mappingp(data)) return 0;

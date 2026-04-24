@@ -1,3 +1,9 @@
+//! URL-encode a string for use in API path segments.
+//! Encodes / as %2F and other special characters.
+private string _encode_tag(string tag) {
+    return replace(replace(tag, "/", "%2F"), " ", "%20");
+}
+
 inherit .Helpers;
 inherit .Http;
 inherit .Semver;
@@ -53,7 +59,7 @@ array(string) latest_tag_github(string repo_path, void|string version) {
     if (sha == "") {
         // Fallback: fetch commit SHA from the ref endpoint
         array(int|string) result = http_get_safe(
-            "https://api.github.com/repos/" + repo_path + "/commits/" + tag,
+            "https://api.github.com/repos/" + repo_path + "/commits/" + _encode_tag(tag),
             github_auth_headers(), version);
             if (result[0] == 200) {
                 mixed commit_data;
@@ -213,7 +219,7 @@ array(string) latest_tag_github_safe(string repo_path, void|string version) {
 
     if (sha == "") {
         array(int|string) sha_result = http_get_safe(
-            "https://api.github.com/repos/" + repo_path + "/commits/" + tag,
+            "https://api.github.com/repos/" + repo_path + "/commits/" + _encode_tag(tag),
             github_auth_headers(), version);
         if (sha_result[0] == 200) {
             mixed commit_data;
@@ -300,7 +306,7 @@ string resolve_commit_sha(string type, string domain,
         case "github": {
             array(int|string) result = http_get_safe(
                 "https://api.github.com/repos/" + repo_path
-                + "/commits/" + tag,
+                + "/commits/" + _encode_tag(tag),
                 github_auth_headers(), version);
             if (result[0] == 200) {
                 mixed data;
@@ -314,7 +320,7 @@ string resolve_commit_sha(string type, string domain,
             string encoded = replace(repo_path, "/", "%2F");
             array(int|string) result = http_get_safe(
                 "https://gitlab.com/api/v4/projects/" + encoded
-                + "/repository/commits/" + tag, 0, version);
+                + "/repository/commits/" + _encode_tag(tag), 0, version);
             if (result[0] == 200) {
                 mixed data;
                 mixed err = catch { data = Standards.JSON.decode(result[1]); };

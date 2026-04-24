@@ -1,3 +1,10 @@
+//! Strip UTF-8 BOM from raw file content if present.
+private string _strip_bom(string raw) {
+    if (sizeof(raw) >= 3 && has_prefix(raw, "\xef\xbb\xbf"))
+        return raw[3..];
+    return raw;
+}
+
 inherit .Helpers;
 
 //! Add a dependency to a pike.json manifest file.
@@ -13,8 +20,8 @@ void add_to_manifest(string pike_json, string name, string source) {
         return;
     }
 
-    string raw = Stdio.read_file(pike_json);
-    if (!raw) { warn("failed to read " + pike_json); return; }
+    string raw = _strip_bom(Stdio.read_file(pike_json) || "");
+    if (raw == "") { warn("failed to read " + pike_json); return; }
 
     mixed data;
     mixed err = catch { data = Standards.JSON.decode(raw); };
@@ -46,8 +53,8 @@ void add_to_manifest(string pike_json, string name, string source) {
 array(array(string)) parse_deps(string file) {
     if (!Stdio.exist(file)) return ({});
 
-    string raw = Stdio.read_file(file);
-    if (!raw) return ({});
+    string raw = _strip_bom(Stdio.read_file(file) || "");
+    if (raw == "") return ({});
 
     mixed data;
     mixed err = catch { data = Standards.JSON.decode(raw); };

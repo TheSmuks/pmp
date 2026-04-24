@@ -697,7 +697,7 @@ void cmd_update(array(string) args, mapping ctx) {
                 // Restore symlink removed by force-install on download failure
                 if (saved_symlink) {
                     if (!Stdio.exist(saved_dest)) {
-                        symlink(saved_symlink, saved_dest);
+                        atomic_symlink(saved_symlink, saved_dest);
                     }
                 }
                 throw(single_err);

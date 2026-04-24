@@ -267,15 +267,8 @@ void atomic_write(string path, string content) {
         die("failed to write file atomically (disk full?): " + path, EXIT_INTERNAL);
     }
     if (!mv(tmp_path, path)) {
-        // mv may fail across filesystems — try harder
-        warn("atomic_write: rename failed, attempting copy");
-        mixed cp_err = catch {
-            Stdio.write_file(path, Stdio.read_file(tmp_path));
-            rm(tmp_path);
-        };
-        if (cp_err) {
-            rm(tmp_path);
-            die("failed to write file atomically: " + path, EXIT_INTERNAL);
-        }
+        // Cross-filesystem mv failed — clean up and die
+        rm(tmp_path);
+        die("failed to write file atomically (cross-filesystem?): " + path, EXIT_INTERNAL);
     }
 }

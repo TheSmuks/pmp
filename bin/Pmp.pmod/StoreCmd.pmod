@@ -48,18 +48,31 @@ void cmd_store(array(string) args, mapping ctx) {
                              string lname) {
                         string link = combine_path(ctx["local_dir"], lname);
                         string target = get_symlink_target(link);
-                        if (target && (has_prefix(target, entry + "/") || target == entry)) {
-                            found = 1;
-                            break;
+                        if (target) {
+                            // Resolve relative symlink targets against symlink's parent
+                            if (target[0] != '/') {
+                                target = combine_path(combine_path(link, ".."), target);
+                                catch { target = System.resolvepath(target) || target; };
+                            }
+                            if (has_prefix(target, entry + "/") || target == entry) {
+                                found = 1;
+                                break;
+                            }
                         }
                     }
                     if (!found && ctx["global_dir"] && Stdio.is_dir(ctx["global_dir"])) {
                         foreach (get_dir(ctx["global_dir"]) || ({}); ; string lname) {
                             string link = combine_path(ctx["global_dir"], lname);
                             string target = get_symlink_target(link);
-                        if (target && (has_prefix(target, entry + "/") || target == entry)) {
-                                found = 1;
-                                break;
+                            if (target) {
+                                if (target[0] != '/') {
+                                    target = combine_path(combine_path(link, ".."), target);
+                                    catch { target = System.resolvepath(target) || target; };
+                                }
+                                if (has_prefix(target, entry + "/") || target == entry) {
+                                    found = 1;
+                                    break;
+                                }
                             }
                         }
                     }

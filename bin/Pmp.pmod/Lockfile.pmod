@@ -32,6 +32,8 @@ array(array(string)) merge_lock_entries(array(array(string)) existing,
 void write_lockfile(string lockfile_path, array(array(string)) entries) {
     // Validate entries — no field may contain a tab
     foreach (entries; ; array(string) entry) {
+        if (sizeof(entry) < 5)
+            die("lockfile entry has fewer than 5 fields: " + sizeof(entry) + " fields", EXIT_INTERNAL);
         foreach (entry; int i; string field) {
             if (search(field, "\0") >= 0)
                 die("lockfile field contains null byte: " + field[..20], EXIT_INTERNAL);
@@ -53,6 +55,7 @@ void write_lockfile(string lockfile_path, array(array(string)) entries) {
     buf->add("# pmp lockfile v" + LOCKFILE_VERSION + " — DO NOT EDIT\n");
     buf->add("# name\tsource\ttag\tcommit_sha\tcontent_sha256\n");
     foreach (entries; ; array(string) entry) {
+        if (sizeof(entry) < 5) continue;
         buf->add(entry[0] + "\t" + entry[1] + "\t" + entry[2]
                  + "\t" + entry[3] + "\t" + entry[4] + "\n");
     }

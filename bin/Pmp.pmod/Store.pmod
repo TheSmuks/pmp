@@ -187,7 +187,7 @@ array(string) _collect_files(string base, string rel) {
         if (name == ".pmp-meta") continue;
         string path = sizeof(rel) > 0 ? rel + "/" + name : name;
         string abs = combine_path(base, path);
-        if (Stdio.is_dir(abs)) {
+        if (Stdio.is_dir(abs) && !is_symlink(abs)) {
             result += _collect_files(base, path);
         } else if (Stdio.is_file(abs)) {
             result += ({ path });

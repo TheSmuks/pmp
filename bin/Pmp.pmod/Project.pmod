@@ -121,6 +121,7 @@ void cmd_remove(array(string) args, mapping ctx) {
         die("invalid module name: " + name);
     string lock_path = combine_path(find_project_root() || getcwd(), ".pmp-install.lock");
     advisory_lock(lock_path, "project");
+    register_project_lock_path(lock_path);
 
 
     // --- Validate phase: ensure files are readable before we touch anything ---

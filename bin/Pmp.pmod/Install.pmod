@@ -536,9 +536,9 @@ void cmd_install(array(string) args, mapping ctx) {
         cmd_install_all(target, ctx);
     } else {
         // Read existing lockfile entries to preserve them
-        array(array(string)) existing = read_lockfile(ctx["lockfile_path"]);
-
+        // (must be inside lock to avoid race with concurrent installs)
         project_lock(find_project_root());
+        array(array(string)) existing = read_lockfile(ctx["lockfile_path"]);
         int store_locked = 0;
         mixed err = catch {
             store_lock(ctx["store_dir"]);

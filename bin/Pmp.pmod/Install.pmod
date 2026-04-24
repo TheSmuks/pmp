@@ -14,6 +14,15 @@ inherit .Semver;
 inherit .Validate;
 
 
+
+//! Move directory contents across filesystems (fallback when mv fails).
+private void _move_contents(string src, string dst) {
+    Stdio.mkdirhier(dst);
+    foreach (get_dir(src) || ({}); ; string name)
+        mv(combine_path(src, name), combine_path(dst, name));
+    Stdio.recursive_rm(src);
+}
+
 private string get_resolved_sha(string type, string domain,
                                  string repo_path, string ver,
                                  mapping ctx) {
@@ -61,7 +70,6 @@ void install_one(string name, string source, string target,
             // Block path traversal before resolving
             if (has_value(local_path, ".."))
                 die("local dependency path contains '..' traversal: " + local_path);
-            string project_root = find_project_root() || getcwd();
             if (has_prefix(local_path, "./"))
                 local_path = resolve_local_path(local_path);
 
@@ -290,8 +298,6 @@ void cmd_install_all(string target, mapping ctx) {
                     // Local dep — just symlink
                     if (sizeof(ls) > 0 && ls != "-") {
                         string local_path = ls;
-                        string project_root =
-                            find_project_root() || getcwd();
                         if (has_prefix(local_path, "./"))
                             local_path = resolve_local_path(local_path);
 
@@ -413,13 +419,7 @@ void cmd_install_all(string target, mapping ctx) {
             } else {
                 if (!mv(staging, target)) {
                     // Cross-filesystem: copy contents then remove source
-                    mixed cp_err = catch {
-                        Stdio.mkdirhier(target);
-                        foreach (get_dir(staging) || ({}); ; string name)
-                            mv(combine_path(staging, name),
-                               combine_path(target, name));
-                        Stdio.recursive_rm(staging);
-                    };
+                    mixed cp_err = catch { _move_contents(staging, target); };
                     if (cp_err) {
                         // Total failure — try to restore backup
                         if (Stdio.is_dir(backup)) {
@@ -442,13 +442,7 @@ void cmd_install_all(string target, mapping ctx) {
             // No existing modules/ — just rename
             if (!mv(staging, target)) {
                 // Cross-filesystem: copy contents then remove source
-                mixed cp_err = catch {
-                    Stdio.mkdirhier(target);
-                    foreach (get_dir(staging) || ({}); ; string name)
-                        mv(combine_path(staging, name),
-                           combine_path(target, name));
-                    Stdio.recursive_rm(staging);
-                };
+                mixed cp_err = catch { _move_contents(staging, target); };
                 if (cp_err) {
                     die("failed to move staging dir to modules");
                 } else {
@@ -487,7 +481,6 @@ void cmd_install_all(string target, mapping ctx) {
             if (e[1] == "-" || has_prefix(e[1], "./") || has_prefix(e[1], "/")) {
                 // Local dep — read pike.json from source path
                 string local_path = e[1];
-                string project_root = find_project_root() || getcwd();
                 if (has_prefix(local_path, "./"))
                     local_path = resolve_local_path(local_path);
                 pkg_json = combine_path(local_path, "pike.json");
@@ -811,7 +804,6 @@ void cmd_rollback(mapping ctx) {
                 // Local dep — re-symlink
                 if (sizeof(ls) > 0 && ls != "-") {
                     string local_path = ls;
-                    string project_root = find_project_root() || getcwd();
                     if (has_prefix(local_path, "./"))
                         local_path = resolve_local_path(local_path);
                     if (!Stdio.is_dir(local_path)) {

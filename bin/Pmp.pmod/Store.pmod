@@ -1,5 +1,4 @@
 inherit .Helpers;
-protected Regexp RE_HEX = Regexp("^[a-f0-9]+$");
 inherit .Http;
 inherit .Resolve;
 
@@ -282,7 +281,6 @@ mapping _store_install_common(string store_dir, string source_label,
     }
 
     // Ensure clean target
-    if (Stdio.exist(entry_dir)) rm(entry_dir);
     Stdio.mkdirhier(store_dir);
     // Symlink-safe removal
     if (is_symlink(entry_dir)) rm(entry_dir);

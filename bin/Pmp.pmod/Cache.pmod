@@ -24,6 +24,21 @@ constant CACHE_TTL = 300;
 string _cache_key(string url) {
     return String.string2hex(Crypto.SHA256.hash(url));
 }
+//! Parse a cache entry's raw content into (header_mapping, body).
+//! Returns 0 on failure.
+private array(mapping(string:string)|string)|mixed _parse_cache_entry(string raw) {
+    int sep = search(raw, "\n\n");
+    if (sep < 0) return 0;
+    string header_block = raw[..sep - 1];
+    string body = raw[sep + 2..];
+    mapping(string:string) headers = ([]);
+    foreach (header_block / "\n"; ; string line) {
+        string k, v;
+        if (sscanf(line, "%s: %s", k, v) != 2) continue;
+        headers[k] = v;
+    }
+    return ({ headers, body });
+}
 
 //! Look up a cached response. Returns 0 on miss, or mapping with:
 //!   body: response body
@@ -43,38 +58,19 @@ mapping|void cache_get(string url, void|int ttl_secs) {
         rm(path);
         return 0;
     }
-
     // Parse cache entry: header lines (key: value) then blank line then body
-    int sep = search(raw, "\n\n");
-    if (sep < 0) {
+    array(mapping(string:string)|string)|mixed parsed = _parse_cache_entry(raw);
+    if (!parsed) {
         warn("removing corrupted cache entry (no header separator)");
         rm(path);
         return 0;
     }
-
-    string header_block = raw[..sep - 1];
-    string body = raw[sep + 2..];
+    [mapping(string:string) headers, string body] = parsed;
 
     mapping entry = (["body": body]);
-    int cached_at = 0;
-    string etag = "";
-    string last_modified = "";
-
-    foreach (header_block / "\n"; ; string line) {
-        string k, v;
-        if (sscanf(line, "%s: %s", k, v) != 2) continue;
-        switch (k) {
-            case "cached_at":
-                cached_at = (int)v;
-                break;
-            case "etag":
-                etag = v;
-                break;
-            case "last-modified":
-                last_modified = v;
-                break;
-        }
-    }
+    int cached_at = (int)(headers["cached_at"] || "0");
+    string etag = headers["etag"] || "";
+    string last_modified = headers["last-modified"] || "";
 
     // Check TTL — treat missing/zero timestamp as expired (corrupt entry)
     if (cached_at <= 0 || (time() - cached_at) > ttl_secs) {
@@ -170,17 +166,10 @@ void cache_prune(void|int ttl_secs) {
         string raw = Stdio.read_file(full);
         int cached_at = 0;
         if (raw && sizeof(raw)) {
-            int sep = search(raw, "\n\n");
-            if (sep >= 0) {
-                string header_block = raw[..sep - 1];
-                foreach (header_block / "\n"; ; string line) {
-                    string k, v;
-                    if (sscanf(line, "%s: %s", k, v) != 2) continue;
-                    if (k == "cached_at") {
-                        cached_at = (int)v;
-                        break;
-                    }
-                }
+            array(mapping(string:string)|string)|mixed parsed = _parse_cache_entry(raw);
+            if (parsed) {
+                [mapping(string:string) headers, string body] = parsed;
+                cached_at = (int)(headers["cached_at"] || "0");
             }
         }
         // Prune if missing/corrupt or expired

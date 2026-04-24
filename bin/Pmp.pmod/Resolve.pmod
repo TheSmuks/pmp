@@ -8,30 +8,33 @@ inherit .Helpers;
 inherit .Http;
 inherit .Semver;
 
-//! Get latest tag from GitHub — returns highest semver, not most-recently-created.
-//! Paginates through all tags (GitHub caps at 100 per page).
-array(string) latest_tag_github(string repo_path, void|string version) {
+//! Core tag resolution logic shared by github/gitlab variants.
+//! @param fetch_page
+//!   function(int page) → string body (or 0 on error)
+//! @param sha_field
+//!   "sha" for github, "id" for gitlab
+//! @param fallback
+//!   optional function(string tag) → string sha
+private array(string) _resolve_tags(
+    function(int:string) fetch_page,
+    string sha_field,
+    void|function(string:string) fallback)
+{
     array(string) tag_names = ({});
     array(mapping) all_entries = ({});
-
-    // Paginate through all tags
     int page = 1;
     while (1) {
-        string url = "https://api.github.com/repos/" + repo_path
-                     + "/tags?per_page=100&page=" + page;
-        string body = http_get(url, github_auth_headers(), version);
-
+        string body = fetch_page(page);
+        if (!body) break;
         mixed data;
         mixed err = catch { data = Standards.JSON.decode(body); };
         if (err || !arrayp(data) || sizeof(data) == 0)
-            break;  // No more pages or error
-
+            break;
         array(mapping) valid = filter(data, lambda(mapping e) { return !!e->name; });
         tag_names += column(valid, "name");
         all_entries += valid;
-
         if (sizeof(data) < 100)
-            break;  // Last page
+            break;
         page++;
     }
 
@@ -43,70 +46,51 @@ array(string) latest_tag_github(string repo_path, void|string version) {
         return ({ "", "" });
 
     string tag = tag_names[0];
-
     mapping(string:mapping) by_name = mkmapping(column(all_entries, "name"), all_entries);
     string sha = "";
     if (by_name[tag] && mappingp(by_name[tag]->commit))
-        sha = by_name[tag]->commit->sha || "";
+        sha = by_name[tag]->commit[sha_field] || "";
+    if (sha == "" && fallback)
+        sha = fallback(tag);
+    return ({ tag, sha || "" });
+}
 
-    if (sha == "") {
-        // Fallback: fetch commit SHA from the ref endpoint
-        array(int|string) result = http_get_safe(
-            "https://api.github.com/repos/" + repo_path + "/commits/" + _encode_tag(tag),
-            github_auth_headers(), version);
+//! Get latest tag from GitHub — returns highest semver, not most-recently-created.
+//! Paginates through all tags (GitHub caps at 100 per page).
+array(string) latest_tag_github(string repo_path, void|string version) {
+    return _resolve_tags(
+        lambda(int page) {
+            string url = "https://api.github.com/repos/" + repo_path
+                         + "/tags?per_page=100&page=" + page;
+            return http_get(url, github_auth_headers(), version);
+        },
+        "sha",
+        lambda(string tag) {
+            array(int|string) result = http_get_safe(
+                "https://api.github.com/repos/" + repo_path
+                + "/commits/" + _encode_tag(tag),
+                github_auth_headers(), version);
             if (result[0] == 200) {
                 mixed commit_data;
                 mixed fallback_err = catch { commit_data = Standards.JSON.decode(result[1]); };
                 if (!fallback_err && mappingp(commit_data))
-                    sha = commit_data->sha || "";
+                    return commit_data->sha || "";
             }
-    }
-    return ({ tag, sha || "" });
+            return "";
+        });
 }
 
 //! Get latest tag from GitLab — returns highest semver, not most-recently-created.
 //! Paginates through all tags (GitLab caps at 100 per page).
 array(string) latest_tag_gitlab(string repo_path, void|string version) {
     string encoded = Protocols.HTTP.percent_encode(repo_path);
-    array(string) tag_names = ({});
-    array(mapping) all_entries = ({});
-
-    // Paginate through all tags
-    int page = 1;
-    while (1) {
-        string url = "https://gitlab.com/api/v4/projects/"
-                     + encoded + "/repository/tags?per_page=100&page=" + page;
-        string body = http_get(url, 0, version);
-
-        mixed data;
-        mixed err = catch { data = Standards.JSON.decode(body); };
-        if (err || !arrayp(data) || sizeof(data) == 0)
-            break;
-
-        array(mapping) valid = filter(data, lambda(mapping e) { return !!e->name; });
-        tag_names += column(valid, "name");
-        all_entries += valid;
-
-        if (sizeof(data) < 100)
-            break;
-        page++;
-    }
-
-    if (sizeof(tag_names) == 0)
-        return ({ "", "" });
-
-    tag_names = sort_tags_semver(tag_names);
-    if (sizeof(tag_names) == 0)
-        return ({ "", "" });
-
-    string tag = tag_names[0];
-
-    mapping(string:mapping) by_name = mkmapping(column(all_entries, "name"), all_entries);
-    string sha = "";
-    if (by_name[tag] && mappingp(by_name[tag]->commit))
-        sha = by_name[tag]->commit->id || "";
-
-    return ({ tag, sha || "" });
+    return _resolve_tags(
+        lambda(int page) {
+            string url = "https://gitlab.com/api/v4/projects/"
+                         + encoded + "/repository/tags?per_page=100&page=" + page;
+            return http_get(url, 0, version);
+        },
+        "id");
 }
 
 //! Get latest tag from self-hosted git via ls-remote.
@@ -164,91 +148,41 @@ array(string) latest_tag(string type, string domain, string repo_path,
 //! Non-dying variant of latest_tag_github for batch operations.
 //! Uses http_get_safe so HTTP errors return ({"",""}) instead of killing the process.
 array(string) latest_tag_github_safe(string repo_path, void|string version) {
-    array(string) tag_names = ({});
-    array(mapping) all_entries = ({});
-
-    int page = 1;
-    while (1) {
-        string url = "https://api.github.com/repos/" + repo_path
-                     + "/tags?per_page=100&page=" + page;
-        array(int|string) result = http_get_safe(url, github_auth_headers(), version);
-        if (result[0] != 200) break;
-
-        mixed data;
-        mixed err = catch { data = Standards.JSON.decode(result[1]); };
-        if (err || !arrayp(data) || sizeof(data) == 0) break;
-
-        array(mapping) valid = filter(data, lambda(mapping e) { return !!e->name; });
-        tag_names += column(valid, "name");
-        all_entries += valid;
-
-        if (sizeof(data) < 100) break;
-        page++;
-    }
-
-    if (sizeof(tag_names) == 0) return ({ "", "" });
-    tag_names = sort_tags_semver(tag_names);
-    if (sizeof(tag_names) == 0) return ({ "", "" });
-
-    string tag = tag_names[0];
-
-    mapping(string:mapping) by_name = mkmapping(column(all_entries, "name"), all_entries);
-    string sha = "";
-    if (by_name[tag] && mappingp(by_name[tag]->commit))
-        sha = by_name[tag]->commit->sha || "";
-
-    if (sha == "") {
-        array(int|string) sha_result = http_get_safe(
-            "https://api.github.com/repos/" + repo_path + "/commits/" + _encode_tag(tag),
-            github_auth_headers(), version);
-        if (sha_result[0] == 200) {
-            mixed commit_data;
-            mixed fallback_err = catch { commit_data = Standards.JSON.decode(sha_result[1]); };
-            if (!fallback_err && mappingp(commit_data))
-                sha = commit_data->sha || "";
-        }
-    }
-    return ({ tag, sha || "" });
+    return _resolve_tags(
+        lambda(int page) {
+            string url = "https://api.github.com/repos/" + repo_path
+                         + "/tags?per_page=100&page=" + page;
+            array(int|string) result = http_get_safe(url, github_auth_headers(), version);
+            return result[0] == 200 && result[1];
+        },
+        "sha",
+        lambda(string tag) {
+            array(int|string) sha_result = http_get_safe(
+                "https://api.github.com/repos/" + repo_path
+                + "/commits/" + _encode_tag(tag),
+                github_auth_headers(), version);
+            if (sha_result[0] == 200) {
+                mixed commit_data;
+                mixed fallback_err = catch { commit_data = Standards.JSON.decode(sha_result[1]); };
+                if (!fallback_err && mappingp(commit_data))
+                    return commit_data->sha || "";
+            }
+            return "";
+        });
 }
 
 //! Non-dying variant of latest_tag_gitlab for batch operations.
 //! Uses http_get_safe so HTTP errors return ({"",""}) instead of killing the process.
 array(string) latest_tag_gitlab_safe(string repo_path, void|string version) {
     string encoded = Protocols.HTTP.percent_encode(repo_path);
-    array(string) tag_names = ({});
-    array(mapping) all_entries = ({});
-
-    int page = 1;
-    while (1) {
-        string url = "https://gitlab.com/api/v4/projects/"
-                     + encoded + "/repository/tags?per_page=100&page=" + page;
-        array(int|string) result = http_get_safe(url, 0, version);
-        if (result[0] != 200) break;
-
-        mixed data;
-        mixed err = catch { data = Standards.JSON.decode(result[1]); };
-        if (err || !arrayp(data) || sizeof(data) == 0) break;
-
-        array(mapping) valid = filter(data, lambda(mapping e) { return !!e->name; });
-        tag_names += column(valid, "name");
-        all_entries += valid;
-
-        if (sizeof(data) < 100) break;
-        page++;
-    }
-
-    if (sizeof(tag_names) == 0) return ({ "", "" });
-    tag_names = sort_tags_semver(tag_names);
-    if (sizeof(tag_names) == 0) return ({ "", "" });
-
-    string tag = tag_names[0];
-
-    mapping(string:mapping) by_name = mkmapping(column(all_entries, "name"), all_entries);
-    string sha = "";
-    if (by_name[tag] && mappingp(by_name[tag]->commit))
-        sha = by_name[tag]->commit->id || "";
-
-    return ({ tag, sha || "" });
+    return _resolve_tags(
+        lambda(int page) {
+            string url = "https://gitlab.com/api/v4/projects/"
+                         + encoded + "/repository/tags?per_page=100&page=" + page;
+            array(int|string) result = http_get_safe(url, 0, version);
+            return result[0] == 200 && result[1];
+        },
+        "id");
 }
 
 //! Non-dying tag resolution for batch operations like cmd_outdated.

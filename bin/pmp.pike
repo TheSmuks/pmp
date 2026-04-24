@@ -208,8 +208,16 @@ void _main(array(string) argv) {
     array(string) rest = opts[Arg.REST];
 
     // Apply verbosity flags (override env vars)
-    if (opts->verbose) { set_verbose(1); set_quiet(0); }
-    if (opts->quiet)   { set_quiet(1); set_verbose(0); }
+    // Arg.parse only recognizes --flag before the command;
+    // also check rest[] for flags placed after the command.
+    if (opts->verbose || search(rest, "--verbose") >= 0) {
+        set_verbose(1); set_quiet(0);
+        rest -= ({"--verbose"});
+    }
+    if (opts->quiet || search(rest, "--quiet") >= 0) {
+        set_quiet(1); set_verbose(0);
+        rest -= ({"--quiet"});
+    }
 
     if (opts->help) { print_help(); return 0; }
     if (opts->version) { cmd_version(); return 0; }

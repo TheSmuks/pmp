@@ -1,60 +1,88 @@
 inherit .Config;
 
 //! Cleanup registry for signal handling and error recovery.
-//! Tracks temp dirs and store lock for cleanup on exit/interrupt.
-private array(string) _cleanup_dirs = ({});
-protected string _registered_project_lock = "";
-protected string _store_dir_for_lock = "";
-protected int _store_locked = 0;
+//! Uses getenv/putenv for shared state across module inheritance copies.
+
+// Cleanup dirs: RS-separated list of temp directories to clean up on exit.
+// Uses ASCII Record Separator (0x1E) as delimiter — safe for paths and putenv.
+private array(string) _get_cleanup_dirs() {
+    string v = getenv("PMP_CLEANUP_DIRS") || "";
+    if (sizeof(v) == 0) return ({});
+    return v / "\x1e";
+}
+private void _set_cleanup_dirs(array(string) dirs) {
+    putenv("PMP_CLEANUP_DIRS", dirs * "\x1e");
+}
 
 //! Register a temp directory for cleanup on exit/signal.
 void register_cleanup_dir(string dir) {
-    if (sizeof(dir) > 0 && search(_cleanup_dirs, dir) < 0)
-        _cleanup_dirs += ({ dir });
+    array(string) dirs = _get_cleanup_dirs();
+    if (sizeof(dir) > 0 && search(dirs, dir) < 0) {
+        dirs += ({ dir });
+        _set_cleanup_dirs(dirs);
+    }
 }
 
 //! Unregister a temp directory (after successful cleanup).
 void unregister_cleanup_dir(string dir) {
-    _cleanup_dirs -= ({ dir });
+    array(string) dirs = _get_cleanup_dirs();
+    dirs -= ({ dir });
+    _set_cleanup_dirs(dirs);
 }
 
-
+// Project lock path: for cleanup on die().
+private string _get_registered_project_lock() {
+    return getenv("PMP_PROJECT_LOCK") || "";
+}
 //! Register the project lock path for cleanup on die().
 void register_project_lock_path(string lock_path) {
-    _registered_project_lock = lock_path;
+    putenv("PMP_PROJECT_LOCK", lock_path);
 }
 
-private int _cleaned_up = 0;
+// Store lock state: whether store lock is held and which directory.
+private int _get_store_locked() { return (int)(getenv("PMP_STORE_LOCKED") || "0"); }
+private string _get_store_dir_for_lock() { return getenv("PMP_STORE_DIR_LOCK") || ""; }
+void set_store_lock_state(int locked, string dir) {
+    putenv("PMP_STORE_LOCKED", (string)locked);
+    putenv("PMP_STORE_DIR_LOCK", dir || "");
+}
+
+// Cleanup guard: prevent double-invocation.
+private int _get_cleaned_up() { return (int)(getenv("PMP_CLEANED_UP") || "0"); }
+private void _set_cleaned_up() { putenv("PMP_CLEANED_UP", "1"); }
 
 
 //! Run all registered cleanup actions. Called on signal and normal exit.
 //! Guarded against double-invocation (e.g. signal during cleanup).
 void run_cleanup() {
-    if (_cleaned_up) return;
-    _cleaned_up = 1;
+    if (_get_cleaned_up()) return;
+    _set_cleaned_up();
     // Clean up temp dirs
-    foreach (_cleanup_dirs; ; string d) {
+    array(string) dirs = _get_cleanup_dirs();
+    foreach (dirs; ; string d) {
         if (Stdio.is_dir(d)) {
             Stdio.recursive_rm(d);
         }
     }
-    _cleanup_dirs = ({});
+    _set_cleanup_dirs(({}));
 
     // Release store lock
-    if (_store_locked && sizeof(_store_dir_for_lock) > 0) {
-        string lock_path = combine_path(_store_dir_for_lock, ".lock");
+    if (_get_store_locked() && sizeof(_get_store_dir_for_lock()) > 0) {
+        string store_dir = _get_store_dir_for_lock();
+        string lock_path = combine_path(store_dir, ".lock");
         if (Stdio.exist(lock_path)) {
             string existing = String.trim_all_whites(Stdio.read_file(lock_path) || "");
             if (existing == (string)getpid())
                 rm(lock_path);
         }
-        _store_locked = 0;
+        set_store_lock_state(0, "");
     }
 
     // Release project lock
-    if (sizeof(_registered_project_lock) > 0) {
-        advisory_unlock(_registered_project_lock);
-        _registered_project_lock = "";
+    string proj_lock = _get_registered_project_lock();
+    if (sizeof(proj_lock) > 0) {
+        advisory_unlock(proj_lock);
+        register_project_lock_path("");
     }
 }
 

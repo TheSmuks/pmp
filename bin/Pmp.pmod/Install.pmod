@@ -520,7 +520,16 @@ void cmd_install_source(string source, string target, mapping ctx) {
 void cmd_install(array(string) args, mapping ctx) {
     mapping opts = Arg.parse(({"pmp"}) + args);
     array(string) rest = opts[Arg.REST];
-    int global_flag = opts->g || 0;
+    int global_flag = opts->g || search(rest, "-g") >= 0 || 0;
+    // Arg.parse only recognizes flags before the subcommand;
+    // also check rest[] for flags placed after the command.
+    rest -= ({"-g"});
+    if (opts["frozen-lockfile"] || search(rest, "--frozen-lockfile") >= 0)
+        ctx["frozen_lockfile"] = 1;
+    rest -= ({"--frozen-lockfile"});
+    if (opts->offline || search(rest, "--offline") >= 0)
+        ctx["offline"] = 1;
+    rest -= ({"--offline"});
     string source = sizeof(rest) > 0 ? rest[0] : "";
 
     // Flags for CI use

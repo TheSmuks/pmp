@@ -93,8 +93,7 @@ array(array(string)) read_lockfile(void|string lf) {
         array parts = line / "\t";
         if (sizeof(parts) >= 5 && sizeof(parts[0]) > 0) {
             string name = parts[0];
-            if (sizeof(name) == 0 || has_value(name, "/")
-                || has_value(name, "\\") || has_value(name, "..")
+            if (has_value(name, "/")
                 || has_value(name, "\0")) {
                 warn("lockfile entry has invalid name field: " + name[..60]);
                 continue;

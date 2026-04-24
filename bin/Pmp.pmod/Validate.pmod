@@ -88,9 +88,7 @@ multiset(string) init_std_libs(void|string pike_bin) {
         if (!Stdio.is_dir(dir)) continue;
         foreach (get_dir(dir) || ({}); ; string entry) {
             string full = combine_path(dir, entry);
-            if (Stdio.is_dir(full) && has_suffix(entry, ".pmod")) {
-                libs[entry[..<5]] = 1;
-            } else if (has_suffix(entry, ".pmod")) {
+            if (has_suffix(entry, ".pmod")) {
                 libs[entry[..<5]] = 1;
             } else if (has_suffix(entry, ".so")) {
                 string name = entry[..<3];

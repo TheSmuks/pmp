@@ -4,11 +4,12 @@ inherit .Helpers;
 //! and trailing .git suffix. Returns the clean host/path form.
 string _normalize_source(string src) {
     int had_scheme = 0;
-    // Strip scheme
-    if (has_prefix(src, "https://")) { src = src[8..]; had_scheme = 1; }
-    else if (has_prefix(src, "http://")) { src = src[7..]; had_scheme = 1; }
-    else if (has_prefix(src, "git://")) { src = src[6..]; had_scheme = 1; }
-    else if (has_prefix(src, "ssh://")) { src = src[6..]; had_scheme = 1; }
+    foreach (({"https://", "http://", "git://", "ssh://"}); ; string scheme)
+        if (has_prefix(src, scheme)) {
+            src = src[sizeof(scheme)..];
+            had_scheme = 1;
+            break;
+        }
 
     // Strip SSH port number (ssh://host:port/path -> host/path)
     if (had_scheme && has_value(src, ":") && !has_prefix(src, "[")) {
@@ -92,16 +93,7 @@ string source_to_name(string src) {
 string source_to_version(string src) {
     if (has_value(src, "#")) {
         string ver = (src / "#")[1..] * "#";
-        if (has_value(ver, ".."))
-            die("path traversal in version tag: " + ver);
-        if (has_value(ver, "/") || has_value(ver, "\0"))
-            die("invalid version tag: " + ver);
-        if (has_value(ver, "\\"))
-            die("invalid version tag: contains backslash: " + ver);
-        if (has_value(ver, "\n"))
-            die("invalid version tag: contains newline");
-        if (has_value(ver, ";"))
-            die("invalid version tag: contains ';': " + ver);
+        validate_version_tag(ver);
         return ver;
     }
     return "";
@@ -137,7 +129,7 @@ void validate_version_tag(string tag) {
     if (has_value(tag, "\\"))
         die("invalid version tag: contains backslash: " + tag);
     if (has_value(tag, ".."))
-        die("invalid version tag: contains '..': " + tag);
+        die("path traversal in version tag: " + tag);
     if (has_value(tag, ";"))
         die("invalid version tag: contains ';': " + tag);
     if (has_value(tag, "\0"))

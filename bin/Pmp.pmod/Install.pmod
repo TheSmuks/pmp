@@ -872,6 +872,14 @@ void cmd_rollback(mapping ctx) {
     if (err) throw(err);
 }
 
+private void _print_commit_entry(mapping commit, string sha_field) {
+    string msg = commit->message || "";
+    msg = (msg / "\n")[0];
+    string sha = commit[sha_field] || "";
+    string sha_short = sizeof(sha) >= 7 ? sha[..6] : sha;
+    write("  " + sha_short + " " + msg + "\n");
+}
+
 //! Show changes between versions for a specific module.
 //! Compares current lockfile with .prev lockfile.
 void cmd_changelog(array(string) args, mapping ctx) {
@@ -936,14 +944,11 @@ void cmd_changelog(array(string) args, mapping ctx) {
                 mixed data;
                 mixed err = catch { data = Standards.JSON.decode(result[1]); };
                 if (!err && mappingp(data) && arrayp(data->commits)) {
-                    foreach (data->commits; ; mapping commit) {
-                        string msg = (commit->commit
-                            && commit->commit->message) || "";
-                        // First line only
-                        msg = (msg / "\n")[0];
-                        string sha_short = sizeof(commit->sha || "") >= 7
-                            ? commit->sha[..6] : commit->sha || "";
-                        write("  " + sha_short + " " + msg + "\n");
+                    foreach (data->commits; ; mapping c) {
+                        // Flatten nested GitHub structure
+                        if (!c->message && c->commit && c->commit->message)
+                            c->message = c->commit->message;
+                        _print_commit_entry(c, "sha");
                     }
                     int ahead = data->ahead_by || 0;
                     int behind = data->behind_by || 0;
@@ -967,13 +972,8 @@ void cmd_changelog(array(string) args, mapping ctx) {
                 mixed data;
                 mixed err = catch { data = Standards.JSON.decode(result[1]); };
                 if (!err && mappingp(data) && arrayp(data->commits)) {
-                    foreach (data->commits; ; mapping commit) {
-                        string msg = commit->message || "";
-                        msg = (msg / "\n")[0];
-                        string sha_short = sizeof(commit->id || "") >= 7
-                            ? commit->id[..6] : commit->id || "";
-                        write("  " + sha_short + " " + msg + "\n");
-                    }
+                    foreach (data->commits; ; mapping c)
+                        _print_commit_entry(c, "id");
                 } else {
                     info("could not parse compare response");
                 }

@@ -35,6 +35,8 @@ string _url_host(string url) {
         int close_bracket = search(rest, "]");
         if (close_bracket >= 0)
             return lower_case(rest[1..close_bracket - 1]);
+        // Malformed bracket — return content after [ for SSRF check
+        return lower_case(rest[1..]);
     }
     int colon_pos = search(rest, ":");
     if (colon_pos >= 0)

@@ -59,18 +59,12 @@ mapping parse_semver(string tag) {
     array(string) parts = v / ".";
     if (sizeof(parts) != 3) return 0;
 
-    // All parts must be non-empty digit-only strings
+    // All parts must be non-empty digit-only strings with no leading zeros
     foreach (parts; ; string p) {
         if (sizeof(p) == 0) return 0;
-        int dig = 1;
-        if (String.width(p) > 8 || !RE_NUMERIC->match(p))
-            dig = 0;
-        if (!dig) return 0;
-    }
-
-    // Reject leading zeros in numeric version components
-    foreach (parts; ; string p)
+        if (String.width(p) > 8 || !RE_NUMERIC->match(p)) return 0;
         if (sizeof(p) > 1 && p[0] == '0') return 0;
+    }
 
     int major, minor, patch;
     if (sscanf(parts[0], "%d", major) != 1) return 0;

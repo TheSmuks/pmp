@@ -80,27 +80,21 @@ void cmd_clean(mapping ctx) {
         info("nothing to clean");
         return;
     }
-    int count = 0;
+    array(string) entries = get_dir(ctx["local_dir"]) || ({});
     int has_non_symlink = 0;
-    foreach (get_dir(ctx["local_dir"]) || ({}); ; string name) {
+    array(string) symlinks = filter(entries, lambda(string name) {
         string full = combine_path(ctx["local_dir"], name);
-        if (is_symlink(full)) {
-            // Symlink — safe to remove
-            count++;
-        } else {
-            // Real file or directory — preserve
-            has_non_symlink = 1;
-        }
-    }
-    // Remove only symlink entries, preserve real content
-    foreach (get_dir(ctx["local_dir"]) || ({}); ; string name) {
-        string full = combine_path(ctx["local_dir"], name);
-        if (is_symlink(full)) rm(full);
-    }
+        if (is_symlink(full)) return true;
+        has_non_symlink = 1;
+        return false;
+    });
+    foreach (symlinks; ; string name)
+        rm(combine_path(ctx["local_dir"], name));
     if (!has_non_symlink) {
         // All content was symlinks — remove the directory too
         Stdio.recursive_rm(ctx["local_dir"]);
     }
+    int count = sizeof(symlinks);
     info(sprintf("cleaned %d module%s from %s, store preserved",
         count, count == 1 ? "" : "s", ctx["local_dir"]));
 }

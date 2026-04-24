@@ -103,14 +103,11 @@ string _find_store_entry(string store_dir, string source, string tag, string con
     string slug = normalize_slug(source);
     string safe_tag = normalize_tag(tag);
     string pattern = _glob_escape(slug) + "-" + _glob_escape(safe_tag) + "-*";
-    array(string) candidates = ({});
-
-    if (Stdio.is_dir(store_dir)) {
-        foreach (get_dir(store_dir) || ({}); ; string se) {
-            if (glob(pattern, se) && Stdio.is_dir(combine_path(store_dir, se)))
-                candidates += ({ se });
-        }
-    }
+    array(string) candidates = Stdio.is_dir(store_dir)
+        ? filter(get_dir(store_dir) || ({}), lambda(string se) {
+              return glob(pattern, se) && Stdio.is_dir(combine_path(store_dir, se));
+          })
+        : ({});
 
     // Match by content hash
     if (sizeof(candidates) > 0 && sizeof(content_hash) > 0) {
@@ -153,17 +150,24 @@ void _validate_symlinks(string base_dir, string root_dir, void|int depth) {
     }
 }
 
-//! Read content_sha256 from .pmp-meta of an existing store entry.
-//! Returns 0 if the meta file does not exist or has no hash.
-string read_stored_hash(string entry_dir) {
+//! Read a single field from a store entry's .pmp-meta file.
+//! Returns the field value as a string, or 0 if not found.
+string read_meta_field(string entry_dir, string field) {
     string meta_file = combine_path(entry_dir, ".pmp-meta");
     if (!Stdio.exist(meta_file)) return 0;
     string raw = Stdio.read_file(meta_file);
     if (!raw) return 0;
+    string val;
     foreach (raw / "\n"; ; string line)
-        if (sscanf(line, "content_sha256\t%s", string hash_val) == 1)
-            return String.trim_all_whites(hash_val);
+        if (sscanf(line, field + "\t%s", val) == 1)
+            return String.trim_all_whites(val);
     return 0;
+}
+
+//! Read content_sha256 from .pmp-meta of an existing store entry.
+//! Returns 0 if the meta file does not exist or has no hash.
+string read_stored_hash(string entry_dir) {
+    return read_meta_field(entry_dir, "content_sha256");
 }
 
 //! Write .pmp-meta file to a store entry.

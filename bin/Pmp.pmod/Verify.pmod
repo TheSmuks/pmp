@@ -124,7 +124,7 @@ int cmd_verify(mapping ctx) {
         }
 
         // Check for modules not in lockfile
-        mapping(string:int) lock_names = ([]);
+        multiset(string) lock_names = (<>);
         foreach (entries; ; array(string) e)
             if (sizeof(e[0]) > 0) lock_names[e[0]] = 1;
 
@@ -222,9 +222,9 @@ int cmd_doctor(mapping ctx) {
     // ── 4. Store directory ──────────────────────────────────────
     string store_dir = ctx["store_dir"];
     if (Stdio.is_dir(store_dir)) {
-        int entries = 0;
-        foreach (get_dir(store_dir) || ({}); ; string f)
-            if (Stdio.is_dir(combine_path(store_dir, f))) entries++;
+        int entries = sizeof(filter(get_dir(store_dir) || ({}), lambda(string f) {
+            return Stdio.is_dir(combine_path(store_dir, f));
+        }));
         // Check write permission
         string test_file = combine_path(store_dir, ".doctor_test");
         mixed write_err = catch { Stdio.write_file(test_file, "x"); rm(test_file); };

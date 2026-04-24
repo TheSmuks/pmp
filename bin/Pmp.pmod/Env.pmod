@@ -51,6 +51,14 @@ array(array(string)) build_paths(mapping ctx) {
     return ({ mod_paths, inc_paths });
 }
 
+private void prepend_to_path_env(string env_var, array(string) paths) {
+    string existing = getenv(env_var) || "";
+    string new_path = sizeof(paths) > 0 ? paths * ":" : "";
+    if (sizeof(existing) > 0)
+        new_path = sizeof(new_path) > 0 ? new_path + ":" + existing : existing;
+    putenv(env_var, new_path);
+}
+
 void cmd_run(array(string) args, mapping ctx) {
     mapping opts = Arg.parse(({"pmp"}) + args);
     array(string) rest = opts[Arg.REST];
@@ -64,27 +72,9 @@ void cmd_run(array(string) args, mapping ctx) {
     array(string) mod_paths = paths[0];
     array(string) inc_paths = paths[1];
 
-    array(string) env_vars = ({});
-    if (sizeof(mod_paths) > 0) {
-        string existing = getenv("PIKE_MODULE_PATH") || "";
-        string new_path = mod_paths * ":";
-        if (sizeof(existing) > 0) new_path += ":" + existing;
-        env_vars += ({"PIKE_MODULE_PATH=" + new_path});
-    }
-    if (sizeof(inc_paths) > 0) {
-        string existing = getenv("PIKE_INCLUDE_PATH") || "";
-        string new_path = inc_paths * ":";
-        if (sizeof(existing) > 0) new_path += ":" + existing;
-        env_vars += ({"PIKE_INCLUDE_PATH=" + new_path});
-    }
+    prepend_to_path_env("PIKE_MODULE_PATH", mod_paths);
+    prepend_to_path_env("PIKE_INCLUDE_PATH", inc_paths);
 
-    // Set environment variables in-process, then exec
-    // (Process.exece is unreliable in some Pike builds)
-    foreach (env_vars; ; string var) {
-        array parts = var / "=";
-        if (sizeof(parts) >= 2)
-            putenv(parts[0], parts[1..] * "=");
-    }
     Process.exec(ctx["pike_bin"], script, @script_args);
     die("failed to exec: " + ctx["pike_bin"]);
 }

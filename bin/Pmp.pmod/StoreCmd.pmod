@@ -4,6 +4,24 @@
 inherit .Helpers;
 inherit .Store;
 
+private int(0..1) _entry_referenced(string store_dir, string entry_name, string modules_dir) {
+    if (!Stdio.is_dir(modules_dir)) return 0;
+    string entry = combine_path(store_dir, entry_name);
+    foreach (get_dir(modules_dir) || ({}); ; string lname) {
+        string link = combine_path(modules_dir, lname);
+        string target = get_symlink_target(link);
+        if (target) {
+            if (target[0] != '/') {
+                target = combine_path(combine_path(link, ".."), target);
+                catch { target = System.resolvepath(target) || target; };
+            }
+            if (has_prefix(target, entry + "/") || target == entry)
+                return 1;
+        }
+    }
+    return 0;
+}
+
 int dir_size(string path) {
     int total = 0;
     foreach (get_dir(path) || ({}); ; string name) {
@@ -43,39 +61,8 @@ void cmd_store(array(string) args, mapping ctx) {
                 if (!Stdio.is_dir(entry)) continue;
 
                 if (Stdio.is_dir(ctx["local_dir"])) {
-                    int found = 0;
-                    foreach (get_dir(ctx["local_dir"]) || ({}); ;
-                             string lname) {
-                        string link = combine_path(ctx["local_dir"], lname);
-                        string target = get_symlink_target(link);
-                        if (target) {
-                            // Resolve relative symlink targets against symlink's parent
-                            if (target[0] != '/') {
-                                target = combine_path(combine_path(link, ".."), target);
-                                catch { target = System.resolvepath(target) || target; };
-                            }
-                            if (has_prefix(target, entry + "/") || target == entry) {
-                                found = 1;
-                                break;
-                            }
-                        }
-                    }
-                    if (!found && ctx["global_dir"] && Stdio.is_dir(ctx["global_dir"])) {
-                        foreach (get_dir(ctx["global_dir"]) || ({}); ; string lname) {
-                            string link = combine_path(ctx["global_dir"], lname);
-                            string target = get_symlink_target(link);
-                            if (target) {
-                                if (target[0] != '/') {
-                                    target = combine_path(combine_path(link, ".."), target);
-                                    catch { target = System.resolvepath(target) || target; };
-                                }
-                                if (has_prefix(target, entry + "/") || target == entry) {
-                                    found = 1;
-                                    break;
-                                }
-                            }
-                        }
-                    }
+                    int found = _entry_referenced(ctx["store_dir"], ename, ctx["local_dir"])
+                        || _entry_referenced(ctx["store_dir"], ename, ctx["global_dir"]);
                     if (!found)
                         unused += ({ ename });
                 } else {
@@ -122,14 +109,7 @@ void cmd_store(array(string) args, mapping ctx) {
                 string entry = combine_path(ctx["store_dir"], ename);
                 if (!Stdio.is_dir(entry)) continue;
 
-                string tag = "";
-                string meta_file =
-                    combine_path(entry, ".pmp-meta");
-                if (Stdio.exist(meta_file)) {
-                    string meta = Stdio.read_file(meta_file);
-                    foreach (meta / "\n"; ; string line)
-                        sscanf(line, "tag\t%s", tag);
-                }
+                string tag = read_meta_field(entry, "tag") || "";
 
                 int esize_bytes = dir_size(entry);
                 total_size += esize_bytes;

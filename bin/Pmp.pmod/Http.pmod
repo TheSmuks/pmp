@@ -46,20 +46,69 @@ string _url_host(string url) {
 //! Returns 1 if the host should be blocked (SSRF protection).
 //! Normalize octal/hex IPv4 octets to decimal.
 //! Pike's (int) does NOT handle 0x/0 prefixes — use sscanf.
+//! Parse integer with octal (0x/0X hex, 0 octal) prefix support.
+//! Returns -1 on parse failure (non-numeric input).
+protected int _parse_int(string s) {
+    if (sizeof(s) == 0) return -1;
+    if (has_prefix(s, "0x") || has_prefix(s, "0X")) {
+        if (sizeof(s) == 2) return -1;
+        // Validate hex digits only
+        foreach (s[2..]; int i; int c) {
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+                return -1;
+        }
+        int val;
+        sscanf(s[2..], "%x", val);
+        return val;
+    }
+    if (sizeof(s) > 1 && s[0] == '0') {
+        // Validate octal digits only
+        foreach (s[1..]; int i; int c) {
+            if (!(c >= '0' && c <= '7')) return -1;
+        }
+        int val;
+        sscanf(s[1..], "%o", val);
+        return val;
+    }
+    // Decimal: validate digits only
+    foreach (s; int i; int c) {
+        if (!(c >= '0' && c <= '9')) return -1;
+    }
+    return (int)s;
+}
+
 protected string _normalize_ip_host(string host) {
     if (has_value(host, ":")) return host;
     if (!has_value(host, ".")) return host;
     array(string) parts = host / ".";
-    // Expand 1/2/3-part inet_aton formats to 4-part
-    // Per inet_aton: a → 0.0.0.a; a.b → a.0.0.b; a.b.c → a.b.0.c
+    // Expand 1/2/3-part inet_aton formats to 4 octets.
+    // inet_aton semantics: values fill remaining bytes from the right.
+    // a       → value fills all 4 bytes
+    // a.b     → a is byte 0, value b fills bytes 1-3
+    // a.b.c   → a,b are bytes 0,1; value c fills bytes 2,3
+    // a.b.c.d → each is a single byte
     if (sizeof(parts) == 1) {
-        parts = ({"0", "0", "0", parts[0]});
+        int val = _parse_int(parts[0]);
+        if (val < 0) return host;
+        return sprintf("%d.%d.%d.%d",
+            (val >> 24) & 0xff, (val >> 16) & 0xff,
+            (val >> 8) & 0xff, val & 0xff);
     } else if (sizeof(parts) == 2) {
-        parts = ({parts[0], "0", "0", parts[1]});
+        int a = _parse_int(parts[0]);
+        int b = _parse_int(parts[1]);
+        if (a < 0 || a > 255 || b < 0) return host;
+        return sprintf("%d.%d.%d.%d",
+            a, (b >> 16) & 0xff, (b >> 8) & 0xff, b & 0xff);
     } else if (sizeof(parts) == 3) {
-        parts = ({parts[0], parts[1], "0", parts[2]});
+        int a = _parse_int(parts[0]);
+        int b = _parse_int(parts[1]);
+        int c = _parse_int(parts[2]);
+        if (a < 0 || a > 255 || b < 0 || b > 255 || c < 0) return host;
+        return sprintf("%d.%d.%d.%d",
+            a, b, (c >> 8) & 0xff, c & 0xff);
     }
     if (sizeof(parts) != 4) return host;
+    // Standard 4-part: normalize octal/hex octets to decimal
     foreach (parts; ; string p) {
         if (sizeof(p) == 0) return host;
         if (!((p[0] >= '0' && p[0] <= '9') || has_prefix(p, "0x") || has_prefix(p, "0X")))
@@ -75,6 +124,7 @@ protected string _normalize_ip_host(string host) {
         } else {
             val = (int)p;
         }
+        if (val < 0 || val > 255) return host;
         normalized += ({ (string)val });
     }
     return normalized * ".";

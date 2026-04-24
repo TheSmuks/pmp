@@ -568,6 +568,7 @@ void cmd_install(array(string) args, mapping ctx) {
             // Post-install bookkeeping — if this fails, remove new symlinks
             // to keep project state consistent
             string old_lockfile = Stdio.exist(ctx["lockfile_path"]) ? Stdio.read_file(ctx["lockfile_path"]) : 0;
+            string old_pike_json = Stdio.exist(ctx["pike_json"]) ? Stdio.read_file(ctx["pike_json"]) : 0;
 
             mixed post_err = catch {
                 if (!global_flag) {
@@ -594,6 +595,8 @@ void cmd_install(array(string) args, mapping ctx) {
                     atomic_write(ctx["lockfile_path"], old_lockfile);
                 else if (Stdio.exist(ctx["lockfile_path"]))
                     rm(ctx["lockfile_path"]);
+                if (old_pike_json != 0)
+                    catch { atomic_write(ctx["pike_json"], old_pike_json); };
                 throw(post_err);
             }
         };

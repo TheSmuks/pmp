@@ -27,10 +27,8 @@ mapping parse_semver(string tag) {
         if (sizeof(build_meta) == 0) return 0;
         foreach (build_meta / "."; ; string id) {
             if (sizeof(id) == 0) return 0;
-            foreach (id / 1; ; string c)
-                if (!((c >= "0" && c <= "9") || (c >= "A" && c <= "Z") ||
-                      (c >= "a" && c <= "z") || c == "-"))
-                    return 0;
+            if (String.width(id) > 8 || !Regexp("^[0-9A-Za-z-]+$")->match(id))
+                return 0;
         }
     }
 
@@ -45,13 +43,9 @@ mapping parse_semver(string tag) {
         // Validate prerelease identifiers: non-empty, [0-9A-Za-z-]+, no leading zeros in numeric
         foreach (pre / "."; ; string id) {
             if (sizeof(id) == 0) return 0;
-            int all_digits = 1;
-            foreach (id / 1; ; string c) {
-                if (!((c >= "0" && c <= "9") || (c >= "A" && c <= "Z") ||
-                      (c >= "a" && c <= "z") || c == "-"))
-                    return 0;
-                if (c < "0" || c > "9") all_digits = 0;
-            }
+            if (String.width(id) > 8 || !Regexp("^[0-9A-Za-z-]+$")->match(id))
+                return 0;
+            int all_digits = Regexp("^[0-9]+$")->match(id);
             // Numeric identifiers must not have leading zeros
             if (all_digits && sizeof(id) > 1 && id[0] == '0') return 0;
         }
@@ -65,8 +59,8 @@ mapping parse_semver(string tag) {
     foreach (parts; ; string p) {
         if (sizeof(p) == 0) return 0;
         int dig = 1;
-        foreach (p / 1; ; string c)
-            if (c < "0" || c > "9") { dig = 0; break; }
+        if (String.width(p) > 8 || !Regexp("^[0-9]+$")->match(p))
+            dig = 0;
         if (!dig) return 0;
     }
 
@@ -159,9 +153,9 @@ array(string) sort_tags_semver(array(string) tags) {
     if (sizeof(tags) <= 1) return tags + ({});
 
     // Build pairs: ({parsed_semver_or_0, original_tag})
-    array(array) pairs = ({});
-    foreach (tags; ; string t)
-        pairs += ({ ({ parse_semver(t), t }) });
+    array(array) pairs = map(tags, lambda(string t) {
+        return ({ parse_semver(t), t });
+    });
 
     // sort_array comparator: returns true when elements should be swapped.
     // We want highest-first. If a > b (compare returns 1), we DON'T swap (return false = 1 < 0 = false).

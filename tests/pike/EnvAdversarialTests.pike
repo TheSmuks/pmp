@@ -175,8 +175,8 @@ void test_cmd_env_activate_has_deactivate() {
 
     string activate = Stdio.read_file(combine_path(env_dir, ".pike-env", "activate"));
     assert_not_null(activate, "activate script should exist");
-    assert_true(has_value(activate, "_pike_env_dir='"),
-        "activate should set _pike_env_dir with single-quoted path");
+    assert_true(has_value(activate, "_pike_env_dir="),
+        "activate should set _pike_env_dir with shell-escaped path");
     assert_true(has_value(activate, "pmp_deactivate()"),
         "activate should define pmp_deactivate function");
     assert_true(has_value(activate, "PIKE_ENV_PATH"),

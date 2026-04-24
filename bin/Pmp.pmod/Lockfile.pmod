@@ -25,7 +25,7 @@ array(array(string)) merge_lock_entries(array(array(string)) existing,
             by_name[e[0]] = e;
     // Return sorted by name for deterministic output
     array(string) names = sort(indices(by_name));
-    return map(names, lambda(string n) { return by_name[n]; });
+    return rows(by_name, names);
 }
 //! Write lockfile entries to disk.
 //! Validates that no field contains tab characters (would corrupt the format).
@@ -35,11 +35,11 @@ void write_lockfile(string lockfile_path, array(array(string)) entries) {
         if (sizeof(entry) < 5)
             die("lockfile entry has fewer than 5 fields: " + sizeof(entry) + " fields", EXIT_INTERNAL);
         foreach (entry; int i; string field) {
-            if (search(field, "\0") >= 0)
+            if (has_value(field, "\0"))
                 die("lockfile field contains null byte: " + field[..20], EXIT_INTERNAL);
-            if (search(field, "\t") >= 0)
+            if (has_value(field, "\t"))
                 die("lockfile field contains tab character: " + field, EXIT_INTERNAL);
-            if (search(field, "\n") >= 0)
+            if (has_value(field, "\n"))
                 die("lockfile field contains newline: " + field, EXIT_INTERNAL);
         }
     }
@@ -56,8 +56,7 @@ void write_lockfile(string lockfile_path, array(array(string)) entries) {
     buf->add("# name\tsource\ttag\tcommit_sha\tcontent_sha256\n");
     foreach (entries; ; array(string) entry) {
         if (sizeof(entry) < 5) continue;
-        buf->add(entry[0] + "\t" + entry[1] + "\t" + entry[2]
-                 + "\t" + entry[3] + "\t" + entry[4] + "\n");
+        buf->add(entry[..4] * "\t" + "\n");
     }
     // Atomic write: write to tmp file, then rename via mv() (wraps rename(2))
     atomic_write(lockfile_path, buf->get());
@@ -72,7 +71,7 @@ array(array(string)) read_lockfile(void|string lf) {
 
     array(string) lines;
     // Strip carriage returns before processing
-    lines = map(raw / "\n", lambda(string l) { return replace(l, "\r", ""); });
+    lines = replace(raw, "\r", "") / "\n";
 
     // Check lockfile format version
     int found_version = 0;
@@ -99,9 +98,9 @@ array(array(string)) read_lockfile(void|string lf) {
         array parts = line / "\t";
         if (sizeof(parts) >= 5 && sizeof(parts[0]) > 0) {
             string name = parts[0];
-            if (sizeof(name) == 0 || search(name, "/") >= 0
-                || search(name, "\\") >= 0 || search(name, "..") >= 0
-                || search(name, "\0") >= 0) {
+            if (sizeof(name) == 0 || has_value(name, "/")
+                || has_value(name, "\\") || has_value(name, "..")
+                || has_value(name, "\0")) {
                 warn("lockfile entry has invalid name field: " + name[..60]);
                 continue;
             }
@@ -112,7 +111,7 @@ array(array(string)) read_lockfile(void|string lf) {
             // Validate source field — prevent path traversal in local deps
             string src = parts[1];
             if (has_prefix(src, "./") || has_prefix(src, "/")) {
-                if (search(src, "..") >= 0)
+                if (has_value(src, ".."))
                     die("lockfile: path traversal in local dep source: " + src, EXIT_INTERNAL);
             }
             entries += ({ parts[..4] });
@@ -126,11 +125,9 @@ array(array(string)) read_lockfile(void|string lf) {
 int lockfile_has_dep(string name, void|string lf, void|string source,
                         void|array(array(string)) entries) {
     if (!entries) entries = read_lockfile(lf);
-    foreach (entries; ; array(string) entry)
-        if (entry[0] == name) {
-            if (!source) return 1;
-            if (entry[1] == source) return 1;
-            // Continue checking — there may be a duplicate with matching source
-        }
-    return 0;
+    return Array.any(entries, lambda(array(string) entry) {
+        if (entry[0] != name) return 0;
+        if (!source) return 1;
+        return entry[1] == source;
+    });
 }

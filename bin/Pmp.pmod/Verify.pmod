@@ -149,12 +149,8 @@ int cmd_verify(mapping ctx) {
         foreach (lf; ; array(string) e) {
             string ls = e[1], lt = e[2];
             if (sizeof(ls) > 0 && ls != "-" && !has_prefix(ls, "./") && !has_prefix(ls, "/")) {
-                string slug = replace(ls, "/", "-");
-                while (has_value(slug, "--")) slug = replace(slug, "--", "-");
-                while (has_prefix(slug, "-")) slug = slug[1..];
-                while (has_suffix(slug, "-")) slug = slug[..<1];
-                string safe_tag = replace(lt, "/", "-");
-                while (has_value(safe_tag, "--")) safe_tag = replace(safe_tag, "--", "-");
+                string slug = normalize_slug(ls);
+                string safe_tag = normalize_tag(lt);
                 string pattern = slug + "-" + safe_tag + "-*";
                 foreach (get_dir(store_dir) || ({}); ; string se)
                     if (glob(pattern, se)) referenced[se] = 1;
@@ -205,8 +201,7 @@ int cmd_doctor(mapping ctx) {
     }
 
     // ── 2. Git ──────────────────────────────────────────────────
-    array(string) search_path = (getenv("PATH") || "/usr/bin:/bin") / ":";
-    string git_bin = Process.locate_binary(search_path, "git");
+    string git_bin = Process.search_path("git");
     if (git_bin) {
         write(sprintf("  git:         %s\n", git_bin));
     } else {

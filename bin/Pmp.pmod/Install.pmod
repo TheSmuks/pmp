@@ -59,11 +59,11 @@ void install_one(string name, string source, string target,
         case "local": {
             string local_path = source;
             // Block path traversal before resolving
-            if (search(local_path, "..") >= 0)
+            if (has_value(local_path, ".."))
                 die("local dependency path contains '..' traversal: " + local_path);
             string project_root = find_project_root() || getcwd();
             if (has_prefix(local_path, "./"))
-                local_path = combine_path(project_root, local_path);
+                local_path = resolve_local_path(local_path);
 
             if (!Stdio.is_dir(local_path))
                 die("local path not found: " + local_path);
@@ -196,8 +196,8 @@ void install_one(string name, string source, string target,
             // json_field returns raw JSON value — only accept strings
             if (!stringp(resolved_name)) resolved_name = name;
             // Sanitize package name from pike.json — prevent path traversal
-            if (search(resolved_name, "/") >= 0 || search(resolved_name, "\\") >= 0
-                || search(resolved_name, "..") >= 0 || search(resolved_name, "\0") >= 0
+            if (has_value(resolved_name, "/") || has_value(resolved_name, "\\")
+                || has_value(resolved_name, "..") || has_value(resolved_name, "\0")
                 || sizeof(resolved_name) == 0) {
                 warn("package has invalid name '" + resolved_name + "' in pike.json — using dependency key");
                 resolved_name = name;
@@ -293,8 +293,7 @@ void cmd_install_all(string target, mapping ctx) {
                         string project_root =
                             find_project_root() || getcwd();
                         if (has_prefix(local_path, "./"))
-                            local_path =
-                                combine_path(project_root, local_path);
+                            local_path = resolve_local_path(local_path);
 
                         if (!Stdio.is_dir(local_path)) {
                             warn("local dep " + ln + " path "
@@ -495,7 +494,7 @@ void cmd_install_all(string target, mapping ctx) {
                 string local_path = e[1];
                 string project_root = find_project_root() || getcwd();
                 if (has_prefix(local_path, "./"))
-                    local_path = combine_path(project_root, local_path);
+                    local_path = resolve_local_path(local_path);
                 pkg_json = combine_path(local_path, "pike.json");
             } else {
                 // Remote dep — find in store
@@ -538,14 +537,14 @@ void cmd_install_source(string source, string target, mapping ctx) {
 void cmd_install(array(string) args, mapping ctx) {
     mapping opts = Arg.parse(({"pmp"}) + args);
     array(string) rest = opts[Arg.REST];
-    int global_flag = opts->g || search(rest, "-g") >= 0 || 0;
+    int global_flag = opts->g || has_value(rest, "-g") || 0;
     // Arg.parse only recognizes flags before the subcommand;
     // also check rest[] for flags placed after the command.
     rest -= ({"-g"});
-    if (opts["frozen-lockfile"] || search(rest, "--frozen-lockfile") >= 0)
+    if (opts["frozen-lockfile"] || has_value(rest, "--frozen-lockfile"))
         ctx["frozen_lockfile"] = 1;
     rest -= ({"--frozen-lockfile"});
-    if (opts->offline || search(rest, "--offline") >= 0)
+    if (opts->offline || has_value(rest, "--offline"))
         ctx["offline"] = 1;
     rest -= ({"--offline"});
     string source = sizeof(rest) > 0 ? rest[0] : "";
@@ -827,7 +826,7 @@ void cmd_rollback(mapping ctx) {
                     string local_path = ls;
                     string project_root = find_project_root() || getcwd();
                     if (has_prefix(local_path, "./"))
-                        local_path = combine_path(project_root, local_path);
+                        local_path = resolve_local_path(local_path);
                     if (!Stdio.is_dir(local_path)) {
                         warn("local dep " + ln + " path " + local_path
                              + " not found — skipping");
@@ -974,7 +973,7 @@ void cmd_changelog(array(string) args, mapping ctx) {
             break;
         }
         case "gitlab": {
-            string encoded = replace(repo_path, "/", "%2F");
+            string encoded = Protocols.HTTP.percent_encode(repo_path);
             string url = "https://gitlab.com/api/v4/projects/" + encoded
                          + "/repository/compare?from=" + prev_sha
                          + "&to=" + cur_sha;

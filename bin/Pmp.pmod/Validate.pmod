@@ -204,7 +204,7 @@ void validate_manifests(string local_dir, multiset(string) std_libs,
                         if (has_prefix(trimmed_raw, "//")) continue;
                         // Track block comment state
                         if (in_block_comment) {
-                            if (search(trimmed_raw, "*/") >= 0) {
+                            if (has_value(trimmed_raw, "*/")) {
                                 in_block_comment = 0;
                                 // Content after */ may contain imports
                                 // For simplicity, skip this line — rare edge case
@@ -212,11 +212,11 @@ void validate_manifests(string local_dir, multiset(string) std_libs,
                             continue;
                         }
                         // Single-line block comment: /* ... */
-                        if (search(trimmed_raw, "/*") >= 0 && search(trimmed_raw, "*/") >= 0) {
+                        if (has_value(trimmed_raw, "/*") && has_value(trimmed_raw, "*/")) {
                             continue;
                         }
                         // Entering multi-line block comment
-                        if (search(trimmed_raw, "/*") >= 0) {
+                        if (has_value(trimmed_raw, "/*")) {
                             in_block_comment = 1;
                             continue;
                         }

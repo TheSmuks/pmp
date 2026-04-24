@@ -74,7 +74,7 @@ array(string) latest_tag_github(string repo_path, void|string version) {
 //! Get latest tag from GitLab — returns highest semver, not most-recently-created.
 //! Paginates through all tags (GitLab caps at 100 per page).
 array(string) latest_tag_gitlab(string repo_path, void|string version) {
-    string encoded = replace(repo_path, "/", "%2F");
+    string encoded = Protocols.HTTP.percent_encode(repo_path);
     array(string) tag_names = ({});
     array(mapping) all_entries = ({});
 
@@ -234,7 +234,7 @@ array(string) latest_tag_github_safe(string repo_path, void|string version) {
 //! Non-dying variant of latest_tag_gitlab for batch operations.
 //! Uses http_get_safe so HTTP errors return ({"",""}) instead of killing the process.
 array(string) latest_tag_gitlab_safe(string repo_path, void|string version) {
-    string encoded = replace(repo_path, "/", "%2F");
+    string encoded = Protocols.HTTP.percent_encode(repo_path);
     array(string) tag_names = ({});
     array(mapping) all_entries = ({});
 
@@ -317,7 +317,7 @@ string resolve_commit_sha(string type, string domain,
             return 0;
         }
         case "gitlab": {
-            string encoded = replace(repo_path, "/", "%2F");
+            string encoded = Protocols.HTTP.percent_encode(repo_path);
             array(int|string) result = http_get_safe(
                 "https://gitlab.com/api/v4/projects/" + encoded
                 + "/repository/commits/" + _encode_tag(tag), 0, version);

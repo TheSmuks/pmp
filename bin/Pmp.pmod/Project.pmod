@@ -32,13 +32,11 @@ void cmd_list(array(string) args, mapping ctx) {
     }
 
     if (json_output) {
-        array(mapping) entries = ({});
-        foreach (get_dir(dir) || ({}); ; string mod_name) {
-            string moddir = combine_path(dir, mod_name);
-            if (!Stdio.is_dir(moddir)) continue;
-            string show_name = display_name(mod_name);
-            entries += ({ (["name": show_name]) });
-        }
+        array(mapping) entries = map(filter(get_dir(dir) || ({}), lambda(string mod_name) {
+                return Stdio.is_dir(combine_path(dir, mod_name));
+            }), lambda(string mod_name) {
+                return (["name": display_name(mod_name)]);
+            });
         write(Standards.JSON.encode(entries, Standards.JSON.HUMAN_READABLE) + "\n");
         return;
     }

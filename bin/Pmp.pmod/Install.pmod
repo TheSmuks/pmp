@@ -251,14 +251,7 @@ void cmd_install_all(string target, mapping ctx) {
     ctx["lock_entries"] = ({});
 
     // Snapshot existing symlinks BEFORE any changes so rollback can restore
-    mapping(string:string) old_symlinks = ([]);
-    if (Stdio.is_dir(target)) {
-        foreach (get_dir(target) || ({}); ; string name) {
-            string full = combine_path(target, name);
-            string link = get_symlink_target(full);
-            if (link) old_symlinks[name] = link;
-        }
-    }
+    mapping(string:string) old_symlinks = snapshot_symlinks(target);
 
 
     int install_ok = 0;
@@ -476,7 +469,7 @@ void cmd_install_all(string target, mapping ctx) {
             if (!e) continue;
 
             string pkg_json;
-            if (e[1] == "-" || has_prefix(e[1], "./") || has_prefix(e[1], "/")) {
+            if (is_local_source(e[1])) {
                 // Local dep — read pike.json from source path
                 string local_path = e[1];
                 local_path = resolve_local_path(local_path);
@@ -556,14 +549,7 @@ void cmd_install(array(string) args, mapping ctx) {
 
             // Snapshot existing symlinks so we can roll back new ones
             // if lockfile/manifest writes fail
-            mapping(string:string) old_symlinks = ([]);
-            if (Stdio.is_dir(target)) {
-                foreach (get_dir(target) || ({}); ; string n) {
-                    string full = combine_path(target, n);
-                    string link = get_symlink_target(full);
-                    if (link) old_symlinks[n] = link;
-                }
-            }
+            mapping(string:string) old_symlinks = snapshot_symlinks(target);
 
             cmd_install_source(source, target, ctx);
 
@@ -797,7 +783,7 @@ void cmd_rollback(mapping ctx) {
 
             string dest = combine_path(target, ln);
 
-            if (ls == "-" || has_prefix(ls, "./") || has_prefix(ls, "/")) {
+            if (is_local_source(ls)) {
                 // Local dep — re-symlink
                 if (sizeof(ls) > 0 && ls != "-") {
                     string local_path = ls;

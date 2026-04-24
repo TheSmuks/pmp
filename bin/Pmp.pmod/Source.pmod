@@ -1,5 +1,10 @@
 inherit .Helpers;
 
+//! Check if a source string represents a local path.
+int(0..1) is_local_source(string s) {
+    return s == "-" || has_prefix(s, "./") || has_prefix(s, "/");
+}
+
 //! Normalize a source URL: strip URL schemes (https://, http://, git://, ssh://),
 //! trailing .git suffix, and #version suffix. Returns the clean host/path form.
 string _normalize_source(string src) {

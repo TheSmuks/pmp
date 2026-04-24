@@ -8,18 +8,9 @@ inherit .Helpers;
 //! @param source
 //!   Dependency source URL.
 void add_to_manifest(string pike_json, string name, string source) {
-    if (!Stdio.exist(pike_json)) {
-        warn("pike.json not found: " + pike_json);
-        return;
-    }
-
-    string raw = _strip_bom(Stdio.read_file(pike_json) || "");
-    if (raw == "") { warn("failed to read " + pike_json); return; }
-
-    mixed data;
-    mixed err = catch { data = Standards.JSON.decode(raw); };
-    if (err || !mappingp(data)) {
-        warn("failed to parse " + pike_json + ": " + describe_error(err));
+    mapping data = _read_json_mapping(pike_json);
+    if (!data) {
+        warn("failed to read " + pike_json);
         return;
     }
 
@@ -44,20 +35,11 @@ void add_to_manifest(string pike_json, string name, string source) {
 //! @returns
 //!   Array of ({name, source}) pairs, sorted by name.
 array(array(string)) parse_deps(string file) {
-    if (!Stdio.exist(file)) return ({});
-
-    string raw = _strip_bom(Stdio.read_file(file) || "");
-    if (raw == "") return ({});
-
-    mixed data;
-    mixed err = catch { data = Standards.JSON.decode(raw); };
-    if (err || !mappingp(data)) {
-        if (err) warn("failed to parse " + file + ": " + describe_error(err));
+    mapping data = _read_json_mapping(file);
+    if (!data || !mappingp(data->dependencies))
         return ({});
-    }
 
     mapping deps = data->dependencies;
-    if (!mappingp(deps)) return ({});
 
     return map(filter(sort(indices(deps)), lambda(string name) {
         mixed val = deps[name];

@@ -61,6 +61,11 @@ void install_one(string name, string source, string target,
             string project_root = find_project_root() || getcwd();
             if (has_prefix(local_path, "./"))
                 local_path = combine_path(project_root, local_path);
+            // Prevent path traversal in local dep resolution
+            if (search(local_path, "..") >= 0) {
+                warn("local dep path contains '..' traversal: " + source + " — skipping");
+                break;
+            }
 
             if (!Stdio.is_dir(local_path))
                 die("local path not found: " + local_path);
@@ -615,10 +620,12 @@ void cmd_install(array(string) args, mapping ctx) {
                         }
                     }
                 }
-                if (old_lockfile != 0)
-                    atomic_write(ctx["lockfile_path"], old_lockfile);
-                else if (Stdio.exist(ctx["lockfile_path"]))
-                    rm(ctx["lockfile_path"]);
+                catch {
+                    if (old_lockfile != 0)
+                        atomic_write(ctx["lockfile_path"], old_lockfile);
+                    else if (Stdio.exist(ctx["lockfile_path"]))
+                        rm(ctx["lockfile_path"]);
+                };
                 if (old_pike_json != 0)
                     catch { atomic_write(ctx["pike_json"], old_pike_json); };
                 throw(post_err);

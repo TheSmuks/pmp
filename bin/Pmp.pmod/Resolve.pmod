@@ -1,11 +1,11 @@
 //! URL-encode a string for use in API path segments.
 //! Encodes /, space, #, ?, and % characters.
 private string _encode_tag(string tag) {
+    tag = replace(tag, "%", "%25");   // Must be first!
     tag = replace(tag, "/", "%2F");
     tag = replace(tag, " ", "%20");
     tag = replace(tag, "#", "%23");
     tag = replace(tag, "?", "%3F");
-    tag = replace(tag, "%", "%25");
     return tag;
 }
 

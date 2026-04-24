@@ -93,8 +93,11 @@ string extract_targz(string tarball_path, string dest_dir) {
 
 //! Escape glob metacharacters in a string for literal matching.
 private string _glob_escape(string s) {
-    s = replace(s, "[", "[[]");
+    // Escape ] first to avoid corrupting [→[[] escapes
+    // Then escape [, *, ? using bracket expressions
+    s = replace(s, "\\", "\\\\");  // literal backslash
     s = replace(s, "]", "[]]");
+    s = replace(s, "[", "[[]");
     s = replace(s, "*", "[*]");
     s = replace(s, "?", "[?]");
     return s;

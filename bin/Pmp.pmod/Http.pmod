@@ -77,9 +77,47 @@ int _is_private_host(string host) {
     // Literal loopback / wildcard
     if (h == "localhost" || has_prefix(h, "127.") || h == "0.0.0.0")
         return 1;
+    // IPv6 unspecified address
+    if (h == "::")
+        return 1;
+
     // IPv6 loopback
     if (h == "::1")
         return 1;
+    // IPv4-mapped IPv6 in non-compressed form: 0:0:0:0:0:ffff:XXXX:YYYY
+    // Normalize by stripping leading zeros in each group
+    if (has_value(h, ":") && !has_prefix(h, "[")) {
+        // Check for non-compressed IPv4-mapped IPv6
+        array(string) groups = h / ":";
+        // IPv4-mapped is 6 groups of 0 + ffff + last 2 groups
+        if (sizeof(groups) >= 7) {
+            int is_mapped = 1;
+            for (int i = 0; i < sizeof(groups) - 3; i++) {
+                if (groups[i] != "0" && groups[i] != "") {
+                    is_mapped = 0;
+                    break;
+                }
+            }
+            if (is_mapped && lower_case(groups[-3]) == "ffff") {
+                string mapped = groups[-2] + ":" + groups[-1];
+                // Hex format — convert to IPv4
+                array(string) hex_parts = mapped / ":";
+                if (sizeof(hex_parts) == 2) {
+                    int hi = (int)("0x" + hex_parts[0]);
+                    int lo = (int)("0x" + hex_parts[1]);
+                    if (hi >= 0 && lo >= 0) {
+                        int a = (hi >> 8) & 0xff;
+                        int b = hi & 0xff;
+                        int c = (lo >> 8) & 0xff;
+                        int d = lo & 0xff;
+                        string ipv4 = sprintf("%d.%d.%d.%d", a, b, c, d);
+                        return _is_private_host(ipv4);
+                    }
+                }
+                return 1; // Unknown format — safe default
+            }
+        }
+    }
     // IPv6-mapped IPv4 private addresses
     if (has_prefix(h, "::ffff:")) {
         string mapped = h[7..];
@@ -128,8 +166,15 @@ int _is_private_host(string host) {
     if (has_value(h, ":")) {
         if (has_prefix(h, "fc") || has_prefix(h, "fd"))
             return 1;
-        if (has_prefix(h, "fe80"))
-            return 1;
+        // fe80::/10 link-local — fe80 through febf
+        if (sizeof(h) >= 2 && h[..1] == "fe") {
+            // Third nibble 8-b covers fe80-febf
+            if (sizeof(h) >= 3) {
+                int nibble3 = h[2];
+                if (nibble3 >= '8' && nibble3 <= 'b')
+                    return 1;
+            }
+        }
     }
     return 0;
 }

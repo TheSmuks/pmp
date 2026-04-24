@@ -124,7 +124,10 @@ int lockfile_has_dep(string name, void|string lf, void|string source,
                         void|array(array(string)) entries) {
     if (!entries) entries = read_lockfile(lf);
     foreach (entries; ; array(string) entry)
-        if (entry[0] == name)
-            return source ? entry[1] == source : 1;
+        if (entry[0] == name) {
+            if (!source) return 1;
+            if (entry[1] == source) return 1;
+            // Continue checking — there may be a duplicate with matching source
+        }
     return 0;
 }

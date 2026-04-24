@@ -210,11 +210,11 @@ void _main(array(string) argv) {
     // Apply verbosity flags (override env vars)
     // Arg.parse only recognizes --flag before the command;
     // also check rest[] for flags placed after the command.
-    if (opts->verbose || search(rest, "--verbose") >= 0) {
+    if (opts->verbose || has_value(rest, "--verbose")) {
         set_verbose(1); set_quiet(0);
         rest -= ({"--verbose"});
     }
-    if (opts->quiet || search(rest, "--quiet") >= 0) {
+    if (opts->quiet || has_value(rest, "--quiet")) {
         set_quiet(1); set_verbose(0);
         rest -= ({"--quiet"});
     }

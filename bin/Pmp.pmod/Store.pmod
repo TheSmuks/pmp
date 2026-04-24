@@ -85,16 +85,15 @@ string extract_targz(string tarball_path, string dest_dir) {
     return entries[0];
 }
 
-//! Escape glob metacharacters in a string for literal matching.
 private string _glob_escape(string s) {
-    // Escape ] first to avoid corrupting [→[[] escapes
-    // Then escape [, *, ? using bracket expressions
-    s = replace(s, "\\", "\\\\");  // literal backslash
-    s = replace(s, "]", "[]]");
-    s = replace(s, "[", "[[]");
-    s = replace(s, "*", "[*]");
-    s = replace(s, "?", "[?]");
-    return s;
+    // Single-pass substitution using mapping form
+    return replace(s, ([
+        "\\": "\\\\",
+        "]": "[]]",
+        "[": "[[]",
+        "*": "[*]",
+        "?": "[?]",
+    ]));
 }
 
 //! Find a store entry matching source, tag, and optionally content hash.

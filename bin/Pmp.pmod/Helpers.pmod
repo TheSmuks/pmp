@@ -24,7 +24,7 @@ private void _set_cleanup_dirs(array(string) dirs) {
 //! Register a temp directory for cleanup on exit/signal.
 void register_cleanup_dir(string dir) {
     array(string) dirs = _get_cleanup_dirs();
-    if (sizeof(dir) > 0 && search(dirs, dir) < 0) {
+    if (sizeof(dir) > 0 && !has_value(dirs, dir)) {
         dirs += ({ dir });
         _set_cleanup_dirs(dirs);
     }

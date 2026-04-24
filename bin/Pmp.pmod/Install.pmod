@@ -1008,8 +1008,7 @@ void cmd_outdated(mapping ctx) {
     mapping(string:array(string)) lock_map = ([]);
     if (Stdio.exist(ctx["lockfile_path"])) {
         array(array(string)) lf = read_lockfile(ctx["lockfile_path"]);
-        foreach (lf; ; array(string) e)
-            lock_map[e[0]] = e;
+        lock_map = mkmapping(column(lf, 0), lf);
     }
 
     array(array(string)) deps = parse_deps(ctx["pike_json"]);

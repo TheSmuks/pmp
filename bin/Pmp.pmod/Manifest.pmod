@@ -1,10 +1,3 @@
-//! Strip UTF-8 BOM from raw file content if present.
-private string _strip_bom(string raw) {
-    if (sizeof(raw) >= 3 && has_prefix(raw, "\xef\xbb\xbf"))
-        return raw[3..];
-    return raw;
-}
-
 inherit .Helpers;
 
 //! Add a dependency to a pike.json manifest file.

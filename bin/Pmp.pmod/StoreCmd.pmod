@@ -55,22 +55,18 @@ void cmd_store(array(string) args, mapping ctx) {
             }
             store_lock(ctx["store_dir"]);
             int force = opts->force || opts->f || 0;
-            array(string) unused = ({});
-            foreach (get_dir(ctx["store_dir"]) || ({}); ; string ename) {
-                string entry = combine_path(ctx["store_dir"], ename);
-                if (!Stdio.is_dir(entry)) continue;
-
-                if (Stdio.is_dir(ctx["local_dir"])) {
-                    int found = _entry_referenced(ctx["store_dir"], ename, ctx["local_dir"])
-                        || _entry_referenced(ctx["store_dir"], ename, ctx["global_dir"]);
-                    if (!found)
-                        unused += ({ ename });
-                } else {
-                    info("no local modules directory found — skipping prune");
-                    store_unlock(ctx["store_dir"]);
-                    return;
-                }
+            array(string) entries = filter(get_dir(ctx["store_dir"]) || ({}),
+                lambda(string ename) { return Stdio.is_dir(combine_path(ctx["store_dir"], ename)); });
+            if (!Stdio.is_dir(ctx["local_dir"])) {
+                info("no local modules directory found \u2014 skipping prune");
+                store_unlock(ctx["store_dir"]);
+                return;
             }
+            array(string) unused = filter(entries,
+                lambda(string ename) {
+                    return !_entry_referenced(ctx["store_dir"], ename, ctx["local_dir"])
+                        && !_entry_referenced(ctx["store_dir"], ename, ctx["global_dir"]);
+                });
 
             if (sizeof(unused) == 0) {
                 info("no unused entries found");

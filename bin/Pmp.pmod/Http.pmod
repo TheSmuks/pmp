@@ -9,6 +9,10 @@
 
 inherit .Helpers;
 
+protected Regexp RE_HEX = Regexp("^[0-9a-fA-F]+$");
+protected Regexp RE_OCTAL = Regexp("^[0-7]+$");
+protected Regexp RE_DIGITS = Regexp("^[0-9]+$");
+
 //! Check if a redirect from original_url to location would be an HTTPS→HTTP downgrade.
 private int(0..1) _is_https_downgrade(string original_url, string location) {
     string orig_scheme = "";
@@ -65,20 +69,20 @@ protected int _parse_int(string s) {
     if (has_prefix(s, "0x") || has_prefix(s, "0X")) {
         if (sizeof(s) == 2) return -1;
         // Validate hex digits only
-        if (!Regexp("^[0-9a-fA-F]+$")->match(s[2..])) return -1;
+        if (!RE_HEX->match(s[2..])) return -1;
         int val;
         sscanf(s[2..], "%x", val);
         return val;
     }
     if (sizeof(s) > 1 && s[0] == '0') {
         // Validate octal digits only
-        if (!Regexp("^[0-7]+$")->match(s[1..])) return -1;
+        if (!RE_OCTAL->match(s[1..])) return -1;
         int val;
         sscanf(s[1..], "%o", val);
         return val;
     }
     // Decimal: validate digits only
-    if (!Regexp("^[0-9]+$")->match(s)) return -1;
+    if (!RE_DIGITS->match(s)) return -1;
     return (int)s;
 }
 

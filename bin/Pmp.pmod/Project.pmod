@@ -59,7 +59,7 @@ void cmd_list(array(string) args, mapping ctx) {
         if (!Stdio.exist(ver_file) && has_suffix(mod_name, ".pmod"))
             ver_file = combine_path(real_dir, "..", ".version");
         if (Stdio.exist(ver_file))
-            ver = Stdio.read_file(ver_file) || "(unknown)";
+            ver = String.trim_all_whites(Stdio.read_file(ver_file)) || "(unknown)";
 
         string src = "";
         string link = get_symlink_target(moddir);

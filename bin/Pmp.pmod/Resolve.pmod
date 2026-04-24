@@ -1,7 +1,12 @@
 //! URL-encode a string for use in API path segments.
-//! Encodes / as %2F and other special characters.
+//! Encodes /, space, #, ?, and % characters.
 private string _encode_tag(string tag) {
-    return replace(replace(tag, "/", "%2F"), " ", "%20");
+    tag = replace(tag, "/", "%2F");
+    tag = replace(tag, " ", "%20");
+    tag = replace(tag, "#", "%23");
+    tag = replace(tag, "?", "%3F");
+    tag = replace(tag, "%", "%25");
+    return tag;
 }
 
 inherit .Helpers;

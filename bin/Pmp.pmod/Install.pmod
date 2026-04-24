@@ -189,8 +189,9 @@ void install_one(string name, string source, string target,
             Stdio.mkdirhier(target);
             string entry_full = combine_path(ctx["store_dir"], result->entry);
             // Resolve module name from the package's pike.json if available
-            string resolved_name = json_field("name", combine_path(entry_full, "pike.json"))
-            || name;
+            string resolved_name = json_field("name", combine_path(entry_full, "pike.json"));
+            // json_field returns raw JSON value — only accept strings
+            if (!stringp(resolved_name)) resolved_name = name;
             // Sanitize package name from pike.json — prevent path traversal
             if (search(resolved_name, "/") >= 0 || search(resolved_name, "\\") >= 0
                 || search(resolved_name, "..") >= 0 || search(resolved_name, "\0") >= 0
@@ -426,7 +427,13 @@ void cmd_install_all(string target, mapping ctx) {
                         die("failed to swap modules directory");
                     }
                 }
-                Stdio.recursive_rm(backup);
+                // Safe cleanup: if backup is a symlink (old modules/ was a symlink),
+                // just remove the symlink itself — don't follow it and destroy the target
+                if (is_symlink(backup)) {
+                    rm(backup);
+                } else {
+                    Stdio.recursive_rm(backup);
+                }
                 install_ok = 1;
             }
         } else {

@@ -412,6 +412,11 @@ string http_get(string url, void|mapping(string:string) headers,
             if (!_redirect_allowed_by_host(original_host, location))
                 die("redirect from " + _url_host(url) + " to " + _url_host(location)
                     + " blocked — domain mismatch");
+            if (sizeof(url) >= 5 && url[..4] == "https"
+                && sizeof(location) >= 4 && location[..3] == "http"
+                && (sizeof(location) < 5 || location[..4] != "https")) {
+                die("blocked: redirect from HTTPS to HTTP — refusing to expose credentials in cleartext");
+            }
             url = location;
             continue;
         }
@@ -467,6 +472,13 @@ array(int|string) http_get_safe(string url, void|mapping(string:string) headers,
             if (!_redirect_allowed_by_host(original_host, location)) {
                 werror("pmp: redirect from " + _url_host(url) + " to "
                        + _url_host(location) + " blocked — domain mismatch\n");
+                return ({ 0, "" });
+            }
+            // Block HTTPS→HTTP downgrade (credential/token exposure)
+            if (sizeof(url) >= 5 && url[..4] == "https"
+                && sizeof(location) >= 4 && location[..3] == "http"
+                && (sizeof(location) < 5 || location[..4] != "https")) {
+                werror("pmp: blocked: redirect from HTTPS to HTTP — refusing to expose credentials in cleartext\n");
                 return ({ 0, "" });
             }
             url = location;

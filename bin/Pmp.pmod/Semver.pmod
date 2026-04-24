@@ -98,8 +98,8 @@ int compare_prerelease(string a, string b) {
 
     int len = min(sizeof(pa), sizeof(pb));
     for (int i = 0; i < len; i++) {
-        int a_num = (sscanf(pa[i], "%d", int a_val) == 1) && pa[i] == (string)a_val && (sizeof(pa[i]) > 0 && pa[i][0] >= '0' && pa[i][0] <= '9');
-        int b_num = (sscanf(pb[i], "%d", int b_val) == 1) && pb[i] == (string)b_val && (sizeof(pb[i]) > 0 && pb[i][0] >= '0' && pb[i][0] <= '9');
+        int a_num = sizeof(pa[i]) > 0 && Regexp("^[0-9]+$")->match(pa[i]);
+        int b_num = sizeof(pb[i]) > 0 && Regexp("^[0-9]+$")->match(pb[i]);
 
         if (a_num && b_num) {
             // Both numeric — compare as integers

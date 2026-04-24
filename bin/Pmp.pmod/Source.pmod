@@ -53,7 +53,7 @@ string _normalize_source(string src) {
 int(0..1) _validate_source_format(string original, string clean) {
     array parts = clean / "/";
     // Filter out empty segments from double slashes
-    parts = filter(parts, lambda(string s) { return sizeof(s) > 0; });
+    parts = parts - ({ "" });
     if (sizeof(parts) < 3)
         return 0;
     string domain = parts[0];

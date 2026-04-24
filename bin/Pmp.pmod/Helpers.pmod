@@ -115,6 +115,12 @@ void advisory_lock(string lock_path, string description) {
                 if (r->exitcode == 0)
                     die(description + " is locked by pmp process " + pid
                         + " — remove " + lock_path + " manually");
+                // EPERM — process exists but we lack permission to signal it
+                string err = lower_case(r->stderr || "");
+                if (search(err, "not permitted") >= 0)
+                    die(description + " is locked by process " + pid
+                        + " (no signal permission) — remove " + lock_path + " manually");
+                // ESRCH — process doesn't exist, stale lock
                 info("removing stale " + description + " lock from process " + pid);
                 rm(lock_path);
                 continue;
@@ -207,7 +213,10 @@ string compute_sha256(string path) {
     mixed err = catch {
         while (1) {
             string chunk = f->read(65536);
-            if (!chunk || sizeof(chunk) == 0) break;
+            if (!chunk || sizeof(chunk) == 0) {
+                if (!chunk) die_internal("read error during hashing: " + path);
+                break;
+            }
             sha->update(chunk);
         }
     };

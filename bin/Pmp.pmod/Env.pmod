@@ -22,11 +22,6 @@ int _has_headers(string dir, void|int depth) {
     return 0;
 }
 
-//! Shell-escape a string using Process.sh_quote.
-string shell_escape(string s) {
-    return Process.sh_quote(s);
-}
-
 //! Build module + include paths from project root and global dir.
 //! Returns ({ mod_paths, inc_paths }).
 array(array(string)) build_paths(mapping ctx) {
@@ -146,7 +141,7 @@ void cmd_env(mapping ctx) {
     string activate =
         "# pmp environment activation. Source this: . .pike-env/activate\n"
         "\n"
-        "_pike_env_dir=" + shell_escape(abs_env_dir) + "\n"
+        "_pike_env_dir=" + Process.sh_quote(abs_env_dir) + "\n"
         "_pike_env_bin=\"$_pike_env_dir/bin\"\n"
         "\n"
         "# Idempotent: bail if already activated in this shell\n"

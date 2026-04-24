@@ -174,18 +174,26 @@ void need_cmd(string name) {
         die("requires " + name);
 }
 
+//! Read and parse a JSON file, returning a mapping.
+//! Handles UTF-8 BOM, validates the result is a mapping.
+//! Returns 0 (void) if the file doesn't exist, is empty, or doesn't parse as a mapping.
+mapping|void _read_json_mapping(string file) {
+    string raw = _strip_bom(Stdio.read_file(file) || "");
+    if (!raw || sizeof(raw) == 0) return 0;
+    mixed data;
+    mixed err = catch { data = Standards.JSON.decode(raw); };
+    if (err || !mappingp(data)) return 0;
+    return data;
+}
+
 //! Read a field from a JSON file using proper JSON parsing.
 //! @param field
 //!   The top-level key to look up.
 //! @param file
 //!   Path to the JSON file (required — no global fallback).
 void|mixed json_field(string field, string file) {
-    if (!Stdio.exist(file)) return 0;
-    string raw = _strip_bom(Stdio.read_file(file) || "");
-    if (raw == "") return 0;
-    mapping|mixed data;
-    mixed err = catch { data = Standards.JSON.decode(raw); };
-    if (err || !mappingp(data)) return 0;
+    mapping data = _read_json_mapping(file);
+    if (!data) return 0;
     if (!zero_type(data[field])) return data[field];
     return 0;
 }
@@ -272,6 +280,18 @@ mixed get_symlink_target(string path) {
     string target = 0;
     catch { target = readlink(path); };
     return target;
+}
+
+//! Snapshot all symlink targets in a directory.
+//! Returns mapping from link name → target path.
+mapping(string:string) snapshot_symlinks(string dir) {
+    mapping(string:string) snaps = ([]);
+    foreach (get_dir(dir) || ({}); ; string name) {
+        string link = combine_path(dir, name);
+        string target = get_symlink_target(link);
+        if (target) snaps[name] = target;
+    }
+    return snaps;
 }
 
 //! Atomically create or replace a symlink at dest pointing to target.

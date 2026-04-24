@@ -106,6 +106,12 @@ array(array(string)) read_lockfile(void|string lf) {
                 warn("lockfile entry with invalid name '.' — skipping");
                 continue;
             }
+            // Validate source field — prevent path traversal in local deps
+            string src = parts[1];
+            if (has_prefix(src, "./") || has_prefix(src, "/")) {
+                if (search(src, "..") >= 0)
+                    die("lockfile: path traversal in local dep source: " + src, EXIT_INTERNAL);
+            }
             entries += ({ parts[..4] });
         }
     }

@@ -126,10 +126,13 @@ void install_one(string name, string source, string target,
                              + " (already installed)");
                         string sha = get_resolved_sha(type, domain,
                             repo_path, ver, ctx);
+                        string content_hash = "";
+                        if (Stdio.exist(combine_path(version_dir, ".pmp-meta")))
+                            content_hash = read_stored_hash(version_dir) || "";
                         ctx["lock_entries"] = lockfile_add_entry(
                             ctx["lock_entries"], name,
                             source_strip_version(source),
-                            ver, sha, "");
+                            ver, sha, content_hash);
                         return;
                     } else {
                         if (ctx["force"]) {
@@ -145,10 +148,13 @@ void install_one(string name, string source, string target,
                             // Record the kept version in lockfile
                             string kept_sha = get_resolved_sha(type, domain,
                                 repo_path, existing_ver, ctx);
+                            string content_hash = "";
+                            if (Stdio.exist(combine_path(version_dir, ".pmp-meta")))
+                                content_hash = read_stored_hash(version_dir) || "";
                             ctx["lock_entries"] = lockfile_add_entry(
                                 ctx["lock_entries"], name,
                                 source_strip_version(source),
-                                existing_ver, kept_sha, "");
+                                existing_ver, kept_sha, content_hash);
                             return;
                         }
                     }
@@ -331,6 +337,16 @@ void cmd_install_all(string target, mapping ctx) {
                 die("offline mode: " + (Stdio.exist(ctx["lockfile_path"]) ?
                     "store entries missing — cannot satisfy lockfile" : "no lockfile found")
                     + " — cannot resolve without network");
+        // Snapshot existing symlinks BEFORE cleanup so rollback can restore
+        mapping(string:string) old_symlinks = ([]);
+        if (Stdio.is_dir(target)) {
+            foreach (get_dir(target) || ({}); ; string name) {
+                string full = combine_path(target, name);
+                string link = get_symlink_target(full);
+                if (link) old_symlinks[name] = link;
+            }
+        }
+
         // Clean up any symlinks created during lockfile replay
         if (Stdio.is_dir(target)) {
             foreach (get_dir(target) || ({}); ; string name) {
@@ -343,22 +359,11 @@ void cmd_install_all(string target, mapping ctx) {
         if (!store_locked) store_lock(ctx["store_dir"]);
         store_locked = 1;
 
-        // Atomic install: snapshot existing state, stage new symlinks,
-        // then swap atomically on success or rollback on failure.
+        // Atomic install: stage new symlinks, then swap atomically on
+        // success or rollback on failure.
         string staging = target + ".tmp";
         // Clean up any leftover staging dir from a previous failed run
         if (Stdio.is_dir(staging)) Stdio.recursive_rm(staging);
-
-        // Snapshot existing symlinks for rollback
-        mapping(string:string) old_symlinks = ([]);
-        if (Stdio.is_dir(target)) {
-            foreach (get_dir(target) || ({}); ; string name) {
-                string full = combine_path(target, name);
-                string link = get_symlink_target(full);
-                if (link) old_symlinks[name] = link;
-            }
-        }
-
         info("installing dependencies from pike.json...");
         mixed install_err = catch {
             array(array(string)) deps = parse_deps(ctx["pike_json"]);
@@ -813,7 +818,15 @@ void cmd_rollback(mapping ctx) {
 
         }
 
-        write_lockfile(ctx["lockfile_path"], restored_entries);
+        // Use atomic_write directly — write_lockfile would back up the current
+        // lockfile to .prev, destroying the .prev data we just rolled back from.
+        String.Buffer buf = String.Buffer();
+        buf->add("# pmp lockfile v1 — DO NOT EDIT\n");
+        buf->add("# name\tsource\ttag\tcommit_sha\tcontent_sha256\n");
+        foreach (restored_entries; ; array(string) entry)
+            buf->add(entry[0] + "\t" + entry[1] + "\t" + entry[2]
+                     + "\t" + entry[3] + "\t" + entry[4] + "\n");
+        atomic_write(ctx["lockfile_path"], buf->get());
 
 
         info("rollback complete — restored " + sizeof(restored_entries) + " modules");

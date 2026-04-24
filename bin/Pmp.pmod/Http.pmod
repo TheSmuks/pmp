@@ -84,27 +84,35 @@ int _is_private_host(string host) {
     // IPv6 loopback
     if (h == "::1")
         return 1;
-    // IPv4-mapped IPv6 in non-compressed form: 0:0:0:0:0:ffff:XXXX:YYYY
-    // Normalize by stripping leading zeros in each group
+    // IPv4-mapped IPv6 in non-compressed form
+    // Handles: 0:0:0:0:0:ffff:XXXX:YYYY (8-group hex)
+    //          0:0:0:0:0:ffff:A.B.C.D  (7-group mixed)
+    //          0::ffff:XXXX:YYYY or 0::ffff:A.B.C.D (compressed)
     if (has_value(h, ":") && !has_prefix(h, "[")) {
-        // Check for non-compressed IPv4-mapped IPv6
         array(string) groups = h / ":";
-        // IPv4-mapped is 6 groups of 0 + ffff + last 2 groups
-        if (sizeof(groups) >= 7) {
-            int is_mapped = 1;
-            for (int i = 0; i < sizeof(groups) - 3; i++) {
-                if (groups[i] != "0" && groups[i] != "") {
-                    is_mapped = 0;
-                    break;
+        // Find 'ffff' marker anywhere in the address
+        int ffff_idx = -1;
+        for (int i = 0; i < sizeof(groups); i++) {
+            if (lower_case(groups[i]) == "ffff") { ffff_idx = i; break; }
+        }
+        if (ffff_idx >= 0) {
+            // Verify all groups before ffff are zero or empty (:: expansion)
+            int all_zero = 1;
+            for (int i = 0; i < ffff_idx; i++) {
+                if (groups[i] != "0" && sizeof(groups[i]) > 0) {
+                    all_zero = 0; break;
                 }
             }
-            if (is_mapped && lower_case(groups[-3]) == "ffff") {
-                string mapped = groups[-2] + ":" + groups[-1];
-                // Hex format — convert to IPv4
-                array(string) hex_parts = mapped / ":";
-                if (sizeof(hex_parts) == 2) {
-                    int hi = (int)("0x" + hex_parts[0]);
-                    int lo = (int)("0x" + hex_parts[1]);
+            if (all_zero) {
+                // Extract everything after ffff
+                array(string) after = groups[ffff_idx + 1..];
+                if (sizeof(after) == 1 && has_value(after[0], ".")) {
+                    // Dotted-decimal: ffff:127.0.0.1
+                    return _is_private_host(after[0]);
+                } else if (sizeof(after) == 2) {
+                    // Hex: ffff:7f00:1 → 127.0.0.1
+                    int hi = (int)("0x" + after[0]);
+                    int lo = (int)("0x" + after[1]);
                     if (hi >= 0 && lo >= 0) {
                         int a = (hi >> 8) & 0xff;
                         int b = hi & 0xff;

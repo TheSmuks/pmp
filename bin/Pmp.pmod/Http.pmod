@@ -99,7 +99,7 @@ int _is_private_host(string host) {
             // Verify all groups before ffff are zero or empty (:: expansion)
             int all_zero = 1;
             for (int i = 0; i < ffff_idx; i++) {
-                if (groups[i] != "0" && sizeof(groups[i]) > 0) {
+                if (sizeof(groups[i]) > 0 && (int)("0x" + groups[i]) != 0) {
                     all_zero = 0; break;
                 }
             }

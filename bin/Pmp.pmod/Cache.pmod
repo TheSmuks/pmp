@@ -61,10 +61,8 @@ mapping|void cache_get(string url, void|int ttl_secs) {
     string last_modified = "";
 
     foreach (header_block / "\n"; ; string line) {
-        int colon = search(line, ": ");
-        if (colon < 0) continue;
-        string k = line[..colon - 1];
-        string v = line[colon + 2..];
+        string k, v;
+        if (sscanf(line, "%s: %s", k, v) != 2) continue;
         switch (k) {
             case "cached_at":
                 cached_at = (int)v;
@@ -176,10 +174,10 @@ void cache_prune(void|int ttl_secs) {
             if (sep >= 0) {
                 string header_block = raw[..sep - 1];
                 foreach (header_block / "\n"; ; string line) {
-                    int colon = search(line, ": ");
-                    if (colon < 0) continue;
-                    if (line[..colon - 1] == "cached_at") {
-                        cached_at = (int)line[colon + 2..];
+                    string k, v;
+                    if (sscanf(line, "%s: %s", k, v) != 2) continue;
+                    if (k == "cached_at") {
+                        cached_at = (int)v;
                         break;
                     }
                 }

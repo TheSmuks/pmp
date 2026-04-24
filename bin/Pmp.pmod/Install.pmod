@@ -466,17 +466,12 @@ void cmd_install_all(string target, mapping ctx) {
         // Fresh installs already build lock_entries from scratch;
         // this targets the lockfile-replay path where old entries persist.
         array(array(string)) deps = parse_deps(ctx["pike_json"]);
-        multiset(string) needed = (<>);
-        array(string) queue = ({});
-        foreach (deps; ; array(string) d) {
-            needed[d[0]] = 1;
-            queue += ({ d[0] });
-        }
+        multiset(string) needed = (multiset)column(deps, 0);
+        array(string) queue = column(deps, 0);
 
         // Build name -> lock_entry lookup for walking transitives
-        mapping(string:array(string)) entry_by_name = ([]);
-        foreach (ctx["lock_entries"]; ; array(string) e)
-            if (sizeof(e[0]) > 0) entry_by_name[e[0]] = e;
+        array(array(string)) valid = filter(ctx["lock_entries"], lambda(array(string) e) { return sizeof(e[0]) > 0; });
+        mapping(string:array(string)) entry_by_name = mkmapping(column(valid, 0), valid);
 
         // BFS: walk transitive deps from each installed package's pike.json
         multiset(string) seen = (<>);
@@ -513,10 +508,7 @@ void cmd_install_all(string target, mapping ctx) {
         }
 
         // Keep only reachable entries
-        array(array(string)) filtered = ({});
-        foreach (ctx["lock_entries"]; ; array(string) e)
-            if (needed[e[0]]) filtered += ({ e });
-        ctx["lock_entries"] = filtered;
+        ctx["lock_entries"] = filter(ctx["lock_entries"], lambda(array(string) e) { return needed[e[0]]; });
 
         write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
         validate_manifests(ctx["local_dir"], ctx["std_libs"]);

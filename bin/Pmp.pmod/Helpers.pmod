@@ -6,6 +6,7 @@ private string _strip_bom(string raw) {
 }
 
 inherit .Config;
+protected Regexp RE_DASHES = Regexp("-+");
 
 //! Cleanup registry for signal handling and error recovery.
 //! Uses getenv/putenv for shared state across module inheritance copies.
@@ -216,7 +217,7 @@ string compute_sha256(string path) {
 //! Converts / to -, collapses repeated dashes, trims leading/trailing dashes.
 string normalize_slug(string s) {
     string slug = replace(s, "/", "-");
-    slug = Regexp("-+")->replace(slug, "-");
+    slug = RE_DASHES->replace(slug, "-");
     while (has_prefix(slug, "-")) slug = slug[1..];
     while (has_suffix(slug, "-")) slug = slug[..<1];
     return slug;
@@ -226,7 +227,7 @@ string normalize_slug(string s) {
 //! Converts / to - and collapses repeated dashes.
 string normalize_tag(string tag) {
     string safe = replace(tag, "/", "-");
-    safe = Regexp("-+")->replace(safe, "-");
+    safe = RE_DASHES->replace(safe, "-");
     return safe;
 }
 

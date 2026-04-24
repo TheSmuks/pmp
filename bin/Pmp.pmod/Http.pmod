@@ -232,30 +232,6 @@ int _is_private_host(string host) {
             }
         }
     }
-    // IPv6-mapped IPv4 private addresses
-    if (has_prefix(h, "::ffff:")) {
-        string mapped = h[7..];
-        if (has_value(mapped, ".")) {
-            // Dotted-decimal format: ::ffff:127.0.0.1
-            return _is_private_host(mapped);
-        } else {
-            // Hex format: ::ffff:7f00:1 → 127.0.0.1
-            array(string) hex_parts = mapped / ":";
-            if (sizeof(hex_parts) == 2) {
-                int hi; sscanf(hex_parts[0], "%x", hi);
-                int lo; sscanf(hex_parts[1], "%x", lo);
-                if (hi >= 0 && lo >= 0) {
-                    int a = (hi >> 8) & 0xff;
-                    int b = hi & 0xff;
-                    int c = (lo >> 8) & 0xff;
-                    int d = lo & 0xff;
-                    string ipv4 = sprintf("%d.%d.%d.%d", a, b, c, d);
-                    return _is_private_host(ipv4);
-                }
-            }
-            return 1; // Unknown hex format — treat as private (safe default)
-        }
-    }
     // 10.0.0.0/8
     if (has_prefix(h, "10."))
         return 1;

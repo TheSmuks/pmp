@@ -59,13 +59,12 @@ array(array(string)) parse_deps(string file) {
     mapping deps = data->dependencies;
     if (!mappingp(deps)) return ({});
 
-    array(array(string)) result = ({});
-    foreach (sort(indices(deps)); ; string name) {
+    return map(filter(sort(indices(deps)), lambda(string name) {
         mixed val = deps[name];
-        if (stringp(val) && sizeof(val) > 0 && sizeof(name) > 0
+        return stringp(val) && sizeof(val) > 0 && sizeof(name) > 0
             && !has_value(name, "/") && !has_value(name, "\\")
-            && !has_value(name, "..") && !has_value(name, "\0"))
-            result += ({ ({ name, val }) });
-    }
-    return result;
+            && !has_value(name, "..") && !has_value(name, "\0");
+    }), lambda(string name) {
+        return ({ name, deps[name] });
+    });
 }

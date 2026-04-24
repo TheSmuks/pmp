@@ -11,13 +11,13 @@ string _normalize_source(string src) {
     else if (has_prefix(src, "ssh://")) { src = src[6..]; had_scheme = 1; }
 
     // Strip SSH port number (ssh://host:port/path -> host/path)
-    if (had_scheme && search(src, ":") >= 0 && !has_prefix(src, "[")) {
+    if (had_scheme && has_value(src, ":") && !has_prefix(src, "[")) {
         int first_slash = search(src, "/");
         int first_colon = search(src, ":");
         // Only strip if colon appears before first slash (port in authority)
         if (first_colon >= 0 && (first_slash < 0 || first_colon < first_slash)) {
             string after_port = src[first_colon + 1..];
-            string after_slash = search(after_port, "/") >= 0
+            string after_slash = has_value(after_port, "/")
                 ? after_port[search(after_port, "/")..] : "";
             src = src[..first_colon - 1] + after_slash;
         }
@@ -92,15 +92,15 @@ string source_to_name(string src) {
 string source_to_version(string src) {
     if (has_value(src, "#")) {
         string ver = (src / "#")[1..] * "#";
-        if (search(ver, "..") >= 0)
+        if (has_value(ver, ".."))
             die("path traversal in version tag: " + ver);
-        if (search(ver, "/") >= 0 || search(ver, "\0") >= 0)
+        if (has_value(ver, "/") || has_value(ver, "\0"))
             die("invalid version tag: " + ver);
-        if (search(ver, "\\") >= 0)
+        if (has_value(ver, "\\"))
             die("invalid version tag: contains backslash: " + ver);
-        if (search(ver, "\n") >= 0)
+        if (has_value(ver, "\n"))
             die("invalid version tag: contains newline");
-        if (search(ver, ";") >= 0)
+        if (has_value(ver, ";"))
             die("invalid version tag: contains ';': " + ver);
         return ver;
     }
@@ -132,16 +132,16 @@ string source_to_repo_path(string src) {
 //! Rejects tags containing /, \\, .., ;, or null bytes.
 void validate_version_tag(string tag) {
     if (sizeof(tag) == 0) return;  // empty is allowed
-    if (search(tag, "/") >= 0)
+    if (has_value(tag, "/"))
         die("invalid version tag: contains '/': " + tag);
-    if (search(tag, "\\") >= 0)
+    if (has_value(tag, "\\"))
         die("invalid version tag: contains backslash: " + tag);
-    if (search(tag, "..") >= 0)
+    if (has_value(tag, ".."))
         die("invalid version tag: contains '..': " + tag);
-    if (search(tag, ";") >= 0)
+    if (has_value(tag, ";"))
         die("invalid version tag: contains ';': " + tag);
-    if (search(tag, "\0") >= 0)
+    if (has_value(tag, "\0"))
         die("invalid version tag: contains null byte: " + tag);
-    if (search(tag, "\n") >= 0)
+    if (has_value(tag, "\n"))
         die("invalid version tag: contains newline");
 }

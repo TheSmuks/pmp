@@ -117,7 +117,7 @@ void advisory_lock(string lock_path, string description) {
                         + " — remove " + lock_path + " manually");
                 // EPERM — process exists but we lack permission to signal it
                 string err = lower_case(r->stderr || "");
-                if (search(err, "not permitted") >= 0)
+                if (has_value(err, "not permitted"))
                     die(description + " is locked by process " + pid
                         + " (no signal permission) — remove " + lock_path + " manually");
                 // ESRCH — process doesn't exist, stale lock
@@ -169,8 +169,7 @@ void die_internal(string msg) {
 }
 
 void need_cmd(string name) {
-    array(string) search_path = (getenv("PATH") || "/usr/bin:/bin") / ":";
-    if (!Process.locate_binary(search_path, name))
+    if (!Process.search_path(name))
         die("requires " + name);
 }
 
@@ -204,25 +203,52 @@ void|string find_project_root(void|string dir) {
 }
 
 //! Compute SHA-256 hex digest of a file.
-//! Uses streaming reads (64KB chunks) to avoid loading entire file into memory.
 //! Dies on failure — hash computation failure is not recoverable.
 string compute_sha256(string path) {
     object f = Stdio.File(path, "r");
     if (!f) die_internal("failed to open file for hashing: " + path);
-    Crypto.SHA256 sha = Crypto.SHA256();
-    mixed err = catch {
-        while (1) {
-            string chunk = f->read(65536);
-            if (!chunk || sizeof(chunk) == 0) {
-                if (!chunk) die_internal("read error during hashing: " + path);
-                break;
-            }
-            sha->update(chunk);
-        }
-    };
+    string hash = Crypto.SHA256.hash(f);
     f->close();
-    if (err) throw(err);
-    return String.string2hex(sha->digest());
+    return String.string2hex(hash);
+}
+
+//! Normalize a source string into a slug for use in store entry names.
+//! Converts / to -, collapses repeated dashes, trims leading/trailing dashes.
+string normalize_slug(string s) {
+    string slug = replace(s, "/", "-");
+    while (has_value(slug, "--")) slug = replace(slug, "--", "-");
+    while (has_prefix(slug, "-")) slug = slug[1..];
+    while (has_suffix(slug, "-")) slug = slug[..<1];
+    return slug;
+}
+
+//! Sanitize a tag for use in store entry names.
+//! Converts / to - and collapses repeated dashes.
+string normalize_tag(string tag) {
+    string safe = replace(tag, "/", "-");
+    while (has_value(safe, "--")) safe = replace(safe, "--", "-");
+    return safe;
+}
+
+//! Create a temp directory using mktemp and register it for cleanup.
+//! Dies if directory creation fails.
+string make_temp_dir() {
+    string tmpdir_base = combine_path(getenv("TMPDIR") || "/tmp", "pmp_install_XXXXXX");
+    mapping mktemp_result = Process.run(({"mktemp", "-d", tmpdir_base}));
+    string tmpdir = String.trim_all_whites(mktemp_result->stdout || "");
+    if (sizeof(tmpdir) == 0) die("failed to create temp directory");
+    register_cleanup_dir(tmpdir);
+    return tmpdir;
+}
+
+//! Resolve a potentially relative local path to absolute.
+//! Prepends project root if path starts with ./.
+string resolve_local_path(string path) {
+    if (has_prefix(path, "./")) {
+        string project_root = find_project_root() || getcwd();
+        return combine_path(project_root, path);
+    }
+    return path;
 }
 
 //! Strip .pmod suffix from a module name for display purposes.

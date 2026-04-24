@@ -23,9 +23,9 @@ int _has_headers(string dir, void|int depth) {
 }
 
 //! Shell-escape a string using single quotes.
-//! Replaces embedded single quotes with escaped equivalents.
+//! Shell-escape a string using Process.sh_quote.
 string shell_escape(string s) {
-    return "'" + replace(s, "'", "'\\''") + "'";
+    return Process.sh_quote(s);
 }
 
 //! Build module + include paths from project root and global dir.
@@ -150,7 +150,7 @@ void cmd_env(mapping ctx) {
         "exec \"$PIKE_BIN\" \"$@\"\n";
 
     Stdio.write_file(combine_path(env_bin, "pike"), wrapper);
-    Process.run(({"chmod", "+x", combine_path(env_bin, "pike")}));
+    System.chmod(combine_path(env_bin, "pike"), 0755);
 
     // activate — idempotent, with proper deactivate (following uv patterns)
 

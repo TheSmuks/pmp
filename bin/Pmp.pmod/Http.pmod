@@ -9,6 +9,16 @@
 
 inherit .Helpers;
 
+//! Check if a redirect from original_url to location would be an HTTPS→HTTP downgrade.
+private int(0..1) _is_https_downgrade(string original_url, string location) {
+    string orig_scheme = "";
+    mixed e1 = catch { orig_scheme = lower_case(Standards.URI(original_url)->scheme); };
+    if (orig_scheme != "https") return 0;
+    string loc_scheme = "";
+    mixed e2 = catch { loc_scheme = lower_case(Standards.URI(location)->scheme); };
+    return loc_scheme == "http";
+}
+
 //! Extract the host (domain) from a URL string.
 //! Uses Standards.URI for RFC 3986 compliant parsing.
 string _url_host(string url) {
@@ -409,24 +419,12 @@ object _do_get_single(string url, mapping request_headers,
             con->data_timeout = timeout_secs;
             // Set proxy if configured
             if (sizeof(proxy_url) > 0) {
-                // Parse proxy URL: http://host:port
-                string proxy_host = proxy_url;
-                int proxy_port = 8080;
-                if (has_prefix(proxy_host, "http://"))
-                    proxy_host = proxy_host[7..];
-                else if (has_prefix(proxy_host, "https://"))
-                    proxy_host = proxy_host[8..];
-                // Strip trailing slash
-                if (has_suffix(proxy_host, "/"))
-                    proxy_host = proxy_host[..<1];
-                // Extract port
-                int colon_pos = search(reverse(proxy_host), ":");
-                if (colon_pos >= 0) {
-                    int real_pos = sizeof(proxy_host) - 1 - colon_pos;
-                    proxy_port = (int)proxy_host[real_pos + 1..];
-                    proxy_host = proxy_host[..real_pos - 1];
-                }
-                con->proxy = ({ proxy_host, proxy_port });
+                mixed proxy_err = catch {
+                    object pu = Standards.URI(proxy_url);
+                    con->proxy = ({ pu->host, (int)pu->port || 8080 });
+                };
+                if (proxy_err)
+                    die("invalid proxy URL: " + proxy_url);
             }
             Protocols.HTTP.do_method("GET", url, 0, request_headers, con);
             result = con;
@@ -492,9 +490,7 @@ string http_get(string url, void|mapping(string:string) headers,
             if (!_redirect_allowed_by_host(original_host, location))
                 die("redirect from " + _url_host(url) + " to " + _url_host(location)
                     + " blocked — domain mismatch");
-            if (sizeof(url) >= 5 && lower_case(url[..4]) == "https"
-                && sizeof(location) >= 4 && lower_case(location[..3]) == "http"
-                && (sizeof(location) < 5 || lower_case(location[..4]) != "https")) {
+            if (_is_https_downgrade(url, location)) {
                 die("blocked: redirect from HTTPS to HTTP — refusing to expose credentials in cleartext");
             }
             url = location;
@@ -555,9 +551,7 @@ array(int|string) http_get_safe(string url, void|mapping(string:string) headers,
                 return ({ 0, "" });
             }
             // Block HTTPS→HTTP downgrade (credential/token exposure)
-            if (sizeof(url) >= 5 && lower_case(url[..4]) == "https"
-                && sizeof(location) >= 4 && lower_case(location[..3]) == "http"
-                && (sizeof(location) < 5 || lower_case(location[..4]) != "https")) {
+            if (_is_https_downgrade(url, location)) {
                 werror("pmp: blocked: redirect from HTTPS to HTTP — refusing to expose credentials in cleartext\n");
                 return ({ 0, "" });
             }

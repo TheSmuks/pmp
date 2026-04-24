@@ -10,10 +10,9 @@ void cmd_init(mapping ctx) {
         die("pike.json already exists in this directory");
 
     // Extract project name from current working directory
-    string dir_name = (getcwd() / "/")[-1];
+    string dir_name = basename(getcwd());
     if (!sizeof(dir_name) || dir_name == ".")
-        dir_name = basename(getcwd());
-    if (!sizeof(dir_name)) dir_name = "my-project";
+        dir_name = "my-project";
 
     string content = sprintf("{\n  \"name\": %s,\n  \"version\": \"0.1.0\",\n  \"dependencies\": {}\n}\n",
         Standards.JSON.encode(dir_name));
@@ -115,7 +114,7 @@ void cmd_remove(array(string) args, mapping ctx) {
     // Strip .pmod suffix — users may pass "Foo.pmod" but pike.json keys are bare names
     if (has_suffix(name, ".pmod")) name = name[..<5];
     // Path traversal protection
-    if (search(name, "/") >= 0 || search(name, "..") >= 0 || search(name, "\0") >= 0)
+    if (has_value(name, "/") || has_value(name, "..") || has_value(name, "\0"))
         die("invalid module name: " + name);
     string lock_path = combine_path(find_project_root() || getcwd(), ".pmp-install.lock");
     advisory_lock(lock_path, "project");

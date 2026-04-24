@@ -23,22 +23,16 @@ void store_unlock(string store_dir) {
 //! Format: {domain}-{owner}-{repo}-{tag}-{sha_prefix16}
 string store_entry_name(string src, string tag, string sha) {
     string clean = (src / "#")[0];
-    // Convert / to -, remove leading/trailing -
-    // Convert / to -, collapse repeated dashes
-    string slug = replace(clean, "/", "-");
-    while (has_value(slug, "--")) slug = replace(slug, "--", "-");
-    // Trim leading/trailing dashes
-    while (has_prefix(slug, "-")) slug = slug[1..];
-    while (has_suffix(slug, "-")) slug = slug[..<1];
+    // Convert / to -, collapse repeated dashes, trim leading/trailing -
+    string slug = normalize_slug(clean);
 
     // Sanitize against path traversal
-    if (search(slug, "..") >= 0)
+    if (has_value(slug, ".."))
         die("invalid source: path traversal in slug: " + slug, EXIT_INTERNAL);
     // Sanitize tag: replace / with - to prevent nested directories
-    string safe_tag = replace(tag, "/", "-");
-    while (has_value(safe_tag, "--")) safe_tag = replace(safe_tag, "--", "-");
+    string safe_tag = normalize_tag(tag);
 
-    if (search(tag, "..") >= 0)
+    if (has_value(tag, ".."))
         die("invalid tag: path traversal: " + tag, EXIT_INTERNAL);
     if (sizeof(sha) == 0) {
         // SHA resolution failed — use hash of source+tag as fallback identifier
@@ -106,12 +100,8 @@ private string _glob_escape(string s) {
 //! Find a store entry matching source, tag, and optionally content hash.
 //! Returns the entry directory name, or "" if not found.
 string _find_store_entry(string store_dir, string source, string tag, string content_hash) {
-    string slug = replace(source, "/", "-");
-    while (has_value(slug, "--")) slug = replace(slug, "--", "-");
-    while (has_prefix(slug, "-")) slug = slug[1..];
-    while (has_suffix(slug, "-")) slug = slug[..<1];
-    string safe_tag = replace(tag, "/", "-");
-    while (has_value(safe_tag, "--")) safe_tag = replace(safe_tag, "--", "-");
+    string slug = normalize_slug(source);
+    string safe_tag = normalize_tag(tag);
     string pattern = _glob_escape(slug) + "-" + _glob_escape(safe_tag) + "-*";
     array(string) candidates = ({});
 
@@ -330,11 +320,7 @@ mapping store_install_github(string store_dir, string repo_path, string ver,
     string body = http_get(url, 0, version);
 
     // Write to temp file
-    string tmpdir_base = combine_path(getenv("TMPDIR") || "/tmp", "pmp_install_XXXXXX");
-    mapping mktemp_result = Process.run(({"mktemp", "-d", tmpdir_base}));
-    string tmpdir = String.trim_all_whites(mktemp_result->stdout || "");
-    if (sizeof(tmpdir) == 0) die("failed to create temp directory");
-    register_cleanup_dir(tmpdir);
+    string tmpdir = make_temp_dir();
     string tarball = combine_path(tmpdir, "archive.tar.gz");
     Stdio.write_file(tarball, body);
 
@@ -363,11 +349,7 @@ mapping store_install_gitlab(string store_dir, string repo_path, string ver,
     info("downloading " + url);
     string body = http_get(url, 0, version);
 
-    string tmpdir_base = combine_path(getenv("TMPDIR") || "/tmp", "pmp_install_XXXXXX");
-    mapping mktemp_result = Process.run(({"mktemp", "-d", tmpdir_base}));
-    string tmpdir = String.trim_all_whites(mktemp_result->stdout || "");
-    if (sizeof(tmpdir) == 0) die("failed to create temp directory");
-    register_cleanup_dir(tmpdir);
+    string tmpdir = make_temp_dir();
     string tarball = combine_path(tmpdir, "archive.tar.gz");
     Stdio.write_file(tarball, body);
 
@@ -390,11 +372,7 @@ mapping store_install_selfhosted(string store_dir, string domain,
     need_cmd("git");
     string url = "https://" + domain + "/" + repo_path;
 
-    string tmpdir_base = combine_path(getenv("TMPDIR") || "/tmp", "pmp_install_XXXXXX");
-    mapping mktemp_result = Process.run(({"mktemp", "-d", tmpdir_base}));
-    string tmpdir = String.trim_all_whites(mktemp_result->stdout || "");
-    if (sizeof(tmpdir) == 0) die("failed to create temp directory");
-    register_cleanup_dir(tmpdir);
+    string tmpdir = make_temp_dir();
     string repo_dest = combine_path(tmpdir, "repo");
 
     // SSRF protection — validate domain before git clone

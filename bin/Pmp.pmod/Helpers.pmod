@@ -179,7 +179,7 @@ void need_cmd(string name) {
 //!   The top-level key to look up.
 //! @param file
 //!   Path to the JSON file (required — no global fallback).
-void|string json_field(string field, string file) {
+void|mixed json_field(string field, string file) {
     if (!Stdio.exist(file)) return 0;
     string raw = _strip_bom(Stdio.read_file(file) || "");
     if (raw == "") return 0;

@@ -39,12 +39,14 @@ private string _project_lock_path(string project_root) {
 void project_lock(void|string project_root) {
     string lock_path = _project_lock_path(project_root);
     advisory_lock(lock_path, "project");
+    register_project_lock_path(lock_path);
 }
 
 //! Release the project-level lock.
 void project_unlock(void|string project_root) {
     string lock_path = _project_lock_path(project_root);
     advisory_unlock(lock_path);
+    register_project_lock_path("");
 }
 
 
@@ -245,6 +247,8 @@ void cmd_install_all(string target, mapping ctx) {
 
     // Project-level lock: prevents concurrent installs in the same directory
     project_lock(find_project_root());
+    store_lock(ctx["store_dir"]);
+    store_locked = 1;
 
     // Check if lockfile exists and covers all deps
     int use_lockfile = 0;
@@ -358,8 +362,6 @@ void cmd_install_all(string target, mapping ctx) {
         }
 
         ctx["lock_entries"] = ({});
-        if (!store_locked) store_lock(ctx["store_dir"]);
-        store_locked = 1;
 
         // Atomic install: stage new symlinks, then swap atomically on
         // success or rollback on failure.
@@ -1019,40 +1021,34 @@ void cmd_outdated(mapping ctx) {
         if (lock_map[name])
             current_tag = lock_map[name][2];
 
-        // Resolve latest tag
-        mixed err = catch {
-            array(string) resolved =
-                latest_tag(type, domain, repo_path, PMP_VERSION);
-            string latest_tag_str = resolved[0];
+        // Resolve latest tag — uses safe variant that never dies on HTTP errors
+        array(string) resolved =
+            latest_tag_safe(type, domain, repo_path, PMP_VERSION);
+        string latest_tag_str = resolved[0];
 
-            if (sizeof(latest_tag_str) == 0) {
-                buf->add(sprintf("  %-20s %-12s %-12s %s\n",
-                    name, current_tag, "-", "no tags found"));
-                continue;
-            }
-
-            if (latest_tag_str != current_tag && current_tag != "-") {
-                string bump = "";
-                mapping cur_v = parse_semver(current_tag);
-                mapping lat_v = parse_semver(latest_tag_str);
-                if (cur_v && lat_v)
-                    bump = classify_bump(current_tag, latest_tag_str);
-                else
-                    bump = "update";
-
-                string label = bump == "major" ? "MAJOR" : bump;
-                buf->add(sprintf("  %-20s %-12s %-12s %s\n",
-                    name, current_tag, latest_tag_str, label));
-                any_outdated = 1;
-            } else if (current_tag == "-") {
-                buf->add(sprintf("  %-20s %-12s %-12s %s\n",
-                    name, "(none)", latest_tag_str, "not installed"));
-                any_outdated = 1;
-            }
-        };
-        if (err) {
+        if (sizeof(latest_tag_str) == 0) {
             buf->add(sprintf("  %-20s %-12s %-12s %s\n",
                 name, current_tag, "-", "resolve error"));
+            any_outdated = 1;
+            continue;
+        }
+
+        if (latest_tag_str != current_tag && current_tag != "-") {
+            string bump = "";
+            mapping cur_v = parse_semver(current_tag);
+            mapping lat_v = parse_semver(latest_tag_str);
+            if (cur_v && lat_v)
+                bump = classify_bump(current_tag, latest_tag_str);
+            else
+                bump = "update";
+
+            string label = bump == "major" ? "MAJOR" : bump;
+            buf->add(sprintf("  %-20s %-12s %-12s %s\n",
+                name, current_tag, latest_tag_str, label));
+            any_outdated = 1;
+        } else if (current_tag == "-") {
+            buf->add(sprintf("  %-20s %-12s %-12s %s\n",
+                name, "(none)", latest_tag_str, "not installed"));
             any_outdated = 1;
         }
     }

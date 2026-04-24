@@ -3,6 +3,7 @@ inherit .Config;
 //! Cleanup registry for signal handling and error recovery.
 //! Tracks temp dirs and store lock for cleanup on exit/interrupt.
 private array(string) _cleanup_dirs = ({});
+protected string _registered_project_lock = "";
 protected string _store_dir_for_lock = "";
 protected int _store_locked = 0;
 
@@ -15,6 +16,12 @@ void register_cleanup_dir(string dir) {
 //! Unregister a temp directory (after successful cleanup).
 void unregister_cleanup_dir(string dir) {
     _cleanup_dirs -= ({ dir });
+}
+
+
+//! Register the project lock path for cleanup on die().
+void register_project_lock_path(string lock_path) {
+    _registered_project_lock = lock_path;
 }
 
 private int _cleaned_up = 0;
@@ -42,6 +49,12 @@ void run_cleanup() {
                 rm(lock_path);
         }
         _store_locked = 0;
+    }
+
+    // Release project lock
+    if (sizeof(_registered_project_lock) > 0) {
+        advisory_unlock(_registered_project_lock);
+        _registered_project_lock = "";
     }
 }
 

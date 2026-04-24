@@ -229,6 +229,17 @@ void cmd_install_all(string target, mapping ctx) {
     ctx["visited"] = (<>);
     ctx["lock_entries"] = ({});
 
+    // Snapshot existing symlinks BEFORE any changes so rollback can restore
+    mapping(string:string) old_symlinks = ([]);
+    if (Stdio.is_dir(target)) {
+        foreach (get_dir(target) || ({}); ; string name) {
+            string full = combine_path(target, name);
+            string link = get_symlink_target(full);
+            if (link) old_symlinks[name] = link;
+        }
+    }
+
+
     int install_ok = 0;
     int store_locked = 0;
 
@@ -337,15 +348,6 @@ void cmd_install_all(string target, mapping ctx) {
                 die("offline mode: " + (Stdio.exist(ctx["lockfile_path"]) ?
                     "store entries missing — cannot satisfy lockfile" : "no lockfile found")
                     + " — cannot resolve without network");
-        // Snapshot existing symlinks BEFORE cleanup so rollback can restore
-        mapping(string:string) old_symlinks = ([]);
-        if (Stdio.is_dir(target)) {
-            foreach (get_dir(target) || ({}); ; string name) {
-                string full = combine_path(target, name);
-                string link = get_symlink_target(full);
-                if (link) old_symlinks[name] = link;
-            }
-        }
 
         // Clean up any symlinks created during lockfile replay
         if (Stdio.is_dir(target)) {
@@ -658,10 +660,34 @@ void cmd_update(array(string) args, mapping ctx) {
             // Read existing lockfile entries (preserve other modules)
             array(array(string)) existing = read_lockfile(ctx["lockfile_path"]);
 
+            // Snapshot existing symlink so we can restore on download failure
+            string saved_symlink = 0;
+            string saved_dest = combine_path(ctx["local_dir"], mod_name);
+            if (Stdio.exist(saved_dest)) {
+                saved_symlink = get_symlink_target(saved_dest);
+            } else {
+                string alt = combine_path(ctx["local_dir"], mod_name + ".pmod");
+                if (Stdio.exist(alt)) {
+                    saved_dest = alt;
+                    saved_symlink = get_symlink_target(alt);
+                }
+            }
+
             ctx["visited"] = (<>);
             ctx["lock_entries"] = ({});
             ctx["force"] = 1;
-            install_one(mod_name, src, ctx["local_dir"], ctx);
+            mixed single_err = catch {
+                install_one(mod_name, src, ctx["local_dir"], ctx);
+            };
+            if (single_err) {
+                // Restore symlink removed by force-install on download failure
+                if (saved_symlink) {
+                    if (!Stdio.exist(saved_dest)) {
+                        symlink(saved_symlink, saved_dest);
+                    }
+                }
+                throw(single_err);
+            }
             m_delete(ctx, "force");
 
             // Merge: dedup by name — new entries replace existing
@@ -728,6 +754,7 @@ void cmd_rollback(mapping ctx) {
         die("previous lockfile is empty");
 
     project_lock(find_project_root());
+    store_lock(ctx["store_dir"]);
     mixed err = catch {
         string target = ctx["local_dir"];
         Stdio.mkdirhier(target);
@@ -831,6 +858,7 @@ void cmd_rollback(mapping ctx) {
 
         info("rollback complete — restored " + sizeof(restored_entries) + " modules");
     };
+    store_unlock(ctx["store_dir"]);
     project_unlock(find_project_root());
     if (err) throw(err);
 }

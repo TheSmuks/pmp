@@ -12,7 +12,7 @@ string _normalize_source(string src) {
 
     // Strip credentials user@host
     int at_pos = search(src, "@");
-    if (at_pos > 0) {
+    if (at_pos >= 0) {
         int first_slash = search(src, "/");
         if (first_slash < 0 || at_pos < first_slash) {
             src = src[at_pos + 1..];
@@ -85,6 +85,8 @@ string source_to_version(string src) {
             die("invalid version tag: " + ver);
         if (search(ver, "\\") >= 0)
             die("invalid version tag: contains backslash: " + ver);
+        if (search(ver, "\n") >= 0)
+            die("invalid version tag: contains newline");
         if (search(ver, ";") >= 0)
             die("invalid version tag: contains ';': " + ver);
         return ver;
@@ -126,5 +128,8 @@ void validate_version_tag(string tag) {
     if (search(tag, ";") >= 0)
         die("invalid version tag: contains ';': " + tag);
     if (search(tag, "\0") >= 0)
+    if (search(tag, "\0") >= 0)
         die("invalid version tag: contains null byte: " + tag);
+    if (search(tag, "\n") >= 0)
+        die("invalid version tag: contains newline");
 }

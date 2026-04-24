@@ -47,7 +47,7 @@ void cmd_store(array(string) args, mapping ctx) {
                              string lname) {
                         string link = combine_path(ctx["local_dir"], lname);
                         string target = get_symlink_target(link);
-                        if (target && (has_suffix(target, "/" + ename) || target == ename)) {
+                        if (target && (has_prefix(target, entry + "/") || has_prefix(target, entry) || target == ename)) {
                             found = 1;
                             break;
                         }
@@ -56,7 +56,7 @@ void cmd_store(array(string) args, mapping ctx) {
                         foreach (get_dir(ctx["global_dir"]) || ({}); ; string lname) {
                             string link = combine_path(ctx["global_dir"], lname);
                             string target = get_symlink_target(link);
-                            if (target && (has_suffix(target, "/" + ename) || target == ename)) {
+                            if (target && (has_prefix(target, entry + "/") || has_prefix(target, entry) || target == ename)) {
                                 found = 1;
                                 break;
                             }

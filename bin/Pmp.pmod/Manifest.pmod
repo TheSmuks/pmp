@@ -61,7 +61,7 @@ array(array(string)) parse_deps(string file) {
 
     array(array(string)) result = ({});
     foreach (sort(indices(deps)); ; string name) {
-        string val = deps[name];
+        mixed val = deps[name];
         if (stringp(val) && sizeof(val) > 0)
             result += ({ ({ name, val }) });
     }

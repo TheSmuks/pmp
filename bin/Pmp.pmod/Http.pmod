@@ -289,7 +289,7 @@ object _do_get(string url, mapping request_headers,
             continue;
         }
         if (con->status == 429) {
-            // Rate limited — respect Retry-After header
+            // Secondary rate limit — respect Retry-After header
             string retry_after = con->headers["retry-after"];
             if (retry_after) {
                 int ra_secs = min((int)retry_after, 60);
@@ -304,11 +304,30 @@ object _do_get(string url, mapping request_headers,
             }
             continue;
         }
+        if (con->status == 403 && has_prefix(url, "https://api.github.com")
+            && con->headers["x-ratelimit-remaining"] == "0") {
+            // GitHub primary rate limit — 403 with x-ratelimit-remaining: 0.
+            // Exponential backoff + jitter already applied above.
+            // Check Retry-After if present, otherwise fall through to
+            // the existing backoff.
+            string retry_after = con->headers["retry-after"];
+            if (retry_after) {
+                int ra_secs = min((int)retry_after, 60);
+                if (ra_secs > 0) {
+                    float wait = (float)max(delay, (float)ra_secs);
+                    info(sprintf("rate limited by %s — waiting %.0fs (Retry-After)",
+                        _url_host(url), wait));
+                    sleep(wait);
+                    continue;
+                }
+            }
+            continue;
+        }
         if (con->status >= 500 && con->status < 600) {
             // Transient server error — retry
             continue;
         }
-        // Success or non-retryable error
+        // Non-retryable error
         return con;
     }
     // All retries exhausted

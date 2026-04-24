@@ -238,7 +238,7 @@ void cmd_install_all(string target, mapping ctx) {
         array(array(string)) deps = parse_deps(ctx["pike_json"]);
         array(array(string)) lf_entries = read_lockfile(ctx["lockfile_path"]);
         foreach (deps; ; array(string) dep) {
-            if (!lockfile_has_dep(dep[0], ctx["lockfile_path"], dep[1], lf_entries)) {
+            if (!lockfile_has_dep(dep[0], ctx["lockfile_path"], source_strip_version(dep[1]), lf_entries)) {
                 lockfile_complete = 0;
                 break;
             }

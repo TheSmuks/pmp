@@ -216,8 +216,8 @@ void cmd_remove(array(string) args, mapping ctx) {
             catch { atomic_symlink(target, path); };
         }
         // Then restore files
-        if (pike_json_raw) atomic_write(pike_json_path, pike_json_raw);
-        if (lockfile_raw) atomic_write(lockfile_path, lockfile_raw);
+        catch { if (pike_json_raw) atomic_write(pike_json_path, pike_json_raw); };
+        catch { if (lockfile_raw) atomic_write(lockfile_path, lockfile_raw); };
         werror("pmp: remove failed, rolled back to previous state\n");
         advisory_unlock(lock_path);
         die(describe_error(err));

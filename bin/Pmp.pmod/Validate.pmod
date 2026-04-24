@@ -197,10 +197,20 @@ void validate_manifests(string local_dir, multiset(string) std_libs,
                     }
                     // Scan raw content for string imports (import "foo";)
                     // since strip_comments_and_strings removes string contents
+                    int in_block_comment = 0;
                     foreach (content / "\n"; ; string raw_line) {
                         string trimmed_raw = String.trim_whites(raw_line);
-                        // Skip lines that are comments
+                        // Skip lines that are single-line comments
                         if (has_prefix(trimmed_raw, "//")) continue;
+                        // Track block comment state
+                        if (in_block_comment) {
+                            if (search(trimmed_raw, "*/") >= 0) in_block_comment = 0;
+                            continue;
+                        }
+                        if (search(trimmed_raw, "/*") >= 0 && search(trimmed_raw, "*/") < 0) {
+                            in_block_comment = 1;
+                            continue;
+                        }
                         array matches =
                             Regexp("import[ \t]+\"([^\"]+)\"")
                             ->split(trimmed_raw);

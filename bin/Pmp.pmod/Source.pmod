@@ -128,7 +128,6 @@ void validate_version_tag(string tag) {
     if (search(tag, ";") >= 0)
         die("invalid version tag: contains ';': " + tag);
     if (search(tag, "\0") >= 0)
-    if (search(tag, "\0") >= 0)
         die("invalid version tag: contains null byte: " + tag);
     if (search(tag, "\n") >= 0)
         die("invalid version tag: contains newline");

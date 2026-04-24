@@ -73,3 +73,30 @@ void test_github_auth_headers_without_token() {
     putenv("GITHUB_TOKEN", orig);
     assert_equal(0, result);
 }
+
+
+// ── _is_private_host IPv4-in-IPv6 (SSRF bypass) ─────────────────
+
+void test_private_host_ipv4_in_ipv6_loopback() {
+    assert_equal(1, _is_private_host("::127.0.0.1"));
+}
+
+void test_private_host_ipv4_in_ipv6_ten_network() {
+    assert_equal(1, _is_private_host("::10.0.0.1"));
+}
+
+void test_private_host_ipv4_in_ipv6_cgnat() {
+    assert_equal(1, _is_private_host("::192.168.1.1"));
+}
+
+void test_private_host_ipv4_in_ipv6_linklocal() {
+    assert_equal(1, _is_private_host("::169.254.169.254"));
+}
+
+void test_private_host_ipv4_in_ipv6_expanded_loopback() {
+    assert_equal(1, _is_private_host("0:0:0:0:0:0:127.0.0.1"));
+}
+
+void test_private_host_ipv4_in_ipv6_expanded_ten() {
+    assert_equal(1, _is_private_host("0:0:0:0:0:0:10.0.0.1"));
+}

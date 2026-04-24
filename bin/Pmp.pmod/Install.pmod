@@ -694,8 +694,6 @@ void cmd_update(array(string) args, mapping ctx) {
             ctx["lock_entries"] = merge_lock_entries(existing, ctx["lock_entries"]);
             write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
 
-            store_unlock(ctx["store_dir"]);
-            project_unlock(find_project_root());
         } else {
             if (!Stdio.exist(ctx["pike_json"]))
                 die("no pike.json found");

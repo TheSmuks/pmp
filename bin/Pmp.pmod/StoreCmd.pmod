@@ -8,6 +8,7 @@ int dir_size(string path) {
     int total = 0;
     foreach (get_dir(path) || ({}); ; string name) {
         string full = combine_path(path, name);
+        if (Stdio.is_link(full)) continue;
         Stdio.Stat st = file_stat(full);
         if (!st) continue;
         if (st->isdir) total += dir_size(full);
@@ -47,7 +48,7 @@ void cmd_store(array(string) args, mapping ctx) {
                              string lname) {
                         string link = combine_path(ctx["local_dir"], lname);
                         string target = get_symlink_target(link);
-                        if (target && (has_prefix(target, entry + "/") || has_prefix(target, entry) || target == ename)) {
+                        if (target && (has_prefix(target, entry + "/") || target == entry)) {
                             found = 1;
                             break;
                         }
@@ -56,7 +57,7 @@ void cmd_store(array(string) args, mapping ctx) {
                         foreach (get_dir(ctx["global_dir"]) || ({}); ; string lname) {
                             string link = combine_path(ctx["global_dir"], lname);
                             string target = get_symlink_target(link);
-                            if (target && (has_prefix(target, entry + "/") || has_prefix(target, entry) || target == ename)) {
+                        if (target && (has_prefix(target, entry + "/") || target == entry)) {
                                 found = 1;
                                 break;
                             }

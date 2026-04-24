@@ -10,32 +10,32 @@
 inherit .Helpers;
 
 //! Extract the host (domain) from a URL string.
+//! Uses Standards.URI for RFC 3986 compliant parsing.
 string _url_host(string url) {
-    // Handle scheme://host/path
+    mixed err = catch {
+        object u = Standards.URI(url);
+        if (u->host && sizeof(u->host))
+            return lower_case(u->host);
+    };
+    // Fallback for malformed URLs — extract host manually
     string rest = url;
     int scheme_end = search(rest, "://");
     if (scheme_end >= 0)
         rest = rest[scheme_end + 3..];
-    // Strip credentials user:pass@host
+    // Strip credentials
     int at_pos = search(rest, "@");
     int slash_pos = search(rest, "/");
     if (at_pos >= 0 && (slash_pos < 0 || at_pos < slash_pos))
         rest = rest[at_pos + 1..];
-    // Strip path (recompute slash_pos after possible credential stripping)
     slash_pos = search(rest, "/");
     if (slash_pos >= 0)
         rest = rest[..slash_pos - 1];
-    // Handle bracketed IPv6: [::1] or [::ffff:10.0.0.1]
+    // Handle bracketed IPv6
     if (sizeof(rest) > 0 && rest[0] == '[') {
         int close_bracket = search(rest, "]");
-        if (close_bracket >= 0) {
-            rest = rest[1..close_bracket - 1];
-            return lower_case(rest);
-        }
-        // Malformed bracket — return as-is so IPv6 checks in _is_private_host can match
-        return lower_case(rest);
+        if (close_bracket >= 0)
+            return lower_case(rest[1..close_bracket - 1]);
     }
-    // Strip port
     int colon_pos = search(rest, ":");
     if (colon_pos >= 0)
         rest = rest[..colon_pos - 1];

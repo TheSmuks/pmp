@@ -5,6 +5,10 @@
 //! -prerelease suffix) are sorted correctly. Non-semver tags are treated
 //! as version 0.0.0 and sort last.
 
+// Pre-compiled regexps for identifier validation (used in parse_semver + compare_prerelease)
+protected Regexp RE_IDENT = Regexp("^[0-9A-Za-z-]+$");
+protected Regexp RE_NUMERIC = Regexp("^[0-9]+$");
+
 //! Parse a version string into a mapping.
 //! Handles: "1.2.3", "v1.2.3", "1.2.3-alpha", "1.2.3-alpha.1", "1.2.3-alpha.1+build"
 //! Returns 0 if not parseable as semver.
@@ -27,7 +31,7 @@ mapping parse_semver(string tag) {
         if (sizeof(build_meta) == 0) return 0;
         foreach (build_meta / "."; ; string id) {
             if (sizeof(id) == 0) return 0;
-            if (String.width(id) > 8 || !Regexp("^[0-9A-Za-z-]+$")->match(id))
+            if (String.width(id) > 8 || !RE_IDENT->match(id))
                 return 0;
         }
     }
@@ -43,9 +47,9 @@ mapping parse_semver(string tag) {
         // Validate prerelease identifiers: non-empty, [0-9A-Za-z-]+, no leading zeros in numeric
         foreach (pre / "."; ; string id) {
             if (sizeof(id) == 0) return 0;
-            if (String.width(id) > 8 || !Regexp("^[0-9A-Za-z-]+$")->match(id))
+            if (String.width(id) > 8 || !RE_IDENT->match(id))
                 return 0;
-            int all_digits = Regexp("^[0-9]+$")->match(id);
+            int all_digits = RE_NUMERIC->match(id);
             // Numeric identifiers must not have leading zeros
             if (all_digits && sizeof(id) > 1 && id[0] == '0') return 0;
         }
@@ -59,7 +63,7 @@ mapping parse_semver(string tag) {
     foreach (parts; ; string p) {
         if (sizeof(p) == 0) return 0;
         int dig = 1;
-        if (String.width(p) > 8 || !Regexp("^[0-9]+$")->match(p))
+        if (String.width(p) > 8 || !RE_NUMERIC->match(p))
             dig = 0;
         if (!dig) return 0;
     }
@@ -98,8 +102,8 @@ int compare_prerelease(string a, string b) {
 
     int len = min(sizeof(pa), sizeof(pb));
     for (int i = 0; i < len; i++) {
-        int a_num = sizeof(pa[i]) > 0 && Regexp("^[0-9]+$")->match(pa[i]);
-        int b_num = sizeof(pb[i]) > 0 && Regexp("^[0-9]+$")->match(pb[i]);
+        int a_num = sizeof(pa[i]) > 0 && RE_NUMERIC->match(pa[i]);
+        int b_num = sizeof(pb[i]) > 0 && RE_NUMERIC->match(pb[i]);
 
         if (a_num && b_num) {
             // Both numeric — compare as integers

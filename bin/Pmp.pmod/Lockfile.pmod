@@ -76,12 +76,7 @@ array(array(string)) read_lockfile(void|string lf) {
     // Check lockfile format version
     int found_version = 0;
     foreach (lines; ; string line) {
-        if (has_prefix(line, "# pmp lockfile v")) {
-            // Extract version number after 'v'
-            string v_str = line[16..];
-            int semi = search(v_str, " ");
-            if (semi >= 0) v_str = v_str[..semi - 1];
-            int v = (int)v_str;
+        if (sscanf(line, "# pmp lockfile v%d", int v) == 1) {
             if (v > LOCKFILE_VERSION)
                 die("lockfile format v" + v + " is newer than supported (v"
                     + LOCKFILE_VERSION + ") — update pmp");

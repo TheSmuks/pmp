@@ -216,7 +216,7 @@ string compute_sha256(string path) {
 //! Converts / to -, collapses repeated dashes, trims leading/trailing dashes.
 string normalize_slug(string s) {
     string slug = replace(s, "/", "-");
-    while (has_value(slug, "--")) slug = replace(slug, "--", "-");
+    slug = Regexp("-+")->replace(slug, "-");
     while (has_prefix(slug, "-")) slug = slug[1..];
     while (has_suffix(slug, "-")) slug = slug[..<1];
     return slug;
@@ -226,7 +226,7 @@ string normalize_slug(string s) {
 //! Converts / to - and collapses repeated dashes.
 string normalize_tag(string tag) {
     string safe = replace(tag, "/", "-");
-    while (has_value(safe, "--")) safe = replace(safe, "--", "-");
+    safe = Regexp("-+")->replace(safe, "-");
     return safe;
 }
 

@@ -152,8 +152,7 @@ void cmd_remove(array(string) args, mapping ctx) {
         found = 1;
     if (lockfile_raw) {
         array(array(string)) entries = read_lockfile(lockfile_path);
-        foreach (entries; ; array(string) e)
-            if (e[0] == name) { found = 1; break; }
+        if (has_value(column(entries, 0), name)) found = 1;
     }
     if (!found)
         die("nothing to remove: " + name + " not found");
@@ -197,12 +196,8 @@ void cmd_remove(array(string) args, mapping ctx) {
         // 3. Update lockfile (only if dep was actually present)
         if (lockfile_raw) {
             array(array(string)) entries = read_lockfile(lockfile_path);
-            array(array(string)) new_entries = ({});
-            int had_entry = 0;
-            foreach (entries; ; array(string) e)
-                if (e[0] != name) new_entries += ({ e });
-                else had_entry = 1;
-            if (had_entry) {
+            array(array(string)) new_entries = filter(entries, lambda(array(string) e) { return e[0] != name; });
+            if (has_value(column(entries, 0), name)) {
                 ctx["lock_entries"] = new_entries;
                 write_lockfile(lockfile_path, ctx["lock_entries"]);
             }

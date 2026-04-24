@@ -211,9 +211,9 @@ void _main(array(string) argv) {
     if (opts->verbose) { set_verbose(1); set_quiet(0); }
     if (opts->quiet)   { set_quiet(1); set_verbose(0); }
 
-    if (opts->help) { print_help(); return; }
-    if (opts->version) { cmd_version(); return; }
-    if (sizeof(rest) == 0) { print_help(); return; }
+    if (opts->help) { print_help(); return 0; }
+    if (opts->version) { cmd_version(); return 0; }
+    if (sizeof(rest) == 0) { print_help(); return 0; }
 
     string cmd = rest[0];
     array(string) args = rest[1..];

@@ -77,13 +77,44 @@ int _is_private_host(string host) {
     // Literal loopback / wildcard
     if (h == "localhost" || has_prefix(h, "127.") || h == "0.0.0.0")
         return 1;
-    // IPv6 unspecified address
-    if (h == "::")
-        return 1;
-
-    // IPv6 loopback
-    if (h == "::1")
-        return 1;
+    // IPv6 unspecified and loopback (all forms including non-compressed)
+    if (has_value(h, ":")) {
+        // Expand :: to zero-groups for consistent matching
+        string expanded = h;
+        int dbl_colon = search(h, "::");
+        if (dbl_colon >= 0) {
+            string prefix = dbl_colon > 0 ? h[..dbl_colon - 1] : "";
+            string suffix = h[dbl_colon + 2..];
+            // Count existing groups (non-empty segments)
+            int existing = 0;
+            if (sizeof(prefix) > 0) existing += sizeof(prefix / ":");
+            if (sizeof(suffix) > 0) existing += sizeof(suffix / ":");
+            int fill = 8 - existing;
+            if (fill > 0) {
+                expanded = prefix;
+                for (int i = 0; i < fill; i++) {
+                    if (sizeof(expanded) > 0) expanded += ":";
+                    expanded += "0";
+                }
+                if (sizeof(suffix) > 0) expanded += ":" + suffix;
+            }
+        }
+        array(string) groups = expanded / ":";
+        // Check loopback: all groups zero except last which is 1
+        if (sizeof(groups) == 8) {
+            int is_loopback = 1;
+            for (int i = 0; i < 7; i++) {
+                if (sizeof(groups[i]) > 0) { int v; sscanf(groups[i], "%x", v); if (v != 0) { is_loopback = 0; break; } }
+            }
+            if (is_loopback && sizeof(groups[7]) > 0) { int last; sscanf(groups[7], "%x", last); if (last == 1) return 1; }
+            // Check unspecified: all groups zero
+            int is_unspecified = 1;
+            for (int i = 0; i < 8; i++) {
+                if (sizeof(groups[i]) > 0) { int v; sscanf(groups[i], "%x", v); if (v != 0) { is_unspecified = 0; break; } }
+            }
+            if (is_unspecified) return 1;
+        }
+    }
     // IPv4-mapped IPv6 in non-compressed form
     // Handles: 0:0:0:0:0:ffff:XXXX:YYYY (8-group hex)
     //          0:0:0:0:0:ffff:A.B.C.D  (7-group mixed)
@@ -99,9 +130,7 @@ int _is_private_host(string host) {
             // Verify all groups before ffff are zero or empty (:: expansion)
             int all_zero = 1;
             for (int i = 0; i < ffff_idx; i++) {
-                if (sizeof(groups[i]) > 0 && (int)("0x" + groups[i]) != 0) {
-                    all_zero = 0; break;
-                }
+                if (sizeof(groups[i]) > 0) { int v; sscanf(groups[i], "%x", v); if (v != 0) { all_zero = 0; break; } }
             }
             if (all_zero) {
                 // Extract everything after ffff
@@ -111,8 +140,8 @@ int _is_private_host(string host) {
                     return _is_private_host(after[0]);
                 } else if (sizeof(after) == 2) {
                     // Hex: ffff:7f00:1 → 127.0.0.1
-                    int hi = (int)("0x" + after[0]);
-                    int lo = (int)("0x" + after[1]);
+                    int hi; sscanf(after[0], "%x", hi);
+                    int lo; sscanf(after[1], "%x", lo);
                     if (hi >= 0 && lo >= 0) {
                         int a = (hi >> 8) & 0xff;
                         int b = hi & 0xff;
@@ -136,8 +165,8 @@ int _is_private_host(string host) {
             // Hex format: ::ffff:7f00:1 → 127.0.0.1
             array(string) hex_parts = mapped / ":";
             if (sizeof(hex_parts) == 2) {
-                int hi = (int)("0x" + hex_parts[0]);
-                int lo = (int)("0x" + hex_parts[1]);
+                int hi; sscanf(hex_parts[0], "%x", hi);
+                int lo; sscanf(hex_parts[1], "%x", lo);
                 if (hi >= 0 && lo >= 0) {
                     int a = (hi >> 8) & 0xff;
                     int b = hi & 0xff;

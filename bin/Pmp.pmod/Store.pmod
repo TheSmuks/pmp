@@ -9,16 +9,14 @@ void store_lock(string store_dir) {
     Stdio.mkdirhier(store_dir);
     string lock_path = combine_path(store_dir, ".lock");
     advisory_lock(lock_path, "store");
-    _store_locked = 1;
-    _store_dir_for_lock = store_dir;
+    set_store_lock_state(1, store_dir);
 }
 
 //! Release the store lock.
 void store_unlock(string store_dir) {
     string lock_path = combine_path(store_dir, ".lock");
     advisory_unlock(lock_path);
-    _store_locked = 0;
-    _store_dir_for_lock = "";
+    set_store_lock_state(0, "");
 }
 
 //! Generate store entry name from source, tag, and SHA.

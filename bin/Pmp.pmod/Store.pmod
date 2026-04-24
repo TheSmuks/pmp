@@ -91,6 +91,15 @@ string extract_targz(string tarball_path, string dest_dir) {
     return entries[0];
 }
 
+//! Escape glob metacharacters in a string for literal matching.
+private string _glob_escape(string s) {
+    s = replace(s, "[", "[[]");
+    s = replace(s, "]", "[]]");
+    s = replace(s, "*", "[*]");
+    s = replace(s, "?", "[?]");
+    return s;
+}
+
 //! Find a store entry matching source, tag, and optionally content hash.
 //! Returns the entry directory name, or "" if not found.
 string _find_store_entry(string store_dir, string source, string tag, string content_hash) {
@@ -100,7 +109,7 @@ string _find_store_entry(string store_dir, string source, string tag, string con
     while (has_suffix(slug, "-")) slug = slug[..<1];
     string safe_tag = replace(tag, "/", "-");
     while (has_value(safe_tag, "--")) safe_tag = replace(safe_tag, "--", "-");
-    string pattern = slug + "-" + safe_tag + "-*";
+    string pattern = _glob_escape(slug) + "-" + _glob_escape(safe_tag) + "-*";
     array(string) candidates = ({});
 
     if (Stdio.is_dir(store_dir)) {

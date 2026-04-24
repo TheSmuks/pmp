@@ -89,11 +89,12 @@ void advisory_unlock(string lock_path) {
 
 void die(string msg, void|int code) {
     werror("pmp: %s\n", msg);
+    run_cleanup();
     exit(code || EXIT_ERROR);
 }
 
 void info(string msg) {
-    if (!PMP_QUIET)
+    if (!_quiet())
         write("pmp: %s\n", msg);
 }
 
@@ -103,12 +104,13 @@ void warn(string msg) {
 
 //! Debug message — only printed when PMP_VERBOSE is set.
 void debug(string msg) {
-    if (PMP_VERBOSE)
+    if (_verbose())
         write("pmp: debug: %s\n", msg);
 }
 
 void die_internal(string msg) {
     werror("pmp: internal error: %s\n", msg);
+    run_cleanup();
     exit(EXIT_INTERNAL);
 }
 

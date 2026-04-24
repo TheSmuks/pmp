@@ -31,6 +31,8 @@ int cmd_verify(mapping ctx) {
             if (sizeof(link_target) > 0 && link_target[0] != '/') {
                 link_target = combine_path(combine_path(full, ".."), link_target);
                 mixed rp_err = catch { link_target = System.resolvepath(link_target) || link_target; };
+            } else if (sizeof(link_target) > 0) {
+                mixed rp_err = catch { link_target = System.resolvepath(link_target) || link_target; };
             }
             if (!Stdio.exist(link_target)) {
                 warn("broken symlink: " + name + " -> " + link_target);
@@ -192,7 +194,8 @@ int cmd_doctor(mapping ctx) {
     string pike_bin = ctx["pike_bin"];
     if (Stdio.exist(pike_bin)) {
         mapping r = Process.run(({pike_bin, "--version"}));
-        string ver = (r->stderr || r->stdout || "");
+        string ver = r->stderr;
+        if (!ver || sizeof(ver) == 0) ver = r->stdout;
         // First line has the version
         ver = (ver / "\n")[0];
         write(sprintf("  pike:        %s\n", ver));

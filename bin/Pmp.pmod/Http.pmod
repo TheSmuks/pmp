@@ -114,6 +114,14 @@ int _is_private_host(string host) {
             }
             if (is_unspecified) return 1;
         }
+        // Check for IPv4-compatible/IPv4-mapped embedded addresses
+        // When any group contains dots, it's dotted-decimal notation
+        foreach (groups; ; string g) {
+            if (has_value(g, ".")) {
+                // Dotted-decimal embedded in IPv6 — check the IPv4 address
+                return _is_private_host(g);
+            }
+        }
     }
     // IPv4-mapped IPv6 in non-compressed form
     // Handles: 0:0:0:0:0:ffff:XXXX:YYYY (8-group hex)

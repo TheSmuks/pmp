@@ -105,8 +105,6 @@ void cmd_store(array(string) args, mapping ctx) {
                 string entry = combine_path(ctx["store_dir"], ename);
                 if (!Stdio.is_dir(entry)) continue;
 
-                string tag = read_meta_field(entry, "tag") || "";
-
                 int esize_bytes = dir_size(entry);
                 total_size += esize_bytes;
                 string esize = human_size(esize_bytes);

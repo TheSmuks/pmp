@@ -285,8 +285,7 @@ void cmd_install_all(string target, mapping ctx) {
                        lhash = entry[4];
                 if (sizeof(ln) == 0) continue;
 
-                if (ls == "-" || has_prefix(ls, "./")
-                    || has_prefix(ls, "/")) {
+                if (is_local_source(ls)) {
                     // Local dep — just symlink
                     if (sizeof(ls) > 0 && ls != "-") {
                         string local_path = ls;

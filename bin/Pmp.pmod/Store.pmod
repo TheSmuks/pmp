@@ -115,8 +115,7 @@ string _find_store_entry(string store_dir, string source, string tag, string con
             if (stored && stored == content_hash)
                 return se;
         }
-        if (sizeof(candidates) > 0)
-            warn("no store entry for " + tag + " matches lockfile hash");
+        warn("no store entry for " + tag + " matches lockfile hash");
         return "";
     }
 

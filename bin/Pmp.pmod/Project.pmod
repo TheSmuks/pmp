@@ -129,15 +129,17 @@ void cmd_remove(array(string) args, mapping ctx) {
             die("cannot read " + lockfile_path);
     }
 
+    mixed pike_data = 0;
+    if (pike_json_raw) {
+        mixed jerr = catch { pike_data = Standards.JSON.decode(_strip_bom(pike_json_raw)); };
+        if (jerr || !mappingp(pike_data)) pike_data = 0;
+    }
+
     // Pre-check that name exists somewhere
     int found = 0;
-    if (pike_json_raw) {
-        mixed data;
-        mixed jerr = catch { data = Standards.JSON.decode(pike_json_raw); };
-        if (!jerr && mappingp(data) && mappingp(data->dependencies)
-            && !zero_type(data->dependencies[name]))
-            found = 1;
-    }
+    if (pike_data && mappingp(pike_data->dependencies)
+        && !zero_type(pike_data->dependencies[name]))
+        found = 1;
     string link = combine_path(ctx["local_dir"], name);
     string link_pmod = combine_path(ctx["local_dir"], name + ".pmod");
     if (Stdio.exist(link) || Stdio.exist(link_pmod))
@@ -163,16 +165,12 @@ void cmd_remove(array(string) args, mapping ctx) {
     // --- Execute phase with rollback on failure ---
     mixed err = catch {
         // 1. Update pike.json
-        if (pike_json_raw) {
-            mixed data;
-            mixed jerr = catch { data = Standards.JSON.decode(pike_json_raw); };
-            if (!jerr && mappingp(data) && mappingp(data->dependencies)
-                && !zero_type(data->dependencies[name])) {
-                m_delete(data->dependencies, name);
-                atomic_write(pike_json_path,
-                    Standards.JSON.encode(data, Standards.JSON.HUMAN_READABLE) + "\n");
-                info("removed " + name + " from pike.json");
-            }
+        if (pike_data && mappingp(pike_data->dependencies)
+            && !zero_type(pike_data->dependencies[name])) {
+            m_delete(pike_data->dependencies, name);
+            atomic_write(pike_json_path,
+                Standards.JSON.encode(pike_data, Standards.JSON.HUMAN_READABLE) + "\n");
+            info("removed " + name + " from pike.json");
         }
 
         // 2. Remove symlinks

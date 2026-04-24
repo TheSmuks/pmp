@@ -67,7 +67,7 @@ mapping parse_semver(string tag) {
     }
 
     int major, minor, patch;
-    if (sscanf(parts[0], "%d", major) != 1) return 0;
+    major = (int)parts[0];
     minor = (int)parts[1];
     patch = (int)parts[2];
 

@@ -78,11 +78,7 @@ void run_cleanup() {
     if (_get_store_locked() && sizeof(_get_store_dir_for_lock()) > 0) {
         string store_dir = _get_store_dir_for_lock();
         string lock_path = combine_path(store_dir, ".lock");
-        if (Stdio.exist(lock_path)) {
-            string existing = String.trim_all_whites(Stdio.read_file(lock_path) || "");
-            if (existing == (string)getpid())
-                rm(lock_path);
-        }
+        advisory_unlock(lock_path);
         set_store_lock_state(0, "");
     }
 
@@ -224,8 +220,7 @@ string compute_sha256(string path) {
 //! Normalize a source string into a slug for use in store entry names.
 //! Converts / to -, collapses repeated dashes, trims leading/trailing dashes.
 string normalize_slug(string s) {
-    string slug = replace(s, "/", "-");
-    slug = RE_DASHES->replace(slug, "-");
+    string slug = normalize_tag(s);
     while (has_prefix(slug, "-")) slug = slug[1..];
     while (has_suffix(slug, "-")) slug = slug[..<1];
     return slug;
@@ -294,9 +289,13 @@ mapping(string:string) snapshot_symlinks(string dir) {
     return snaps;
 }
 
+//! Generate a unique temp file suffix using pid, timestamp, and random bytes.
+private string _temp_suffix() {
+    return ".tmp." + getpid() + "." + time() + "."
+        + String.string2hex(Crypto.Random.random_string(8));
+}
+
 //! Atomically create or replace a symlink at dest pointing to target.
-//! Uses temp symlink + rename(2) so there is no window where dest is missing.
-//! rename(2) on POSIX atomically replaces the target path.
 void atomic_symlink(string target, string dest) {
     // If dest is a directory (not a symlink), remove it before installing.
     // This handles upgrades from bare directories to proper symlinks.
@@ -305,8 +304,7 @@ void atomic_symlink(string target, string dest) {
         Stdio.recursive_rm(dest);
     }
     // Use Crypto.Random for strong uniqueness: pid + timestamp + 64-bit random
-    string tmp_link = dest + ".tmp." + getpid() + "." + time() + "."
-        + String.string2hex(Crypto.Random.random_string(8));
+    string tmp_link = dest + _temp_suffix();
     // Clean up any leftover temp link from a previous crash
     rm(tmp_link);
     mixed link_err = catch { symlink(target, tmp_link); };
@@ -322,8 +320,7 @@ void atomic_symlink(string target, string dest) {
 //! Uses write-to-temp + rename(2) to prevent truncation on crash.
 //! Dies on failure (EXIT_INTERNAL).
 void atomic_write(string path, string content) {
-    string tmp_path = path + ".tmp." + getpid() + "." + time() + "."
-        + String.string2hex(Crypto.Random.random_string(8));
+    string tmp_path = path + _temp_suffix();
     int bytes = Stdio.write_file(tmp_path, content);
     if (bytes != sizeof(content)) {
         rm(tmp_path);

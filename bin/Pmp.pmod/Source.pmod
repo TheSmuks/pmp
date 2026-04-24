@@ -10,6 +10,19 @@ string _normalize_source(string src) {
     else if (has_prefix(src, "git://")) { src = src[6..]; had_scheme = 1; }
     else if (has_prefix(src, "ssh://")) { src = src[6..]; had_scheme = 1; }
 
+    // Strip SSH port number (ssh://host:port/path -> host/path)
+    if (had_scheme && search(src, ":") >= 0 && !has_prefix(src, "[")) {
+        int first_slash = search(src, "/");
+        int first_colon = search(src, ":");
+        // Only strip if colon appears before first slash (port in authority)
+        if (first_colon >= 0 && (first_slash < 0 || first_colon < first_slash)) {
+            string after_port = src[first_colon + 1..];
+            string after_slash = search(after_port, "/") >= 0
+                ? after_port[search(after_port, "/")..] : "";
+            src = src[..first_colon - 1] + after_slash;
+        }
+    }
+
     // Strip credentials user@host
     int at_pos = search(src, "@");
     if (at_pos >= 0) {

@@ -198,6 +198,14 @@ void install_one(string name, string source, string target,
                 warn("package has invalid name '" + resolved_name + "' in pike.json — using dependency key");
                 resolved_name = name;
             }
+            // If resolved name differs from dependency key, clean up any
+            // orphaned symlink under the dependency key from a previous install
+            if (resolved_name != name) {
+                string old_link = combine_path(target, name);
+                string old_link_pmod = combine_path(target, name + ".pmod");
+                if (Stdio.exist(old_link)) rm(old_link);
+                if (Stdio.exist(old_link_pmod)) rm(old_link_pmod);
+            }
             mapping rmp = resolve_module_path(resolved_name, entry_full);
             dest = combine_path(target, rmp->link_name);
             atomic_symlink(rmp->target, dest);
@@ -857,16 +865,7 @@ void cmd_rollback(mapping ctx) {
 
         }
 
-        // Use atomic_write directly — write_lockfile would back up the current
-        // lockfile to .prev, destroying the .prev data we just rolled back from.
-        String.Buffer buf = String.Buffer();
-        buf->add("# pmp lockfile v1 — DO NOT EDIT\n");
-        buf->add("# name\tsource\ttag\tcommit_sha\tcontent_sha256\n");
-        foreach (restored_entries; ; array(string) entry)
-            buf->add(entry[0] + "\t" + entry[1] + "\t" + entry[2]
-                     + "\t" + entry[3] + "\t" + entry[4] + "\n");
-        atomic_write(ctx["lockfile_path"], buf->get());
-
+        write_lockfile(ctx["lockfile_path"], restored_entries);
 
         info("rollback complete — restored " + sizeof(restored_entries) + " modules");
     };

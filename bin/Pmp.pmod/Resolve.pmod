@@ -44,15 +44,10 @@ array(string) latest_tag_github(string repo_path, void|string version) {
 
     string tag = tag_names[0];
 
-    // Find the entry for this tag to get its SHA
+    mapping(string:mapping) by_name = mkmapping(column(all_entries, "name"), all_entries);
     string sha = "";
-    foreach (all_entries; ; mapping entry) {
-        if (entry->name == tag) {
-            if (mappingp(entry->commit))
-                sha = entry->commit->sha || "";
-            break;
-        }
-    }
+    if (by_name[tag] && mappingp(by_name[tag]->commit))
+        sha = by_name[tag]->commit->sha || "";
 
     if (sha == "") {
         // Fallback: fetch commit SHA from the ref endpoint
@@ -106,15 +101,10 @@ array(string) latest_tag_gitlab(string repo_path, void|string version) {
 
     string tag = tag_names[0];
 
-    // Find the entry for this tag to get its SHA
+    mapping(string:mapping) by_name = mkmapping(column(all_entries, "name"), all_entries);
     string sha = "";
-    foreach (all_entries; ; mapping entry) {
-        if (entry->name == tag) {
-            if (mappingp(entry->commit))
-                sha = entry->commit->id || "";
-            break;
-        }
-    }
+    if (by_name[tag] && mappingp(by_name[tag]->commit))
+        sha = by_name[tag]->commit->id || "";
 
     return ({ tag, sha || "" });
 }
@@ -202,14 +192,10 @@ array(string) latest_tag_github_safe(string repo_path, void|string version) {
 
     string tag = tag_names[0];
 
+    mapping(string:mapping) by_name = mkmapping(column(all_entries, "name"), all_entries);
     string sha = "";
-    foreach (all_entries; ; mapping entry) {
-        if (entry->name == tag) {
-            if (mappingp(entry->commit))
-                sha = entry->commit->sha || "";
-            break;
-        }
-    }
+    if (by_name[tag] && mappingp(by_name[tag]->commit))
+        sha = by_name[tag]->commit->sha || "";
 
     if (sha == "") {
         array(int|string) sha_result = http_get_safe(
@@ -257,14 +243,10 @@ array(string) latest_tag_gitlab_safe(string repo_path, void|string version) {
 
     string tag = tag_names[0];
 
+    mapping(string:mapping) by_name = mkmapping(column(all_entries, "name"), all_entries);
     string sha = "";
-    foreach (all_entries; ; mapping entry) {
-        if (entry->name == tag) {
-            if (mappingp(entry->commit))
-                sha = entry->commit->id || "";
-            break;
-        }
-    }
+    if (by_name[tag] && mappingp(by_name[tag]->commit))
+        sha = by_name[tag]->commit->id || "";
 
     return ({ tag, sha || "" });
 }

@@ -1,5 +1,12 @@
 inherit .Helpers;
 inherit .Manifest;
+// Pre-compiled regexps for import/inherit/include scanning
+protected Regexp RE_IMPORT = Regexp("import[ \t]+([.A-Za-z_][A-Za-z0-9_.]*)");
+protected Regexp RE_INHERIT = Regexp("inherit[ \t]+([.A-Za-z_][A-Za-z0-9_.]*)");
+protected Regexp RE_INCLUDE_PMOD = Regexp("#include[ \t]*<([.A-Za-z_][A-Za-z0-9_.]*).pmod/");
+protected Regexp RE_IF_CONSTANT = Regexp("#if[ \t]+constant[ \t]*[(][ \t]*([A-Za-z_][A-Za-z0-9_]*)[)]");
+protected Regexp RE_IMPORT_STRING = Regexp("import[ \t]+\"([^\"]+)\"");
+
 
 string strip_comments_and_strings(string content) {
     String.Buffer buf = String.Buffer();
@@ -153,7 +160,7 @@ void validate_manifests(string local_dir, multiset(string) std_libs,
                         // import Foo; or import Foo.Bar; or import .Foo;
                         // We extract the first component (the dependency name)
                         array matches =
-                            Regexp("import[ \t]+([.A-Za-z_][A-Za-z0-9_.]*)")
+                            RE_IMPORT
                             ->split(trimmed);
                         if (matches && sizeof(matches) > 0) {
                             // Skip relative imports (leading dot)
@@ -166,7 +173,7 @@ void validate_manifests(string local_dir, multiset(string) std_libs,
                         // inherit Foo; or inherit Foo.Bar;
                         // We extract the first component
                         matches =
-                            Regexp("inherit[ \t]+([.A-Za-z_][A-Za-z0-9_.]*)")
+                            RE_INHERIT
                             ->split(trimmed);
                         if (matches && sizeof(matches) > 0) {
                             // Skip relative inherits (leading dot)
@@ -178,7 +185,7 @@ void validate_manifests(string local_dir, multiset(string) std_libs,
                         }
                         // #include <Foo.pmod/bar.h> or <Foo.Bar.pmod/baz.h>
                         matches =
-                            Regexp("#include[ \t]*<([.A-Za-z_][A-Za-z0-9_.]*).pmod/")
+                            RE_INCLUDE_PMOD
                             ->split(trimmed);
                         if (matches && sizeof(matches) > 0) {
                             string first = (matches[0] / ".")[0];
@@ -188,7 +195,7 @@ void validate_manifests(string local_dir, multiset(string) std_libs,
                         }
                         // #if constant(Foo) — conditional compilation references
                         matches =
-                            Regexp("#if[ \t]+constant[ \t]*[(][ \t]*([A-Za-z_][A-Za-z0-9_]*)[)]")
+                            RE_IF_CONSTANT
                             ->split(trimmed);
                         if (matches && sizeof(matches) > 0) {
                             imports[matches[0]] = 1;
@@ -221,7 +228,7 @@ void validate_manifests(string local_dir, multiset(string) std_libs,
                             continue;
                         }
                         array matches =
-                            Regexp("import[ \t]+\"([^\"]+)\"")
+                            RE_IMPORT_STRING
                             ->split(trimmed_raw);
                         if (matches && sizeof(matches) > 0) {
                             // Resolve the string path relative to the importing file

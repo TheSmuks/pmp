@@ -127,10 +127,8 @@ void cmd_store(array(string) args, mapping ctx) {
                     combine_path(entry, ".pmp-meta");
                 if (Stdio.exist(meta_file)) {
                     string meta = Stdio.read_file(meta_file);
-                    foreach (meta / "\n"; ; string line) {
-                        if (has_prefix(line, "tag\t"))
-                            tag = line[4..];
-                    }
+                    foreach (meta / "\n"; ; string line)
+                        sscanf(line, "tag\t%s", tag);
                 }
 
                 int esize_bytes = dir_size(entry);

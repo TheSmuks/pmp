@@ -1,4 +1,5 @@
 inherit .Helpers;
+protected Regexp RE_HEX = Regexp("^[a-f0-9]+$");
 inherit .Http;
 inherit .Resolve;
 
@@ -38,7 +39,7 @@ string store_entry_name(string src, string tag, string sha) {
         // SHA resolution failed — use hash of source+tag as fallback identifier
         sha = String.string2hex(Crypto.SHA256.hash(slug + "-" + safe_tag))[..15];
         debug("SHA unavailable, using content-derived identifier: " + sha);
-    } else if (!Regexp("^[a-f0-9]+$")->match(sha)) {
+    } else if (!RE_HEX->match(sha)) {
         die("invalid sha: expected hex, got: " + sha, EXIT_INTERNAL);
     }
 
@@ -160,8 +161,8 @@ string read_stored_hash(string entry_dir) {
     string raw = Stdio.read_file(meta_file);
     if (!raw) return 0;
     foreach (raw / "\n"; ; string line)
-        if (has_prefix(line, "content_sha256\t"))
-            return String.trim_all_whites(line[15..]);
+        if (sscanf(line, "content_sha256\t%s", string hash_val) == 1)
+            return String.trim_all_whites(hash_val);
     return 0;
 }
 

@@ -18,10 +18,11 @@ string _url_host(string url) {
         rest = rest[scheme_end + 3..];
     // Strip credentials user:pass@host
     int at_pos = search(rest, "@");
-    if (at_pos >= 0)
-        rest = rest[at_pos + 1..];
-    // Strip path
     int slash_pos = search(rest, "/");
+    if (at_pos >= 0 && (slash_pos < 0 || at_pos < slash_pos))
+        rest = rest[at_pos + 1..];
+    // Strip path (recompute slash_pos after possible credential stripping)
+    slash_pos = search(rest, "/");
     if (slash_pos >= 0)
         rest = rest[..slash_pos - 1];
     // Handle bracketed IPv6: [::1] or [::ffff:10.0.0.1]
@@ -75,7 +76,7 @@ int _is_private_host(string host) {
     string h = lower_case(host);
     h = _normalize_ip_host(h);
     // Literal loopback / wildcard
-    if (h == "localhost" || has_prefix(h, "127.") || h == "0.0.0.0")
+    if (h == "localhost" || has_prefix(h, "127.") || has_prefix(h, "0."))
         return 1;
     // IPv6 unspecified and loopback (all forms including non-compressed)
     if (has_value(h, ":")) {
@@ -203,6 +204,16 @@ int _is_private_host(string host) {
         if (dot > 0) {
             int second_octet = (int)rest[..dot - 1];
             if (second_octet >= 16 && second_octet <= 31)
+                return 1;
+        }
+    }
+    // 100.64.0.0/10 — Carrier-grade NAT (RFC 6598)
+    if (has_prefix(h, "100.")) {
+        string rest = h[4..];
+        int dot = search(rest, ".");
+        if (dot > 0) {
+            int second_octet = (int)rest[..dot - 1];
+            if (second_octet >= 64 && second_octet <= 127)
                 return 1;
         }
     }

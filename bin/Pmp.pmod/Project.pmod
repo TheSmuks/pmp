@@ -17,9 +17,7 @@ void cmd_init(mapping ctx) {
 
     string content = sprintf("{\n  \"name\": %s,\n  \"version\": \"0.1.0\",\n  \"dependencies\": {}\n}\n",
         Standards.JSON.encode(dir_name));
-    int bytes = Stdio.write_file(ctx["pike_json"], content);
-    if (bytes != sizeof(content))
-        die("failed to write pike.json (wrote " + bytes + " of " + sizeof(content) + " bytes)");
+    atomic_write(ctx["pike_json"], content);
     info("created pike.json");
 }
 

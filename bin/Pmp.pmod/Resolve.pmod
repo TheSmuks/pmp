@@ -26,11 +26,9 @@ array(string) latest_tag_github(string repo_path, void|string version) {
         if (err || !arrayp(data) || sizeof(data) == 0)
             break;  // No more pages or error
 
-        foreach (data; ; mapping entry)
-            if (entry->name) {
-                tag_names += ({ entry->name });
-                all_entries += ({ entry });
-            }
+        array(mapping) valid = filter(data, lambda(mapping e) { return !!e->name; });
+        tag_names += column(valid, "name");
+        all_entries += valid;
 
         if (sizeof(data) < 100)
             break;  // Last page
@@ -90,11 +88,9 @@ array(string) latest_tag_gitlab(string repo_path, void|string version) {
         if (err || !arrayp(data) || sizeof(data) == 0)
             break;
 
-        foreach (data; ; mapping entry)
-            if (entry->name) {
-                tag_names += ({ entry->name });
-                all_entries += ({ entry });
-            }
+        array(mapping) valid = filter(data, lambda(mapping e) { return !!e->name; });
+        tag_names += column(valid, "name");
+        all_entries += valid;
 
         if (sizeof(data) < 100)
             break;
@@ -192,11 +188,9 @@ array(string) latest_tag_github_safe(string repo_path, void|string version) {
         mixed err = catch { data = Standards.JSON.decode(result[1]); };
         if (err || !arrayp(data) || sizeof(data) == 0) break;
 
-        foreach (data; ; mapping entry)
-            if (entry->name) {
-                tag_names += ({ entry->name });
-                all_entries += ({ entry });
-            }
+        array(mapping) valid = filter(data, lambda(mapping e) { return !!e->name; });
+        tag_names += column(valid, "name");
+        all_entries += valid;
 
         if (sizeof(data) < 100) break;
         page++;
@@ -249,11 +243,9 @@ array(string) latest_tag_gitlab_safe(string repo_path, void|string version) {
         mixed err = catch { data = Standards.JSON.decode(result[1]); };
         if (err || !arrayp(data) || sizeof(data) == 0) break;
 
-        foreach (data; ; mapping entry)
-            if (entry->name) {
-                tag_names += ({ entry->name });
-                all_entries += ({ entry });
-            }
+        array(mapping) valid = filter(data, lambda(mapping e) { return !!e->name; });
+        tag_names += column(valid, "name");
+        all_entries += valid;
 
         if (sizeof(data) < 100) break;
         page++;

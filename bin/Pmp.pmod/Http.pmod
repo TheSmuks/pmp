@@ -65,27 +65,20 @@ protected int _parse_int(string s) {
     if (has_prefix(s, "0x") || has_prefix(s, "0X")) {
         if (sizeof(s) == 2) return -1;
         // Validate hex digits only
-        foreach (s[2..]; int i; int c) {
-            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
-                return -1;
-        }
+        if (!Regexp("^[0-9a-fA-F]+$")->match(s[2..])) return -1;
         int val;
         sscanf(s[2..], "%x", val);
         return val;
     }
     if (sizeof(s) > 1 && s[0] == '0') {
         // Validate octal digits only
-        foreach (s[1..]; int i; int c) {
-            if (!(c >= '0' && c <= '7')) return -1;
-        }
+        if (!Regexp("^[0-7]+$")->match(s[1..])) return -1;
         int val;
         sscanf(s[1..], "%o", val);
         return val;
     }
     // Decimal: validate digits only
-    foreach (s; int i; int c) {
-        if (!(c >= '0' && c <= '9')) return -1;
-    }
+    if (!Regexp("^[0-9]+$")->match(s)) return -1;
     return (int)s;
 }
 

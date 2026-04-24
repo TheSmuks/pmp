@@ -549,9 +549,6 @@ void cmd_install(array(string) args, mapping ctx) {
     rest -= ({"--offline"});
     string source = sizeof(rest) > 0 ? rest[0] : "";
 
-    // Flags for CI use
-    if (opts["frozen-lockfile"]) ctx["frozen_lockfile"] = 1;
-    if (opts->offline) ctx["offline"] = 1;
 
     string target;
     if (global_flag)
@@ -638,9 +635,7 @@ void cmd_install(array(string) args, mapping ctx) {
 void print_update_summary(array(array(string)) old_entries,
                            array(array(string)) new_entries) {
     // Build lookup from name -> entry
-    mapping(string:array(string)) old_map = ([]);
-    foreach (old_entries; ; array(string) e)
-        old_map[e[0]] = e;
+    mapping(string:array(string)) old_map = mkmapping(column(old_entries, 0), old_entries);
 
     int any_change = 0;
     String.Buffer buf = String.Buffer();
@@ -898,12 +893,10 @@ void cmd_changelog(array(string) args, mapping ctx) {
     array(array(string)) prev = read_lockfile(prev_path);
 
     // Find module in both lockfiles
-    array(string) cur_entry = 0;
-    array(string) prev_entry = 0;
-    foreach (current; ; array(string) e)
-        if (e[0] == mod_name) { cur_entry = e; break; }
-    foreach (prev; ; array(string) e)
-        if (e[0] == mod_name) { prev_entry = e; break; }
+    mapping(string:array(string)) cur_map = mkmapping(column(current, 0), current);
+    mapping(string:array(string)) prev_map = mkmapping(column(prev, 0), prev);
+    array(string) cur_entry = cur_map[mod_name];
+    array(string) prev_entry = prev_map[mod_name];
 
     if (!cur_entry)
         die("module " + mod_name + " not found in current lockfile");

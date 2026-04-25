@@ -35,7 +35,7 @@ void test_sha256_empty_file() {
 }
 
 void test_sha256_missing_file() {
-    assert_equal("unknown", compute_sha256("/nonexistent/file"));
+    assert_throws_fn(lambda() { compute_sha256("/nonexistent/file"); });
 }
 
 // ── json_field ───────────────────────────────────────────────────────

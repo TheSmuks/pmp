@@ -58,21 +58,13 @@ void test_parse_prerelease_and_build() {
 }
 
 void test_parse_two_part_version() {
-    // "1.2" — minor only, patch defaults to 0
-    mapping v = parse_semver("1.2");
-    assert_not_null(v);
-    assert_equal(1, v["major"]);
-    assert_equal(2, v["minor"]);
-    assert_equal(0, v["patch"]);
+    // "1.2" — partial version rejected per strict semver spec §2
+    assert_equal(0, parse_semver("1.2"));
 }
 
 void test_parse_single_part_version() {
-    // "7" — major only, minor and patch default to 0
-    mapping v = parse_semver("7");
-    assert_not_null(v);
-    assert_equal(7, v["major"]);
-    assert_equal(0, v["minor"]);
-    assert_equal(0, v["patch"]);
+    // "7" — partial version rejected per strict semver spec §2
+    assert_equal(0, parse_semver("7"));
 }
 
 void test_parse_empty_string() {
@@ -92,10 +84,8 @@ void test_parse_partial_letters() {
 }
 
 void test_parse_leading_zeros() {
-    // "01.2.3" — leading zeros still parse (digits-only check passes)
-    mapping v = parse_semver("01.2.3");
-    assert_not_null(v);
-    assert_equal(1, v["major"]);
+    // "01.2.3" — leading zeros rejected per semver spec §2
+    assert_equal(0, parse_semver("01.2.3"));
 }
 
 void test_parse_trailing_dot() {
@@ -232,6 +222,6 @@ void test_classify_unknown_both_unparseable() {
 }
 
 void test_classify_same_version() {
-    // Equal versions return "patch" per implementation
-    assert_equal("patch", classify_bump("v1.0.0", "v1.0.0"));
+    // Equal versions return "none"
+    assert_equal("none", classify_bump("v1.0.0", "v1.0.0"));
 }

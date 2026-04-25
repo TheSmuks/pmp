@@ -5,6 +5,7 @@ modules/
 *.pike.o
 pike.lock
 pike.lock.prev
+.tmp-manifest-*
 
 # Environment and secrets
 .env

@@ -32,7 +32,7 @@ curl -LsSf https://github.com/TheSmuks/pmp/install.sh | env PMP_VERSION=v0.3.0 s
 |---|---|---|
 | `PMP_INSTALL_DIR` | `~/.pmp` | Installation directory |
 | `PMP_VERSION` | latest | Pin to a specific git tag |
-| `PMP_NO_MODIFY_PATH` | unset | Set to `1` to skip shell rc modification |
+| `PMP_MODIFY_PATH` | unset | Set to `1` to enable shell rc PATH modification |
 
 Re-running the installer updates pmp in place (git pull).
 

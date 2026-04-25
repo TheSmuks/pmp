@@ -5,6 +5,23 @@ inherit .Config;
 inherit .Helpers;
 inherit .Manifest;
 
+//! Check if a directory tree contains any .h files.
+//! Uses Pike directory walk — no external find dependency.
+//! Depth limit prevents infinite recursion on symlink cycles.
+int _has_headers(string dir, void|int depth) {
+    if (!depth) depth = 0;
+    if (depth > 10) return 0;
+    array(string) entries = get_dir(dir) || ({});
+    foreach (entries; ; string name) {
+        string full = combine_path(dir, name);
+        if (has_suffix(name, ".h"))
+            return 1;
+        if (Stdio.is_dir(full) && _has_headers(full, depth + 1))
+            return 1;
+    }
+    return 0;
+}
+
 //! Build module + include paths from project root and global dir.
 //! Returns ({ mod_paths, inc_paths }).
 array(array(string)) build_paths(mapping ctx) {
@@ -15,22 +32,25 @@ array(array(string)) build_paths(mapping ctx) {
     string pr_modules = combine_path(project_root, "modules");
     if (Stdio.is_dir(pr_modules)) {
         mod_paths += ({ pr_modules });
-        mapping r = Process.run(
-            ({"find", pr_modules, "-name", "*.h", "-print", "-quit"}));
-        if (r->exitcode == 0 && sizeof(r->stdout) > 0)
+        if (_has_headers(pr_modules))
             inc_paths += ({ pr_modules });
     }
 
     if (Stdio.is_dir(ctx["global_dir"])) {
         mod_paths += ({ ctx["global_dir"] });
-        mapping r = Process.run(
-            ({"find", ctx["global_dir"], "-name", "*.h",
-              "-print", "-quit"}));
-        if (r->exitcode == 0 && sizeof(r->stdout) > 0)
+        if (_has_headers(ctx["global_dir"]))
             inc_paths += ({ ctx["global_dir"] });
     }
 
     return ({ mod_paths, inc_paths });
+}
+
+private void prepend_to_path_env(string env_var, array(string) paths) {
+    string existing = getenv(env_var) || "";
+    string new_path = sizeof(paths) > 0 ? paths * ":" : "";
+    if (sizeof(existing) > 0)
+        new_path = sizeof(new_path) > 0 ? new_path + ":" + existing : existing;
+    putenv(env_var, new_path);
 }
 
 void cmd_run(array(string) args, mapping ctx) {
@@ -46,33 +66,11 @@ void cmd_run(array(string) args, mapping ctx) {
     array(string) mod_paths = paths[0];
     array(string) inc_paths = paths[1];
 
-    array(string) env_vars = ({});
-    if (sizeof(mod_paths) > 0) {
-        string existing = getenv("PIKE_MODULE_PATH") || "";
-        string new_path = mod_paths * ":";
-        if (sizeof(existing) > 0) new_path += ":" + existing;
-        env_vars += ({"PIKE_MODULE_PATH=" + new_path});
-    }
-    if (sizeof(inc_paths) > 0) {
-        string existing = getenv("PIKE_INCLUDE_PATH") || "";
-        string new_path = inc_paths * ":";
-        if (sizeof(existing) > 0) new_path += ":" + existing;
-        env_vars += ({"PIKE_INCLUDE_PATH=" + new_path});
-    }
+    prepend_to_path_env("PIKE_MODULE_PATH", mod_paths);
+    prepend_to_path_env("PIKE_INCLUDE_PATH", inc_paths);
 
-    if (sizeof(env_vars) > 0) {
-        // Build environment map from current env + overrides
-        mapping(string:string) env = getenv() || ([]);
-        foreach (env_vars; ; string var) {
-            array parts = var / "=";
-            if (sizeof(parts) >= 2)
-                env[parts[0]] = parts[1..] * "=";
-        }
-        Process.exece(ctx["pike_bin"],
-            ({ ctx["pike_bin"], script, @script_args }), env);
-    } else {
-        Process.exec(ctx["pike_bin"], script, @script_args);
-    }
+    Process.exec(ctx["pike_bin"], script, @script_args);
+    die("failed to exec: " + ctx["pike_bin"]);
 }
 
 void cmd_env(mapping ctx) {
@@ -115,7 +113,7 @@ void cmd_env(mapping ctx) {
         "# Project modules — all installed deps are symlinked here by pmp install\n"
         "if [ -d \"$PROJECT_ROOT/modules\" ]; then\n"
         "  MOD_PATHS=\"$PROJECT_ROOT/modules\"\n"
-        "  if find \"$PROJECT_ROOT/modules\" -name '*.h' -print -quit 2>/dev/null | grep -q .; then\n"
+        "  if ls \"$PROJECT_ROOT/modules/\"*/*.h >/dev/null 2>&1; then\n"
         "    INC_PATHS=\"$PROJECT_ROOT/modules\"\n"
         "  fi\n"
         "fi\n"
@@ -126,28 +124,24 @@ void cmd_env(mapping ctx) {
         "fi\n"
         "\n"
         "# Build environment and exec real Pike\n"
-        "_env=\"\"\n"
         "if [ -n \"$MOD_PATHS\" ]; then\n"
-        "  _env=\"PIKE_MODULE_PATH=$MOD_PATHS${PIKE_MODULE_PATH+:$PIKE_MODULE_PATH}\"\n"
+        "  export PIKE_MODULE_PATH=\"$MOD_PATHS${PIKE_MODULE_PATH+:$PIKE_MODULE_PATH}\"\n"
         "fi\n"
         "if [ -n \"$INC_PATHS\" ]; then\n"
-        "  _env=\"${_env:+$_env }PIKE_INCLUDE_PATH=$INC_PATHS${PIKE_INCLUDE_PATH+:$PIKE_INCLUDE_PATH}\"\n"
+        "  export PIKE_INCLUDE_PATH=\"$INC_PATHS${PIKE_INCLUDE_PATH+:$PIKE_INCLUDE_PATH}\"\n"
         "fi\n"
         "\n"
-        "if [ -n \"$_env\" ]; then\n"
-        "  exec env $_env \"$PIKE_BIN\" \"$@\"\n"
-        "else\n"
-        "  exec \"$PIKE_BIN\" \"$@\"\n"
-        "fi\n";
+        "exec \"$PIKE_BIN\" \"$@\"\n";
 
     Stdio.write_file(combine_path(env_bin, "pike"), wrapper);
-    Process.run(({"chmod", "+x", combine_path(env_bin, "pike")}));
+    System.chmod(combine_path(env_bin, "pike"), 0755);
 
     // activate — idempotent, with proper deactivate (following uv patterns)
+
     string activate =
         "# pmp environment activation. Source this: . .pike-env/activate\n"
         "\n"
-        "_pike_env_dir=\"" + abs_env_dir + "\"\n"
+        "_pike_env_dir=" + Process.sh_quote(abs_env_dir) + "\n"
         "_pike_env_bin=\"$_pike_env_dir/bin\"\n"
         "\n"
         "# Idempotent: bail if already activated in this shell\n"
@@ -210,12 +204,10 @@ void cmd_resolve(array(string) args, mapping ctx) {
         // Also try .pmod-suffixed symlink
         string mod_dir_pmod = combine_path(project_root, "modules", name + ".pmod");
         if (Stdio.exist(mod_dir)) {
-            string target = mod_dir;
-            mixed err = catch { target = System.readlink(mod_dir) || mod_dir; };
+            string target = get_symlink_target(mod_dir) || mod_dir;
             write(target + "\n");
         } else if (Stdio.exist(mod_dir_pmod)) {
-            string target = mod_dir_pmod;
-            mixed err = catch { target = System.readlink(mod_dir_pmod) || mod_dir_pmod; };
+            string target = get_symlink_target(mod_dir_pmod) || mod_dir_pmod;
             write(target + "\n");
         } else {
             // Check global

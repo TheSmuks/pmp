@@ -53,6 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Error patterns** — Eliminated all `"unknown"` sentinel return values. Functions now return `0` on failure or `die()` for unrecoverable errors.
 
 ### Fixed
+- **`pmp install <url>` lockfile race condition** — Lockfile was read before acquiring the project lock, allowing concurrent installs to lose entries. Lockfile read now happens inside the locked section.
+- **`pmp remove` double JSON decode** — `pike.json` was decoded twice (validate + execute phases) without BOM handling. Now decoded once with `_strip_bom`, preserving raw content for rollback.
+- **`cmd_verify` local-source detection** — Inline `ls != "-" && !has_prefix(ls, "./") && !has_prefix(ls, "/")` replaced with `is_local_source()` helper, adding Verify.pmod to the set of modules using the shared function.
 - **`pmp self-update` now uses semver comparison** — comparing `0.3.0` with `0.10.0` as raw strings incorrectly reported "up to date". Uses `compare_semver()` from `Semver.pmod`.
 - **GitHub/GitLab tag API pagination** — `latest_tag_github` and `latest_tag_gitlab` now paginate through all tags (repos with >100 tags silently missed newer versions before).
 - **`compute_dir_hash` no longer uses `find`** — replaced external `find` command with Pike `get_dir` recursive walk, eliminating a vulnerability where filenames with newlines would corrupt the content hash.

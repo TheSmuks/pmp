@@ -2,57 +2,180 @@ inherit .Helpers;
 inherit .Http;
 inherit .Resolve;
 
+//! Acquire an advisory lock on the store directory.
+//! Uses a PID-based lock file. Dies if another pmp process holds the lock.
+//! Call store_unlock() when done.
+void store_lock(string store_dir) {
+    Stdio.mkdirhier(store_dir);
+    string lock_path = combine_path(store_dir, ".lock");
+    advisory_lock(lock_path, "store");
+    set_store_lock_state(1, store_dir);
+}
+
+//! Release the store lock.
+void store_unlock(string store_dir) {
+    string lock_path = combine_path(store_dir, ".lock");
+    advisory_unlock(lock_path);
+    set_store_lock_state(0, "");
+}
+
 //! Generate store entry name from source, tag, and SHA.
-//! Format: {domain}-{owner}-{repo}-{tag}-{sha_prefix8}
+//! Format: {domain}-{owner}-{repo}-{tag}-{sha_prefix16}
 string store_entry_name(string src, string tag, string sha) {
     string clean = (src / "#")[0];
-    // Convert / to -, remove leading/trailing -
-    // Convert / to -, collapse repeated dashes
-    string slug = replace(replace(clean, "/", "-"), "--", "-");
-    // Trim leading/trailing dashes
-    while (has_prefix(slug, "-")) slug = slug[1..];
-    while (has_suffix(slug, "-")) slug = slug[..<1];
+    // Convert / to -, collapse repeated dashes, trim leading/trailing -
+    string slug = normalize_slug(clean);
 
-    string sha8 = (sizeof(sha) >= 8) ? sha[..7] : sha;
-    return sprintf("%s-%s-%s", slug, tag, sha8);
+    // Sanitize against path traversal
+    if (has_value(slug, ".."))
+        die("invalid source: path traversal in slug: " + slug, EXIT_INTERNAL);
+    // Sanitize tag: replace / with - to prevent nested directories
+    string safe_tag = normalize_tag(tag);
+
+    if (has_value(tag, ".."))
+        die("invalid tag: path traversal: " + tag, EXIT_INTERNAL);
+    if (sizeof(sha) == 0) {
+        // SHA resolution failed — use hash of source+tag as fallback identifier
+        sha = String.string2hex(Crypto.SHA256.hash(slug + "-" + safe_tag))[..15];
+        debug("SHA unavailable, using content-derived identifier: " + sha);
+    } else if (!RE_HEX->match(sha)) {
+        die("invalid sha: expected hex, got: " + sha, EXIT_INTERNAL);
+    }
+
+    string sha_prefix = (sizeof(sha) >= 16) ? sha[..15] : sha;
+    return sprintf("%s-%s-%s", slug, safe_tag, sha_prefix);
 }
 
 //! Extract a .tar.gz file to a directory.
-//! Uses system tar for reliable extraction across platforms.
+//! Uses system tar with security hardening: --no-same-owner prevents
+//! UID/GID leaks, and symlink-path-traversal is validated after extraction.
 string extract_targz(string tarball_path, string dest_dir) {
     Stdio.mkdirhier(dest_dir);
 
-    // Extract using system tar (more reliable than Filesystem.Tar across builds)
-    mapping r = Process.run(({"tar", "xzf", tarball_path, "-C", dest_dir}));
+    // Extract using system tar with security flags
+    mapping r = Process.run(({"tar", "xzf", tarball_path, "-C", dest_dir,
+                              "--no-same-owner", "--no-same-permissions"}));
     if (r->exitcode != 0)
-        die("failed to extract archive: " + (r->stderr || "unknown error"));
+        die("failed to extract archive: " + (r->stderr || "unknown error"), EXIT_INTERNAL);
+
+    // Validate no symlink-path-traversal: find all symlinks and ensure
+    // none point outside the extraction directory.
+    _validate_symlinks(dest_dir, dest_dir);
 
     // Find the top-level directory in the extracted content
     array(string) entries = get_dir(dest_dir);
 
     if (!entries || sizeof(entries) == 0)
-        die("empty archive");
+        die("empty archive", EXIT_INTERNAL);
 
+    sort(entries);
+    // Ensure the returned entry is actually a directory
+    if (!Stdio.is_dir(combine_path(dest_dir, entries[0]))) {
+        string found;
+        foreach (entries; ; string e) {
+            if (Stdio.is_dir(combine_path(dest_dir, e))) {
+                found = e;
+                break;
+            }
+        }
+        if (!found)
+            die("tarball has no top-level directory", EXIT_INTERNAL);
+        return found;
+    }
     return entries[0];
 }
 
-//! Read content_sha256 from .pmp-meta of an existing store entry.
-string read_stored_hash(string entry_dir) {
+private string _glob_escape(string s) {
+    // Single-pass substitution using mapping form
+    return replace(s, ([
+        "\\": "\\\\",
+        "]": "[]]",
+        "[": "[[]",
+        "*": "[*]",
+        "?": "[?]",
+    ]));
+}
+
+//! Find a store entry matching source, tag, and optionally content hash.
+//! Returns the entry directory name, or "" if not found.
+string _find_store_entry(string store_dir, string source, string tag, string content_hash) {
+    string slug = normalize_slug(source);
+    string safe_tag = normalize_tag(tag);
+    string pattern = _glob_escape(slug) + "-" + _glob_escape(safe_tag) + "-*";
+    array(string) candidates = Stdio.is_dir(store_dir)
+        ? filter(get_dir(store_dir) || ({}), lambda(string se) {
+              return glob(pattern, se) && Stdio.is_dir(combine_path(store_dir, se));
+          })
+        : ({});
+
+    // Match by content hash
+    if (sizeof(candidates) > 0 && sizeof(content_hash) > 0) {
+        foreach (candidates; ; string se) {
+            string stored = read_stored_hash(combine_path(store_dir, se));
+            if (stored && stored == content_hash)
+                return se;
+        }
+        warn("no store entry for " + tag + " matches lockfile hash");
+        return "";
+    }
+
+    // Fallback: use first candidate
+    if (sizeof(candidates) > 0) return candidates[0];
+    return "";
+}
+
+//! Recursively validate that no symlinks under base_dir escape root_dir.
+void _validate_symlinks(string base_dir, string root_dir, void|int depth) {
+    if (depth > 20)
+        die("archive directory nesting exceeds safety limit (20 levels)", EXIT_INTERNAL);
+    array(string) entries = get_dir(base_dir) || ({});
+    foreach (entries; ; string name) {
+        string full = combine_path(base_dir, name);
+        // readlink returns target on success, throws on non-symlink
+        string link_target = get_symlink_target(full);
+        if (link_target) {
+            // Resolve the symlink target relative to its parent
+            string parent = combine_path(full, "..");
+            string resolved = combine_path(parent, link_target);
+            string norm_root = combine_path(root_dir, ".");
+            if (!has_prefix(resolved, norm_root + "/") && resolved != norm_root) {
+                die("archive contains symlink escaping extraction dir: "
+                    + full + " -> " + link_target, EXIT_INTERNAL);
+            }
+        }
+        if (Stdio.is_dir(full))
+            _validate_symlinks(full, root_dir, depth + 1);
+    }
+}
+
+//! Read a single field from a store entry's .pmp-meta file.
+//! Returns the field value as a string, or 0 if not found.
+string read_meta_field(string entry_dir, string field) {
     string meta_file = combine_path(entry_dir, ".pmp-meta");
-    if (!Stdio.exist(meta_file)) return "unknown";
-    foreach (Stdio.read_file(meta_file) / "\n"; ; string line)
-        if (has_prefix(line, "content_sha256\t"))
-            return line[16..];
-    return "unknown";
+    if (!Stdio.exist(meta_file)) return 0;
+    string raw = Stdio.read_file(meta_file);
+    if (!raw) return 0;
+    string val;
+    foreach (raw / "\n"; ; string line)
+        if (sscanf(line, field + "\t%s", val) == 1)
+            return String.trim_all_whites(val);
+    return 0;
+}
+
+//! Read content_sha256 from .pmp-meta of an existing store entry.
+//! Returns 0 if the meta file does not exist or has no hash.
+string read_stored_hash(string entry_dir) {
+    return read_meta_field(entry_dir, "content_sha256");
 }
 
 //! Write .pmp-meta file to a store entry.
 void write_meta(string entry_dir, string source, string tag,
                 string sha, string hash) {
+    string meta_path = combine_path(entry_dir, ".pmp-meta");
     string meta = sprintf(
         "source\t%s\ntag\t%s\ncommit_sha\t%s\ncontent_sha256\t%s\ninstalled_at\t%d\n",
         source, tag, sha, hash, time());
-    Stdio.write_file(combine_path(entry_dir, ".pmp-meta"), meta);
+    atomic_write(meta_path, meta);
 }
 
 //! Recursively collect all regular files under a directory.
@@ -68,7 +191,7 @@ array(string) _collect_files(string base, string rel) {
         if (name == ".pmp-meta") continue;
         string path = sizeof(rel) > 0 ? rel + "/" + name : name;
         string abs = combine_path(base, path);
-        if (Stdio.is_dir(abs)) {
+        if (Stdio.is_dir(abs) && !is_symlink(abs)) {
             result += _collect_files(base, path);
         } else if (Stdio.is_file(abs)) {
             result += ({ path });
@@ -92,7 +215,10 @@ string compute_dir_hash(string dir) {
 
 //! Given a module name and store entry path, determine the correct
 //! symlink target and link name for Pike module resolution.
-//! Returns (["target": string, "link_name": string]).
+//! Returns ("target": string, "link_name": string).
+//!
+//! The module name is resolved from the entry's pike.json "name" field
+//! when available, falling back to the provided name parameter.
 //!
 //! Pike resolves `import Name` via:
 //!   1. Name.pmod (file) — standalone module file
@@ -116,8 +242,72 @@ mapping resolve_module_path(string name, string entry_dir) {
     if (Stdio.exist(combine_path(entry_dir, "module.pmod")))
         return (["target": entry_dir, "link_name": name + ".pmod"]);
 
-    // 4. Fallback: symlink to entry root (backward compat)
+    // 4. Fallback: symlink to entry root
     return (["target": entry_dir, "link_name": name]);
+}
+
+//! Common store install logic: check existing entry, move content, write meta.
+//! @param content_dir
+//!   Absolute path to the extracted/cloned content to move into the store.
+//! @param tmpdir
+//!   Temporary directory; cleaned up by this function on all paths.
+//! @returns
+//!   (["tag":ver, "sha":sha, "hash":hash, "entry":entry_name]).
+mapping _store_install_common(string store_dir, string source_label,
+                              string ver, string sha,
+                              string tmpdir, string content_dir) {
+    string entry_name = store_entry_name(source_label, ver, sha);
+    string entry_dir = combine_path(store_dir, entry_name);
+
+    // Check if entry already exists with valid metadata
+    if (Stdio.is_dir(entry_dir)) {
+        if (!Stdio.exist(combine_path(entry_dir, ".pmp-meta"))) {
+            warn("store entry " + entry_name + " missing metadata — re-downloading");
+            Stdio.recursive_rm(entry_dir);
+        } else {
+            string stored_hash = read_stored_hash(entry_dir);
+            string actual_hash = compute_dir_hash(entry_dir);
+            if (stored_hash && actual_hash && stored_hash != actual_hash) {
+                warn("store entry " + entry_name + " has integrity mismatch — re-downloading");
+                Stdio.recursive_rm(entry_dir);
+            } else {
+                info("reusing existing store entry " + entry_name);
+                Stdio.recursive_rm(tmpdir);
+                unregister_cleanup_dir(tmpdir);
+                return (["tag": ver, "sha": sha, "hash": stored_hash || "", "entry": entry_name]);
+            }
+        }
+    }
+
+    // Ensure clean target
+    Stdio.mkdirhier(store_dir);
+    // Symlink-safe removal
+    if (is_symlink(entry_dir)) rm(entry_dir);
+    else Stdio.recursive_rm(entry_dir);
+
+    // Move content to store
+    if (!Stdio.recursive_mv(content_dir, entry_dir)) {
+        unregister_cleanup_dir(tmpdir);
+        Stdio.recursive_rm(tmpdir);
+        Stdio.recursive_rm(entry_dir);
+        die("failed to move to store: " + content_dir, EXIT_INTERNAL);
+    }
+    if (!Stdio.is_dir(entry_dir)) {
+        unregister_cleanup_dir(tmpdir);
+        Stdio.recursive_rm(tmpdir);
+        Stdio.recursive_rm(entry_dir);
+        die("store entry is not a directory after mv: " + entry_dir, EXIT_INTERNAL);
+    }
+
+    Stdio.recursive_rm(tmpdir);
+    unregister_cleanup_dir(tmpdir);
+
+    // Write .pmp-meta with directory content hash
+    string dir_hash = compute_dir_hash(entry_dir);
+    write_meta(entry_dir, source_label, ver, sha, dir_hash);
+
+    info("stored " + entry_name);
+    return (["tag": ver, "sha": sha, "hash": dir_hash, "entry": entry_name]);
 }
 
 //! Download from GitHub to store.
@@ -131,11 +321,9 @@ mapping store_install_github(string store_dir, string repo_path, string ver,
     string body = http_get(url, 0, version);
 
     // Write to temp file
-    string tmpdir = String.trim_all_whites(Process.popen("mktemp -d /tmp/pmp_install_XXXXXX"));
+    string tmpdir = make_temp_dir();
     string tarball = combine_path(tmpdir, "archive.tar.gz");
     Stdio.write_file(tarball, body);
-
-    string hash = compute_sha256(tarball);
 
     // Extract
     string extracted = extract_targz(tarball,
@@ -143,41 +331,11 @@ mapping store_install_github(string store_dir, string repo_path, string ver,
 
     // Resolve commit SHA
     string sha = resolve_commit_sha("github", "", repo_path, ver, version);
-    sha = sha || "unknown";
+    sha = sha || "";
 
-    string entry_name = store_entry_name(
-        "github.com/" + repo_path, ver, sha);
-    string entry_dir = combine_path(store_dir, entry_name);
-
-    if (Stdio.is_dir(entry_dir)) {
-        info("reusing existing store entry " + entry_name);
-        Stdio.recursive_rm(tmpdir);
-        return (["tag": ver, "sha": sha, "hash": read_stored_hash(entry_dir), "entry": entry_name]);
-    }
-
-    if (Stdio.exist(entry_dir)) rm(entry_dir);
-    Stdio.mkdirhier(store_dir);
-    Stdio.recursive_rm(entry_dir);
-    // Move extracted content to store
-    string src = combine_path(tmpdir, "extract", extracted);
-    mapping mv_r = Process.run(({"mv", src, entry_dir}));
-    if (mv_r->exitcode != 0) {
-        Stdio.recursive_rm(tmpdir);
-        Stdio.recursive_rm(entry_dir);
-        die("failed to move to store: " + (mv_r->stderr || ""));
-    }
-    if (!Stdio.is_dir(entry_dir)) {
-        Stdio.recursive_rm(tmpdir);
-        Stdio.recursive_rm(entry_dir);
-        die("store entry is not a directory after mv: " + entry_dir);
-    }
-    Stdio.recursive_rm(tmpdir);
-
-    // Write .pmp-meta
-    write_meta(entry_dir, "github.com/" + repo_path, ver, sha, hash);
-
-    info("stored " + entry_name);
-    return (["tag": ver, "sha": sha, "hash": hash, "entry": entry_name]);
+    string content_dir = combine_path(tmpdir, "extract", extracted);
+    return _store_install_common(store_dir, "github.com/" + repo_path,
+                                  ver, sha, tmpdir, content_dir);
 }
 
 //! Download from GitLab to store.
@@ -186,50 +344,25 @@ mapping store_install_gitlab(string store_dir, string repo_path, string ver,
                              void|string version) {
     string repo_name = (repo_path / "/")[-1];
     string url = "https://gitlab.com/" + repo_path
-                 + "/-/archive/" + ver + "/" + repo_name + "-" + ver
+                 + "-/archive/" + ver + "/" + repo_name + "-" + ver
                  + ".tar.gz";
 
     info("downloading " + url);
     string body = http_get(url, 0, version);
 
-    string tmpdir = String.trim_all_whites(Process.popen("mktemp -d /tmp/pmp_install_XXXXXX"));
+    string tmpdir = make_temp_dir();
     string tarball = combine_path(tmpdir, "archive.tar.gz");
     Stdio.write_file(tarball, body);
-
-    string hash = compute_sha256(tarball);
 
     string extracted = extract_targz(tarball,
                                      combine_path(tmpdir, "extract"));
 
     string sha = resolve_commit_sha("gitlab", "", repo_path, ver, version);
-    sha = sha || "unknown";
+    sha = sha || "";
 
-    string entry_name = store_entry_name(
-        "gitlab.com/" + repo_path, ver, sha);
-    string entry_dir = combine_path(store_dir, entry_name);
-
-    if (Stdio.is_dir(entry_dir)) {
-        info("reusing existing store entry " + entry_name);
-        Stdio.recursive_rm(tmpdir);
-        return (["tag": ver, "sha": sha, "hash": read_stored_hash(entry_dir), "entry": entry_name]);
-    }
-
-    if (Stdio.exist(entry_dir)) rm(entry_dir);
-    Stdio.mkdirhier(store_dir);
-    Stdio.recursive_rm(entry_dir);
-    string src = combine_path(tmpdir, "extract", extracted);
-    mapping mv_r = Process.run(({"mv", src, entry_dir}));
-    if (mv_r->exitcode != 0) {
-        Stdio.recursive_rm(tmpdir);
-        Stdio.recursive_rm(entry_dir);
-        die("failed to move to store: " + (mv_r->stderr || ""));
-    }
-    Stdio.recursive_rm(tmpdir);
-
-    write_meta(entry_dir, "gitlab.com/" + repo_path, ver, sha, hash);
-
-    info("stored " + entry_name);
-    return (["tag": ver, "sha": sha, "hash": hash, "entry": entry_name]);
+    string content_dir = combine_path(tmpdir, "extract", extracted);
+    return _store_install_common(store_dir, "gitlab.com/" + repo_path,
+                                  ver, sha, tmpdir, content_dir);
 }
 
 //! Clone from self-hosted git to store.
@@ -240,47 +373,28 @@ mapping store_install_selfhosted(string store_dir, string domain,
     need_cmd("git");
     string url = "https://" + domain + "/" + repo_path;
 
-    string tmpdir = String.trim_all_whites(Process.popen("mktemp -d /tmp/pmp_install_XXXXXX"));
+    string tmpdir = make_temp_dir();
     string repo_dest = combine_path(tmpdir, "repo");
+
+    // SSRF protection — validate domain before git clone
+    if (_is_private_host(domain))
+        die("blocked: SSRF protection — refusing to clone from private/internal address: " + domain);
 
     info("cloning " + url + " at " + ver);
     mapping r = Process.run(
         ({"git", "clone", "--branch", ver, "--depth", "1",
           url, repo_dest}));
     if (r->exitcode != 0) {
+        unregister_cleanup_dir(tmpdir);
         Stdio.recursive_rm(tmpdir);
         die("failed to clone " + url);
     }
 
+    _validate_symlinks(repo_dest, repo_dest);
+
     string sha = resolve_commit_sha("selfhosted", domain, repo_path, ver, version);
-    sha = sha || "unknown";
+    sha = sha || "";
 
-    // Compute content hash from sorted file listing
-    string hash = compute_dir_hash(repo_dest);
-
-    string entry_name = store_entry_name(
-        domain + "/" + repo_path, ver, sha);
-    string entry_dir = combine_path(store_dir, entry_name);
-
-    if (Stdio.is_dir(entry_dir)) {
-        info("reusing existing store entry " + entry_name);
-        Stdio.recursive_rm(tmpdir);
-        return (["tag": ver, "sha": sha, "hash": read_stored_hash(entry_dir), "entry": entry_name]);
-    }
-
-    if (Stdio.exist(entry_dir)) rm(entry_dir);
-    Stdio.mkdirhier(store_dir);
-    Stdio.recursive_rm(entry_dir);
-    mapping mv_r = Process.run(({"mv", repo_dest, entry_dir}));
-    if (mv_r->exitcode != 0) {
-        Stdio.recursive_rm(tmpdir);
-        Stdio.recursive_rm(entry_dir);
-        die("failed to move to store: " + (mv_r->stderr || ""));
-    }
-    Stdio.recursive_rm(tmpdir);
-
-    write_meta(entry_dir, domain + "/" + repo_path, ver, sha, hash);
-
-    info("stored " + entry_name);
-    return (["tag": ver, "sha": sha, "hash": hash, "entry": entry_name]);
+    return _store_install_common(store_dir, domain + "/" + repo_path,
+                                  ver, sha, tmpdir, repo_dest);
 }

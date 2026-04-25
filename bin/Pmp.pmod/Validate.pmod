@@ -1,5 +1,12 @@
 inherit .Helpers;
 inherit .Manifest;
+// Pre-compiled regexps for import/inherit/include scanning
+protected Regexp RE_IMPORT = Regexp("import[ \t]+([.A-Za-z_][A-Za-z0-9_.]*)");
+protected Regexp RE_INHERIT = Regexp("inherit[ \t]+([.A-Za-z_][A-Za-z0-9_.]*)");
+protected Regexp RE_INCLUDE_PMOD = Regexp("#include[ \t]*<([.A-Za-z_][A-Za-z0-9_.]*).pmod/");
+protected Regexp RE_IF_CONSTANT = Regexp("#if[ \t]+constant[ \t]*[(][ \t]*([A-Za-z_][A-Za-z0-9_]*)[)]");
+protected Regexp RE_IMPORT_STRING = Regexp("import[ \t]+\"([^\"]+)\"");
+
 
 string strip_comments_and_strings(string content) {
     String.Buffer buf = String.Buffer();
@@ -13,13 +20,21 @@ string strip_comments_and_strings(string content) {
                 i++;
             continue;
         }
-        // Block comment
+        // Block comment — track nesting depth
         if (i + 1 < len && content[i..i] == "/" && content[i+1..i+1] == "*") {
+            int depth = 1;
             i += 2;
-            while (i + 1 < len &&
-                   !(content[i..i] == "*" && content[i+1..i+1] == "/"))
-                i++;
-            i += 2;
+            while (i + 1 < len && depth > 0) {
+                if (content[i..i] == "/" && i + 1 < len && content[i+1..i+1] == "*") {
+                    depth++;
+                    i += 2;
+                } else if (content[i..i] == "*" && i + 1 < len && content[i+1..i+1] == "/") {
+                    depth--;
+                    i += 2;
+                } else {
+                    i++;
+                }
+            }
             continue;
         }
         // String literal
@@ -73,9 +88,7 @@ multiset(string) init_std_libs(void|string pike_bin) {
         if (!Stdio.is_dir(dir)) continue;
         foreach (get_dir(dir) || ({}); ; string entry) {
             string full = combine_path(dir, entry);
-            if (Stdio.is_dir(full) && has_suffix(entry, ".pmod")) {
-                libs[entry[..<5]] = 1;
-            } else if (has_suffix(entry, ".pmod")) {
+            if (has_suffix(entry, ".pmod")) {
                 libs[entry[..<5]] = 1;
             } else if (has_suffix(entry, ".so")) {
                 string name = entry[..<3];
@@ -117,10 +130,7 @@ void validate_manifests(string local_dir, multiset(string) std_libs,
         if (!Stdio.is_dir(moddir)) continue;
 
         // Resolve real path through symlink
-        string real_dir = moddir;
-        mixed err = catch {
-            real_dir = System.readlink(moddir) || moddir;
-        };
+        string real_dir = get_symlink_target(moddir) || moddir;
 
         // Collect imports/inherits/includes from .pike and .pmod files
         multiset(string) imports = (<>);
@@ -145,29 +155,97 @@ void validate_manifests(string local_dir, multiset(string) std_libs,
                     string clean = strip_comments_and_strings(content);
                     foreach (clean / "\n"; ; string line) {
                         string trimmed = String.trim_whites(line);
-                        // import Foo;
+                        // import Foo; or import Foo.Bar; or import .Foo;
+                        // We extract the first component (the dependency name)
                         array matches =
-                            Regexp("import[ \t]+([A-Za-z_][A-Za-z0-9_]*)")
+                            RE_IMPORT
                             ->split(trimmed);
                         if (matches && sizeof(matches) > 0) {
-                            imports[matches[0]] = 1;
+                            // Skip relative imports (leading dot)
+                            if (matches[0][0] != '.') {
+                                string first = (matches[0] / ".")[0];
+                                imports[first] = 1;
+                            }
                             continue;
                         }
                         // inherit Foo; or inherit Foo.Bar;
+                        // We extract the first component
                         matches =
-                            Regexp("inherit[ \t]+([A-Za-z_][A-Za-z0-9_]*)")
+                            RE_INHERIT
+                            ->split(trimmed);
+                        if (matches && sizeof(matches) > 0) {
+                            // Skip relative inherits (leading dot)
+                            if (matches[0][0] != '.') {
+                                string first = (matches[0] / ".")[0];
+                                imports[first] = 1;
+                            }
+                            continue;
+                        }
+                        // #include <Foo.pmod/bar.h> or <Foo.Bar.pmod/baz.h>
+                        matches =
+                            RE_INCLUDE_PMOD
+                            ->split(trimmed);
+                        if (matches && sizeof(matches) > 0) {
+                            string first = (matches[0] / ".")[0];
+                            if (sizeof(first) > 0)
+                                imports[first] = 1;
+                            continue;
+                        }
+                        // #if constant(Foo) — conditional compilation references
+                        matches =
+                            RE_IF_CONSTANT
                             ->split(trimmed);
                         if (matches && sizeof(matches) > 0) {
                             imports[matches[0]] = 1;
                             continue;
                         }
-                        // #include <Foo.pmod/bar.h>
-                        matches =
-                            Regexp("#include[ \t]*<([A-Za-z_][A-Za-z0-9_]*)\\.pmod/")
-                            ->split(trimmed);
-                        if (matches && sizeof(matches) > 0) {
-                            imports[matches[0]] = 1;
+                    }
+                    // Scan raw content for string imports (import "foo";)
+                    // since strip_comments_and_strings removes string contents
+                    int in_block_comment = 0;
+                    foreach (content / "\n"; ; string raw_line) {
+                        string trimmed_raw = String.trim_whites(raw_line);
+                        // Skip lines that are single-line comments
+                        if (has_prefix(trimmed_raw, "//")) continue;
+                        // Track block comment state
+                        if (in_block_comment) {
+                            if (has_value(trimmed_raw, "*/")) {
+                                in_block_comment = 0;
+                                // Content after */ may contain imports
+                                // For simplicity, skip this line — rare edge case
+                            }
                             continue;
+                        }
+                        // Single-line block comment: /* ... */
+                        if (has_value(trimmed_raw, "/*") && has_value(trimmed_raw, "*/")) {
+                            continue;
+                        }
+                        // Entering multi-line block comment
+                        if (has_value(trimmed_raw, "/*")) {
+                            in_block_comment = 1;
+                            continue;
+                        }
+                        array matches =
+                            RE_IMPORT_STRING
+                            ->split(trimmed_raw);
+                        if (matches && sizeof(matches) > 0) {
+                            // Resolve the string path relative to the importing file
+                            string resolved =
+                                combine_path(dir, matches[0]);
+                            // Extract the top-level module name from the resolved path
+                            array(string) parts = resolved / "/";
+                            foreach (parts; ; string p) {
+                                if (sizeof(p) > 0) {
+                                    // Strip .pmod/.pike suffix if present
+                                    if (has_suffix(p, ".pmod"))
+                                        p = p[..<5];
+                                    else if (has_suffix(p, ".pike"))
+                                        p = p[..<5];
+                                    if (sizeof(p) > 0)
+                                        imports[p] = 1;
+                                    break;
+                                }
+                            }
                         }
                     }
                 }

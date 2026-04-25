@@ -9,20 +9,37 @@ void cmd_init(mapping ctx) {
     if (Stdio.exist(ctx["pike_json"]))
         die("pike.json already exists in this directory");
 
-    string content = "{\n  \"dependencies\": {}\n}\n";
-    Stdio.write_file(ctx["pike_json"], content);
+    // Extract project name from current working directory
+    string dir_name = basename(getcwd());
+    if (!sizeof(dir_name) || dir_name == ".")
+        dir_name = "my-project";
+
+    string content = sprintf("{\n  \"name\": %s,\n  \"version\": \"0.1.0\",\n  \"dependencies\": {}\n}\n",
+        Standards.JSON.encode(dir_name));
+    atomic_write(ctx["pike_json"], content);
     info("created pike.json");
 }
 
 void cmd_list(array(string) args, mapping ctx) {
     mapping opts = Arg.parse(({"pmp"}) + args);
     string dir = opts->g ? ctx["global_dir"] : ctx["local_dir"];
+    int json_output = opts->json || 0;
 
     if (!Stdio.is_dir(dir)) {
-        info("no modules installed");
+        if (json_output) write("[]\n");
+        else info("no modules installed");
         return;
     }
 
+    if (json_output) {
+        array(mapping) entries = map(filter(get_dir(dir) || ({}), lambda(string mod_name) {
+                return Stdio.is_dir(combine_path(dir, mod_name));
+            }), lambda(string mod_name) {
+                return (["name": display_name(mod_name)]);
+            });
+        write(Standards.JSON.encode(entries, Standards.JSON.HUMAN_READABLE) + "\n");
+        return;
+    }
     int found = 0;
     foreach (get_dir(dir) || ({}); ; string mod_name) {
         string moddir = combine_path(dir, mod_name);
@@ -33,24 +50,21 @@ void cmd_list(array(string) args, mapping ctx) {
 
         string ver = "(unknown)";
         // Resolve .version through symlink to store entry root
-        string real_dir = moddir;
-        mixed rerr = catch { real_dir = System.readlink(moddir) || moddir; };
+        string real_dir = get_symlink_target(moddir) || moddir;
         string ver_file = combine_path(real_dir, ".version");
         // If symlink points inside store entry (e.g., to subdir), try parent
         if (!Stdio.exist(ver_file) && has_suffix(mod_name, ".pmod"))
             ver_file = combine_path(real_dir, "..", ".version");
         if (Stdio.exist(ver_file))
-            ver = Stdio.read_file(ver_file) || "(unknown)";
+            ver = String.trim_all_whites(Stdio.read_file(ver_file)) || "(unknown)";
 
         string src = "";
-        mixed err = catch {
-            string link = System.readlink(moddir);
-            if (link && has_prefix(link, ctx["store_dir"])) {
-                src = " (store: " + (link / "/")[-1] + ")";
-            } else if (link) {
-                src = " -> " + link;
-            }
-        };
+        string link = get_symlink_target(moddir);
+        if (link && has_prefix(link, ctx["store_dir"])) {
+            src = " (store: " + (link / "/")[-1] + ")";
+        } else if (link) {
+            src = " -> " + link;
+        }
 
         write(sprintf("  %-20s %-12s%s\n", show_name, ver, src));
         found = 1;
@@ -60,12 +74,27 @@ void cmd_list(array(string) args, mapping ctx) {
 }
 
 void cmd_clean(mapping ctx) {
-    if (Stdio.is_dir(ctx["local_dir"])) {
-        Stdio.recursive_rm(ctx["local_dir"]);
-        info("removed " + ctx["local_dir"] + " (store preserved)");
-    } else {
+    if (!Stdio.is_dir(ctx["local_dir"])) {
         info("nothing to clean");
+        return;
     }
+    array(string) entries = get_dir(ctx["local_dir"]) || ({});
+    int has_non_symlink = 0;
+    array(string) symlinks = filter(entries, lambda(string name) {
+        string full = combine_path(ctx["local_dir"], name);
+        if (is_symlink(full)) return true;
+        has_non_symlink = 1;
+        return false;
+    });
+    foreach (symlinks; ; string name)
+        rm(combine_path(ctx["local_dir"], name));
+    if (!has_non_symlink) {
+        // All content was symlinks — remove the directory too
+        Stdio.recursive_rm(ctx["local_dir"]);
+    }
+    int count = sizeof(symlinks);
+    info(sprintf("cleaned %d module%s from %s, store preserved",
+        count, count == 1 ? "" : "s", ctx["local_dir"]));
 }
 
 void cmd_remove(array(string) args, mapping ctx) {
@@ -74,53 +103,107 @@ void cmd_remove(array(string) args, mapping ctx) {
     if (sizeof(rest) == 0)
         die("usage: pmp remove <name>");
     string name = rest[0];
-    int removed = 0;
+    // Strip .pmod suffix — users may pass "Foo.pmod" but pike.json keys are bare names
+    if (has_suffix(name, ".pmod")) name = name[..<5];
+    // Path traversal protection
+    if (has_value(name, "/") || has_value(name, "..") || has_value(name, "\0"))
+        die("invalid module name: " + name);
+    string lock_path = combine_path(find_project_root() || getcwd(), ".pmp-install.lock");
+    advisory_lock(lock_path, "project");
+    register_project_lock_path(lock_path);
 
-    // Remove from pike.json
-    if (Stdio.exist(ctx["pike_json"])) {
-        string raw = Stdio.read_file(ctx["pike_json"]);
-        if (raw) {
-            mixed data;
-            mixed err = catch { data = Standards.JSON.decode(raw); };
-            if (!err && mappingp(data) && mappingp(data->dependencies)) {
-                if (!zero_type(data->dependencies[name])) {
-                    m_delete(data->dependencies, name);
-                    Stdio.write_file(ctx["pike_json"],
-                        Standards.JSON.encode(data, Standards.JSON.HUMAN_READABLE) + "\n");
-                    info("removed " + name + " from pike.json");
-                    removed = 1;
-                }
-            }
-        }
+
+    // --- Validate phase: ensure files are readable before we touch anything ---
+    string pike_json_path = ctx["pike_json"];
+    string lockfile_path = ctx["lockfile_path"];
+    string pike_json_raw = 0;
+    if (Stdio.exist(pike_json_path)) {
+        pike_json_raw = Stdio.read_file(pike_json_path);
+        if (!pike_json_raw)
+            die("cannot read " + pike_json_path);
+    }
+    string lockfile_raw = 0;
+    if (Stdio.exist(lockfile_path)) {
+        lockfile_raw = Stdio.read_file(lockfile_path);
+        if (!lockfile_raw)
+            die("cannot read " + lockfile_path);
     }
 
-    // Remove symlink (try both bare name and .pmod suffix)
+    mixed pike_data = 0;
+    if (pike_json_raw) {
+        mixed jerr = catch { pike_data = Standards.JSON.decode(_strip_bom(pike_json_raw)); };
+        if (jerr || !mappingp(pike_data)) pike_data = 0;
+    }
+
+    // Pre-check that name exists somewhere
+    int found = 0;
+    if (pike_data && mappingp(pike_data->dependencies)
+        && !zero_type(pike_data->dependencies[name]))
+        found = 1;
     string link = combine_path(ctx["local_dir"], name);
     string link_pmod = combine_path(ctx["local_dir"], name + ".pmod");
+    if (Stdio.exist(link) || Stdio.exist(link_pmod))
+        found = 1;
+    if (lockfile_raw) {
+        array(array(string)) entries = read_lockfile(lockfile_path);
+        if (has_value(column(entries, 0), name)) found = 1;
+    }
+    if (!found)
+        die("nothing to remove: " + name + " not found");
+
+    // Snapshot symlink targets for rollback
+    mapping(string:string) old_symlink_targets = ([]);
     if (Stdio.exist(link)) {
-        rm(link);
-        info("removed " + link);
-        removed = 1;
+        string target = get_symlink_target(link);
+        if (target) old_symlink_targets[link] = target;
     }
     if (Stdio.exist(link_pmod)) {
-        rm(link_pmod);
-        info("removed " + link_pmod);
-        removed = 1;
+        string target = get_symlink_target(link_pmod);
+        if (target) old_symlink_targets[link_pmod] = target;
     }
 
-    // Update lockfile
-    if (Stdio.exist(ctx["lockfile_path"])) {
-        array(array(string)) entries = read_lockfile(ctx["lockfile_path"]);
-        array(array(string)) new_entries = ({});
-        int had_entry = 0;
-        foreach (entries; ; array(string) e)
-            if (e[0] != name) new_entries += ({ e });
-            else had_entry = 1;
-        if (had_entry) removed = 1;
-        ctx["lock_entries"] = new_entries;
-        write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
-    }
+    // --- Execute phase with rollback on failure ---
+    mixed err = catch {
+        // 1. Update pike.json
+        if (pike_data && mappingp(pike_data->dependencies)
+            && !zero_type(pike_data->dependencies[name])) {
+            m_delete(pike_data->dependencies, name);
+            atomic_write(pike_json_path,
+                Standards.JSON.encode(pike_data, Standards.JSON.HUMAN_READABLE) + "\n");
+            info("removed " + name + " from pike.json");
+        }
 
-    if (!removed)
-        warn("nothing to remove: " + name + " not found");
+        // 2. Remove symlinks
+        if (Stdio.exist(link)) {
+            rm(link);
+            info("removed " + link);
+        }
+        if (Stdio.exist(link_pmod)) {
+            rm(link_pmod);
+            info("removed " + link_pmod);
+        }
+
+        // 3. Update lockfile (only if dep was actually present)
+        if (lockfile_raw) {
+            array(array(string)) entries = read_lockfile(lockfile_path);
+            array(array(string)) new_entries = filter(entries, lambda(array(string) e) { return e[0] != name; });
+            if (has_value(column(entries, 0), name)) {
+                ctx["lock_entries"] = new_entries;
+                write_lockfile(lockfile_path, ctx["lock_entries"]);
+            }
+        }
+    };
+    if (err) {
+        // Restore symlinks first
+        foreach (old_symlink_targets; string path; string target) {
+            catch { atomic_symlink(target, path); };
+        }
+        // Then restore files
+        catch { if (pike_json_raw) atomic_write(pike_json_path, pike_json_raw); };
+        catch { if (lockfile_raw) atomic_write(lockfile_path, lockfile_raw); };
+        werror("pmp: remove failed, rolled back to previous state\n");
+        advisory_unlock(lock_path);
+        die(describe_error(err));
+    }
+    advisory_unlock(lock_path);
 }

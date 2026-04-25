@@ -7,12 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- **`pmp self-update` now uses semver comparison** — comparing `0.3.0` with `0.10.0` as raw strings incorrectly reported "up to date". Uses `compare_semver()` from `Semver.pmod`.
-- **GitHub/GitLab tag API pagination** — `latest_tag_github` and `latest_tag_gitlab` now paginate through all tags (repos with >100 tags silently missed newer versions before).
-- **`compute_dir_hash` no longer uses `find`** — replaced external `find` command with Pike `get_dir` recursive walk, eliminating a vulnerability where filenames with newlines would corrupt the content hash.
-- **Open redirect protection in HTTP layer** — `http_get` and `http_get_safe` now validate that redirect targets stay on the same domain or a subdomain, preventing SSRF via malicious 302 responses.
-- **Lockfile field validation** — `write_lockfile` now rejects fields containing tab characters, which would silently corrupt the tab-separated format.
+### Security
+- **Exit code separation** — User errors (exit 1) are now distinguishable from internal failures (exit 2). CI pipelines can differentiate between misconfiguration and bugs.
+- **HTTP transport hardening** — Split timeouts into connect (10s) and read (30s). Added 100 MB response body size limit to prevent OOM. Retry jitter prevents thundering herd. `Retry-After` header respected for 429 responses. Thread handles are no longer leaked on timeout.
+- **Store lock race fix** — Replaced TOCTOU-vulnerable `kill -0` + write with `O_EXCL` atomic create (`Stdio.File("wct")`), eliminating the window for concurrent lock acquisition.
+- **Streaming SHA-256** — `compute_sha256` now reads files in 64 KB chunks instead of loading entire contents into memory, preventing OOM on large packages.
+- **Lockfile format versioning** — Lockfiles now carry a parsed version field (`# pmp lockfile v1`). `read_lockfile` rejects future versions with a clear update suggestion.
+- **Lockfile newline validation** — `write_lockfile` now rejects fields containing newlines alongside tabs, preventing silent format corruption.
+- **`pmp remove` path traversal protection** — Module names containing `/`, `..`, or null bytes are rejected.
+- **install.sh checksum verification** — After pinning to a tag, the installer verifies HEAD matches the expected tag SHA, preventing MITM during clone.
+- **install.sh PATH modification is now opt-in** — Shell RC files are no longer modified by default. Set `PMP_MODIFY_PATH=1` to enable.
+- **Lockfile integrity verification** — `cmd_install_all` now compares `content_sha256` from lockfile against stored hash when installing from lockfile. Tampered or corrupted store entries are detected and rejected.
+- **Tarball extraction hardening** — `extract_targz` uses `--no-same-owner` flag and validates no symlink-path-traversal in extracted archives (CVE-2001-1261 class).
+- **HTTP timeouts** — All HTTP requests now have a 60-second timeout via thread-based timeout wrapper, preventing indefinite hangs on stalled servers.
+- **HTTP retry with backoff** — Transient failures (429, 5xx, connection errors) are retried up to 3 times with exponential backoff.
+- **Sentinel value elimination** — `resolve_commit_sha` and `compute_sha256` no longer return `"unknown"` on failure. `resolve_commit_sha` returns `0`, `compute_sha256` dies on failure. All callers updated.
+- **install.sh hardening** — Added `set -euo pipefail` to the installer script.
+- **SECURITY.md** — Added vulnerability disclosure policy with response timeline.
 
 ### Added
 - PUnit as a dev dependency (`pike.json`) with Pike-level unit tests (81 tests) for `Semver`, `Source`, `Lockfile`, and `Helpers` pure-function modules
@@ -25,6 +36,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pmp store prune` now deletes unused store entries (with confirmation)
 - `cmd_rollback` now warns and continues on missing store entries instead of aborting
 - PUnit version pinned in `pike.json` to prevent breaking CI on upstream releases
+- `--verbose` / `--quiet` CLI flags and `PMP_VERBOSE` / `PMP_QUIET` environment variables
+- `debug()` logging function for verbose output
+- `die_internal()` for assertion-style failures with exit code 2
+- Exit codes documented in help text (0 success, 1 user error, 2 internal error)
+- Environment variable reference in help text (`GITHUB_TOKEN`, `PIKE_BIN`, `TMPDIR`, `PMP_VERBOSE`, `PMP_QUIET`)
+- Column headers in `pmp list` output (`MODULE`, `VERSION`, `SOURCE`)
+- Module count in `pmp clean` summary
+- `pmp init` now verifies write success
+- `install.sh` verifies `pmp version` works after install
+- `install.sh` `git fetch --all --tags` before checkout on update
 
 ### Changed
 - Updated `.gitignore` with IDE/OS/environment patterns from template
@@ -36,7 +57,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `install.sh` version pin example to `v0.3.0`
 - Updated `RELEASE.md` with correct syntax check command and Pike test command
 - Updated `CONTRIBUTING.md` and `docs/ci.md` with Pike test commands
+- **Error categorization** — All `die()` calls audited: integrity mismatches, store corruption, and extraction failures now exit 2 (internal error). User-facing errors remain exit 1.
+- **Store operations use Pike `mv()`** — Replaced three `Process.run(({"mv",...}))` calls with Pike's native `mv()`, eliminating external process dependency.
+- **`build_paths` uses Pike directory walk** — Replaced `find` command with recursive Pike walk for `.h` file detection, removing external dependency.
+- **HTTP error messages** — URLs in error messages now show only the host (not full URL) to avoid leaking tokens in logs.
+- **Top-level error handler** — `main()` wrapped in `catch`; unhandled exceptions produce `pmp: internal error: <msg>` with exit 2.
+- **Hash type consistency** — All store install methods now return `compute_dir_hash()` of the final store entry, ensuring lockfile hashes match regardless of whether the entry was cached or freshly downloaded.
+- **Atomic lockfile write** — Lockfile writes use Pike's `mv()` (wraps `rename(2)`) instead of `Process.run` with external `mv`.
+- **Temp directory** — Uses `${TMPDIR:-/tmp}` instead of hardcoded `/tmp` for temporary files.
+- **Store locking** — Added PID-based advisory lock on `~/.pike/store/.lock` to prevent concurrent store corruption.
+- **URL scheme support** — Sources can now use `https://`, `http://`, `git://`, `ssh://` prefixes and `.git` suffix, automatically stripped during normalization.
+- **Source URL validation** — Invalid source formats (e.g., bare names, incomplete paths) are rejected with clear error messages.
+- **Import scanner** — Validates dotted imports (`import Standards.JSON`), relative imports (`import .Foo`), and dotted inherits. Extracts first component for dependency matching.
+- **Error patterns** — Eliminated all `"unknown"` sentinel return values. Functions now return `0` on failure or `die()` for unrecoverable errors.
 
+### Fixed
+- **`pmp install <url>` lockfile race condition** — Lockfile was read before acquiring the project lock, allowing concurrent installs to lose entries. Lockfile read now happens inside the locked section.
+- **`pmp remove` double JSON decode** — `pike.json` was decoded twice (validate + execute phases) without BOM handling. Now decoded once with `_strip_bom`, preserving raw content for rollback.
+- **`cmd_verify` local-source detection** — Inline `ls != "-" && !has_prefix(ls, "./") && !has_prefix(ls, "/")` replaced with `is_local_source()` helper, adding Verify.pmod to the set of modules using the shared function.
+- **`pmp self-update` now uses semver comparison** — comparing `0.3.0` with `0.10.0` as raw strings incorrectly reported "up to date". Uses `compare_semver()` from `Semver.pmod`.
+- **GitHub/GitLab tag API pagination** — `latest_tag_github` and `latest_tag_gitlab` now paginate through all tags (repos with >100 tags silently missed newer versions before).
+- **`compute_dir_hash` no longer uses `find`** — replaced external `find` command with Pike `get_dir` recursive walk, eliminating a vulnerability where filenames with newlines would corrupt the content hash.
+- **Open redirect protection in HTTP layer** — `http_get` and `http_get_safe` now validate that redirect targets stay on the same domain or a subdomain, preventing SSRF via malicious 302 responses.
+- **Lockfile field validation** — `write_lockfile` now rejects fields containing tab characters, which would silently corrupt the tab-separated format.
 ## [0.3.0] - 2026-04-21
 
 ### Added

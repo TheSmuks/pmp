@@ -2,9 +2,9 @@
 
 printf '\n=== Source type detection ===\n'
 
-# Bare name should error with registry message
+# Bare name should error with validation message
 _out="$("$PMP" install punit 2>&1 || true)"
-assert_output_contains "bare name rejected" "registry not supported" "$_out"
+assert_output_contains "bare name rejected" "invalid source format" "$_out"
 
 # Test source name extraction via the env wrapper's path building
 # Create a pike.json with a local dep and verify the wrapper picks it up

@@ -5,6 +5,10 @@
 //! -prerelease suffix) are sorted correctly. Non-semver tags are treated
 //! as version 0.0.0 and sort last.
 
+// Pre-compiled regexps for identifier validation (used in parse_semver + compare_prerelease)
+protected Regexp RE_IDENT = Regexp("^[0-9A-Za-z-]+$");
+protected Regexp RE_NUMERIC = Regexp("^[0-9]+$");
+
 //! Parse a version string into a mapping.
 //! Handles: "1.2.3", "v1.2.3", "1.2.3-alpha", "1.2.3-alpha.1", "1.2.3-alpha.1+build"
 //! Returns 0 if not parseable as semver.
@@ -17,10 +21,20 @@ mapping parse_semver(string tag) {
     if (sizeof(v) > 0 && (v[0] == 'v' || v[0] == 'V'))
         v = v[1..];
 
-    // Split off build metadata (+suffix) — ignored per semver spec
+    // Strip build metadata (+suffix) — validate identifiers per semver spec
     int plus_idx = search(v, "+");
-    if (plus_idx >= 0)
+    string build_meta = "";
+    if (plus_idx >= 0) {
+        build_meta = v[plus_idx + 1..];
         v = v[..plus_idx - 1];
+        // Empty build metadata (trailing +) is invalid
+        if (sizeof(build_meta) == 0) return 0;
+        foreach (build_meta / "."; ; string id) {
+            if (sizeof(id) == 0) return 0;
+            if (String.width(id) > 8 || !RE_IDENT->match(id))
+                return 0;
+        }
+    }
 
     // Split off prerelease (-suffix)
     string pre = "";
@@ -28,25 +42,34 @@ mapping parse_semver(string tag) {
     if (pre_idx >= 0) {
         pre = v[pre_idx + 1..];
         v = v[..pre_idx - 1];
+        // Empty prerelease (trailing dash) is invalid per semver spec
+        if (sizeof(pre) == 0) return 0;
+        // Validate prerelease identifiers: non-empty, [0-9A-Za-z-]+, no leading zeros in numeric
+        foreach (pre / "."; ; string id) {
+            if (sizeof(id) == 0) return 0;
+            if (String.width(id) > 8 || !RE_IDENT->match(id))
+                return 0;
+            int all_digits = RE_NUMERIC->match(id);
+            // Numeric identifiers must not have leading zeros
+            if (all_digits && sizeof(id) > 1 && id[0] == '0') return 0;
+        }
     }
 
-    // Validate: remaining must be digits separated by dots
+    // Strict semver: require exactly MAJOR.MINOR.PATCH
     array(string) parts = v / ".";
-    if (sizeof(parts) < 1 || sizeof(parts) > 3) return 0;
+    if (sizeof(parts) != 3) return 0;
 
-    // All parts must be non-empty digit-only strings
+    // All parts must be non-empty digit-only strings with no leading zeros
     foreach (parts; ; string p) {
         if (sizeof(p) == 0) return 0;
-        int dig = 1;
-        foreach (p / 1; ; string c)
-            if (c < "0" || c > "9") { dig = 0; break; }
-        if (!dig) return 0;
+        if (String.width(p) > 8 || !RE_NUMERIC->match(p)) return 0;
+        if (sizeof(p) > 1 && p[0] == '0') return 0;
     }
 
     int major, minor, patch;
-    if (sscanf(parts[0], "%d", major) != 1) return 0;
-    minor = sizeof(parts) > 1 ? (int)parts[1] : 0;
-    patch = sizeof(parts) > 2 ? (int)parts[2] : 0;
+    major = (int)parts[0];
+    minor = (int)parts[1];
+    patch = (int)parts[2];
 
     return ([
         "major": major,
@@ -73,8 +96,8 @@ int compare_prerelease(string a, string b) {
 
     int len = min(sizeof(pa), sizeof(pb));
     for (int i = 0; i < len; i++) {
-        int a_num = (sscanf(pa[i], "%d", int a_val) == 1) && pa[i] == (string)a_val;
-        int b_num = (sscanf(pb[i], "%d", int b_val) == 1) && pb[i] == (string)b_val;
+        int a_num = sizeof(pa[i]) > 0 && RE_NUMERIC->match(pa[i]);
+        int b_num = sizeof(pb[i]) > 0 && RE_NUMERIC->match(pb[i]);
 
         if (a_num && b_num) {
             // Both numeric — compare as integers
@@ -128,12 +151,14 @@ array(string) sort_tags_semver(array(string) tags) {
     if (sizeof(tags) <= 1) return tags + ({});
 
     // Build pairs: ({parsed_semver_or_0, original_tag})
-    array(array) pairs = ({});
-    foreach (tags; ; string t)
-        pairs += ({ ({ parse_semver(t), t }) });
+    array(array) pairs = map(tags, lambda(string t) {
+        return ({ parse_semver(t), t });
+    });
 
-    // Sort: highest semver first, non-semver last.
-    // Array.sort_array comparator: returns true = swap (a goes after b).
+    // sort_array comparator: returns true when elements should be swapped.
+    // We want highest-first. If a > b (compare returns 1), we DON'T swap (return false = 1 < 0 = false).
+    // If a < b (compare returns -1), we DO swap (return true = -1 < 0 = true).
+    // Result: higher versions sort to the front.
     pairs = Array.sort_array(pairs, lambda(array a, array b) {
         mixed pa = a[0];
         mixed pb = b[0];
@@ -147,7 +172,7 @@ array(string) sort_tags_semver(array(string) tags) {
 }
 
 //! Classify the version change from old_tag to new_tag.
-//! Returns: "major", "minor", "patch", "prerelease", "downgrade", or "unknown".
+//! Returns: "none", "major", "minor", "patch", "prerelease", "downgrade", or "unknown".
 string classify_bump(string|void old_tag, string|void new_tag) {
     if (!old_tag || !new_tag) return "unknown";
 
@@ -159,14 +184,20 @@ string classify_bump(string|void old_tag, string|void new_tag) {
     int cmp = compare_semver(old_v, new_v);
 
     if (cmp > 0) return "downgrade";
-    if (cmp == 0) return "patch";
+    if (cmp == 0) return "none";
 
     if (new_v["major"] != old_v["major"]) return "major";
     if (new_v["minor"] != old_v["minor"]) return "minor";
 
-    // Same major.minor — could be patch or prerelease change
-    if (sizeof(old_v["prerelease"]) > 0 || sizeof(new_v["prerelease"]) > 0)
-        return "prerelease";
+    // Same major.minor — classify the change
+    // If new version has a prerelease tag, it's a prerelease bump
+    if (sizeof(new_v["prerelease"]) > 0) return "prerelease";
 
-    return "patch";
+    // New is a release — patch difference determines the bump
+    if (new_v["patch"] != old_v["patch"]) return "patch";
+
+    // Same major.minor.patch — old had prerelease, new doesn't
+    if (sizeof(old_v["prerelease"]) > 0) return "prerelease";
+
+    return "none";
 }

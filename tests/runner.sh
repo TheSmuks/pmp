@@ -33,7 +33,7 @@ fi
 
 for _test_file in $_TEST_FILES; do
     if [ -f "$_test_file" ]; then
-        . "$_test_file" || true
+        . "$_test_file"
     fi
 done
 

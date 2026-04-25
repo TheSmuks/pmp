@@ -3,9 +3,9 @@
 # Usage: sh install.sh
 #   PMP_INSTALL_DIR=~/.pmp     override install location
 #   PMP_VERSION=v0.3.0         pin to a specific tag
-#   PMP_NO_MODIFY_PATH=1       skip shell rc modification
+#   PMP_MODIFY_PATH=1          opt in to shell rc PATH modification
 
-set -u
+set -eu
 
 PMP_REPO="https://github.com/TheSmuks/pmp.git"
 
@@ -60,16 +60,16 @@ fi
 if ! check_cmd gunzip; then
     note "gunzip not found — remote .tar.gz extraction will not work."
 fi
-if ! check_cmd find; then
-    note "find not found — 'pmp env' header detection will not work."
-fi
 
 # --- Install / Update ---
 
 if [ -e "$PMP_INSTALL_DIR/.git" ]; then
     # Existing git checkout (directory or worktree file)
     msg "Updating existing installation at $PMP_INSTALL_DIR"
-    # If on detached HEAD (after version pin), return to main/master first
+    # Fetch all tags and branches
+    git -C "$PMP_INSTALL_DIR" fetch --all --tags 2>/dev/null || \
+        die "git fetch failed. Check your network connection and try again."
+    # Return to a branch if on detached HEAD (after previous version pin)
     if ! git -C "$PMP_INSTALL_DIR" symbolic-ref -q HEAD >/dev/null 2>&1; then
         git -C "$PMP_INSTALL_DIR" checkout main 2>/dev/null || \
             git -C "$PMP_INSTALL_DIR" checkout master 2>/dev/null || true
@@ -91,6 +91,13 @@ if [ -n "${PMP_VERSION:-}" ]; then
     msg "Checking out $PMP_VERSION"
     git -C "$PMP_INSTALL_DIR" checkout "tags/$PMP_VERSION" 2>/dev/null || \
         die "tag $PMP_VERSION not found. Run 'git -C \"$PMP_INSTALL_DIR\" tag -l' to see available versions."
+
+    # Verify checkout integrity: compare HEAD with expected tag commit
+    _tag_sha=$(git -C "$PMP_INSTALL_DIR" rev-parse "tags/$PMP_VERSION" 2>/dev/null || echo "")
+    _head_sha=$(git -C "$PMP_INSTALL_DIR" rev-parse HEAD 2>/dev/null || echo "")
+    if [ -n "$_tag_sha" ] && [ -n "$_head_sha" ] && [ "$_tag_sha" != "$_head_sha" ]; then
+        die "checksum mismatch: expected $_tag_sha but got $_head_sha for $PMP_VERSION"
+    fi
 fi
 
 # --- Verify installation ---
@@ -104,7 +111,13 @@ if [ ! -x "$PMP_INSTALL_DIR/bin/pmp" ]; then
     chmod +x "$PMP_INSTALL_DIR/bin/pmp"
 fi
 
-# --- Shell rc PATH modification ---
+# Verify pmp actually works
+if ! "$PMP_INSTALL_DIR/bin/pmp" version >/dev/null 2>&1; then
+    die "Installation verification failed: 'pmp version' returned an error.
+  Ensure Pike is correctly installed and PIKE_MODULE_PATH is not set incorrectly."
+fi
+
+# --- Shell rc PATH modification (opt-in) ---
 
 modify_rc() {
     _rcfile="$1"
@@ -126,7 +139,7 @@ modify_rc() {
     msg "Added PATH entry to $_rcfile"
 }
 
-if [ "${PMP_NO_MODIFY_PATH:-0}" != "1" ]; then
+if [ "${PMP_MODIFY_PATH:-0}" = "1" ]; then
     for _rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
         # Only modify .zshrc if zsh is installed, .profile always
         case "$_rc" in
@@ -148,6 +161,4 @@ fi
 
 msg "Installed pmp${_ver:+ v$_ver} to $PMP_INSTALL_DIR"
 msg "Run 'pmp --help' to get started."
-if [ "${PMP_NO_MODIFY_PATH:-0}" != "1" ]; then
-    msg "Restart your shell or run: export PATH=\"$PMP_INSTALL_DIR/bin:\$PATH\""
-fi
+msg "Add to PATH: export PATH=\"$PMP_INSTALL_DIR/bin:\$PATH\""

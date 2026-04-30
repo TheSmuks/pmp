@@ -1,3 +1,5 @@
+//! Build metadata identifiers allow leading zeros per Semver 2.0.0 spec section 10.
+
 //! Semver.pmod — semantic version parsing, comparison, and classification.
 //! Follows Semantic Versioning 2.0.0 (https://semver.org/).
 //!

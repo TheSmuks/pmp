@@ -233,6 +233,8 @@ pmp run <script>                            Run script with module paths
 pmp version                                 Show pmp version
 pmp rollback                               Rollback to previous lockfile (pike.lock.prev)
 pmp changelog <module>                     Show commit log between installed versions
+pmp verify                                 Verify project integrity (lockfile vs store vs modules)
+pmp doctor                                 Diagnose common issues (missing entries, broken symlinks)
 ```
 
 > **Note:** pmp uses [Semantic Versioning](https://semver.org/) for tag comparison. Only tags matching MAJOR.MINOR.PATCH (with optional `v` prefix and `-prerelease` suffix) are sorted correctly. Non-semver tags are deprioritized.

@@ -6,10 +6,10 @@
 //   3. Lockfile entries match installed modules
 //   4. Orphaned store entries (not referenced by any project)
 
-inherit .Helpers;
-inherit .Source;
-inherit .Store;
-inherit .Lockfile;
+inherit Helpers;
+inherit Source;
+inherit Store;
+inherit Lockfile;
 
 //! Verify project integrity: symlinks, store, lockfile consistency.
 //! Returns 1 if all checks pass, 0 if issues found.

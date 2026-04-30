@@ -1,4 +1,4 @@
-inherit .Helpers;
+inherit Helpers;
 
 constant LOCKFILE_VERSION = 1;
 

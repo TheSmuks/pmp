@@ -8,7 +8,8 @@
 _self="$(cd "$(dirname "$0")" && pwd)"
 
 # Set PIKE_MODULE_PATH so pmp.pike can import Pmp
-export PIKE_MODULE_PATH="$_self"
+# Layered module directories: core, transport, store, project, commands
+export PIKE_MODULE_PATH="$_self:$_self/core:$_self/transport:$_self/store:$_self/project:$_self/commands"
 
 # Find Pike binary
 _pi_bin="${PIKE_BIN:-$(command -v pike8.0 2>/dev/null || command -v pike 2>/dev/null || echo /usr/local/pike/8.0.1116/bin/pike)}"

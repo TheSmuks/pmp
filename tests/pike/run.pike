@@ -15,6 +15,8 @@ int main(int argc, array(string) argv) {
         ({"tag",       Getopt.HAS_ARG, ({"-t", "--tag"}),       "T", 0}),
         ({"exclude",   Getopt.HAS_ARG, ({"-e", "--exclude"}),   "E", 0}),
         ({"filter",    Getopt.HAS_ARG, ({"-f", "--filter"}),    "F", 0}),
+        ({"junit",     Getopt.HAS_ARG, ({"--junit"}),           "J", 0}),
+        ({"tap",       Getopt.NO_ARG,  ({"--tap"}),             "A", 0}),
     }));
 
     foreach (opts; ; array opt) {
@@ -25,6 +27,8 @@ int main(int argc, array(string) argv) {
             case "tag":       tags += ({ opt[1] }); break;
             case "exclude":   exclude_tags += ({ opt[1] }); break;
             case "filter":    options->filter = opt[1]; break;
+            case "junit":     options->junit = opt[1]; break;
+            case "tap":       options->tap = 1; break;
         }
     }
 

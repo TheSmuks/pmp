@@ -1,7 +1,7 @@
 //! Adversarial tests for Pmp.Lockfile — edge cases and boundary conditions.
 
 import PUnit;
-import Pmp.Lockfile;
+import Lockfile;
 inherit PUnit.TestCase;
 
 // ── lockfile_add_entry ───────────────────────────────────────────────

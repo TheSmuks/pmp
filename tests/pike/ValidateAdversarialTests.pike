@@ -1,7 +1,7 @@
 //! Adversarial tests for Pmp.Validate — strip_comments_and_strings edge cases.
 
 import PUnit;
-import Pmp.Validate;
+import Validate;
 inherit PUnit.TestCase;
 
 void test_empty_input() {

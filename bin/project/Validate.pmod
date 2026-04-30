@@ -1,4 +1,4 @@
-inherit .Helpers;
+inherit Helpers;
 inherit .Manifest;
 // Pre-compiled regexps for import/inherit/include scanning
 protected Regexp RE_IMPORT = Regexp("import[ \t]+([.A-Za-z_][A-Za-z0-9_.]*)");

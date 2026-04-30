@@ -2,14 +2,24 @@
 //! compare_semver, compare_prerelease, classify_bump.
 
 import PUnit;
-import Pmp.Semver;
+import Semver;
 inherit PUnit.TestCase;
 
 // ── parse_semver ─────────────────────────────────────────────────────
 
+void test_parse_prerelease_leading_zero() {
+    // "1.0.0-01" — numeric prerelease with leading zero: invalid per semver spec §9
+    assert_equal(0, parse_semver("1.0.0-01"));
+}
+
 void test_parse_trailing_dash() {
     // "1.2.3-" — dash present but empty prerelease: invalid per semver spec §9
     assert_equal(0, parse_semver("1.2.3-"));
+}
+
+void test_parse_build_metadata_empty_before_dot() {
+    // "1.0.0+.beta" — empty identifier before dot in build metadata: invalid per semver spec §10
+    assert_equal(0, parse_semver("1.0.0+.beta"));
 }
 
 void test_parse_empty_build_metadata() {
@@ -79,6 +89,11 @@ void test_parse_semver_empty_string() {
     assert_equal(0, parse_semver(""));
 }
 
+void test_parse_prerelease_at_sign() {
+    // "1.0.0-alpha@beta" — '@' not valid in prerelease per semver spec §9
+    assert_equal(0, parse_semver("1.0.0-alpha@beta"));
+}
+
 void test_parse_semver_prerelease_with_special_chars() {
     // "1.0.0-alpha/beta" — slash not valid in prerelease per semver spec §9
     assert_equal(0, parse_semver("1.0.0-alpha/beta"));
@@ -145,4 +160,13 @@ void test_classify_prerelease_same_mmp() {
 void test_classify_prerelease_alpha_to_release() {
     // 1.0.0-alpha → 1.0.0: dropping prerelease = "prerelease"
     assert_equal("prerelease", classify_bump("1.0.0-alpha", "1.0.0"));
+}
+
+void test_parse_build_metadata_leading_zeros_accepted() {
+    // "1.0.0+001" — leading zeros in build metadata ARE valid per semver spec §10
+    mapping v = parse_semver("1.0.0+001");
+    assert_not_null(v);
+    assert_equal(1, v["major"]);
+    assert_equal(0, v["minor"]);
+    assert_equal(0, v["patch"]);
 }

@@ -3,8 +3,8 @@
 //! version tag parsing.
 
 import PUnit;
-import Pmp.Source;
-import Pmp.Helpers;
+import Source;
+import Helpers;
 inherit PUnit.TestCase;
 
 // ── detect_source_type: scheme & format variations ───────────────────
@@ -143,6 +143,11 @@ protected int run_subprocess(string code) {
     mapping result = Process.run(({
         "pike", "-M", combine_path(getcwd(), "modules"),
         "-M", combine_path(getcwd(), "bin"),
+        "-M", combine_path(getcwd(), "bin/core"),
+        "-M", combine_path(getcwd(), "bin/transport"),
+        "-M", combine_path(getcwd(), "bin/store"),
+        "-M", combine_path(getcwd(), "bin/project"),
+        "-M", combine_path(getcwd(), "bin/commands"),
         "-e", code
     }));
     return result->exitcode;
@@ -150,7 +155,7 @@ protected int run_subprocess(string code) {
 
 void test_validate_tag_rejects_slash() {
     int code = run_subprocess(
-        "import Pmp.Source; "
+        "import Source; "
         "validate_version_tag(\"foo/bar\");"
     );
     assert_true(code != 0, "tag with / should have died");
@@ -158,7 +163,7 @@ void test_validate_tag_rejects_slash() {
 
 void test_validate_tag_rejects_backslash() {
     int code = run_subprocess(
-        "import Pmp.Source; "
+        "import Source; "
         "validate_version_tag(\"foo\\\\bar\");"
     );
     assert_true(code != 0, "tag with \\ should have died");
@@ -166,7 +171,7 @@ void test_validate_tag_rejects_backslash() {
 
 void test_validate_tag_rejects_dotdot() {
     int code = run_subprocess(
-        "import Pmp.Source; "
+        "import Source; "
         "validate_version_tag(\"..\\\/..\");"
     );
     assert_true(code != 0, "tag with .. should have died");
@@ -174,7 +179,7 @@ void test_validate_tag_rejects_dotdot() {
 
 void test_validate_tag_rejects_semicolon() {
     int code = run_subprocess(
-        "import Pmp.Source; "
+        "import Source; "
         "validate_version_tag(\"v1;rm -rf /\");"
     );
     assert_true(code != 0, "tag with ; should have died");
@@ -183,7 +188,7 @@ void test_validate_tag_rejects_semicolon() {
 void test_validate_tag_allows_valid_semver() {
     // Valid semver tags must not die
     int code = run_subprocess(
-        "import Pmp.Source; "
+        "import Source; "
         "validate_version_tag(\"v1.2.3\"); "
         "validate_version_tag(\"0.1.0-alpha.1\"); "
         "validate_version_tag(\"2.0.0-rc.1+build.123\");"
@@ -194,7 +199,7 @@ void test_validate_tag_allows_valid_semver() {
 void test_validate_tag_empty_is_allowed() {
     // Empty tag is allowed (no version specified)
     int code = run_subprocess(
-        "import Pmp.Source; "
+        "import Source; "
         "validate_version_tag(\"\");"
     );
     assert_equal(0, code);
@@ -205,4 +210,51 @@ void test_validate_tag_empty_is_allowed() {
 void test_repo_path_short_returns_empty() {
     // Only domain — should return empty string, not die
     assert_equal("", source_to_repo_path("github.com"));
+}
+
+
+// ── source_strip_version: not covered by existing tests ────────────
+
+void test_strip_version_with_tag() {
+    assert_equal("github.com/owner/repo",
+                 source_strip_version("github.com/owner/repo#v1.0.0"));
+}
+
+void test_strip_version_no_tag() {
+    assert_equal("github.com/owner/repo",
+                 source_strip_version("github.com/owner/repo"));
+}
+
+// ── bare-format URLs (no scheme prefix) ─────────────────────────────
+
+void test_detect_github_bare_format() {
+    // Bare hostname without scheme
+    assert_equal("github", detect_source_type("github.com/owner/repo"));
+}
+
+void test_detect_github_bare_with_version() {
+    assert_equal("github",
+        detect_source_type("github.com/owner/repo#v1.0.0"));
+}
+
+void test_name_deep_path_bare() {
+    // Deep nesting without scheme
+    assert_equal("mymod",
+        source_to_name("git.example.com/group/sub/mymod"));
+}
+
+void test_version_preserves_prerelease() {
+    // Prerelease suffix in version tag
+    assert_equal("v1.0.0-beta",
+        source_to_version("github.com/owner/repo#v1.0.0-beta"));
+}
+
+void test_domain_selfhosted_bare() {
+    assert_equal("git.example.com",
+        source_to_domain("git.example.com/team/mod"));
+}
+
+void test_repo_path_bare_with_version() {
+    assert_equal("owner/repo",
+        source_to_repo_path("github.com/owner/repo#v1.0.0"));
 }

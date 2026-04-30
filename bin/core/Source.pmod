@@ -1,4 +1,4 @@
-inherit .Helpers;
+inherit Helpers;
 
 //! Check if a source string represents a local path.
 int(0..1) is_local_source(string s) {
@@ -76,9 +76,11 @@ int(0..1) _validate_source_format(string original, string clean) {
 string detect_source_type(string src) {
     if (has_prefix(src, "./") || has_prefix(src, "/"))
         return "local";
+    if (has_prefix(src, "file://"))
+        die("file:// URLs are not supported — use local paths (./path or /absolute/path) instead");
 
     string clean = _normalize_source(src);
-    if (!_validate_source_format(src, clean)) die("invalid source format: " + src + " (expected domain/owner/repo)");
+    if (!_validate_source_format(src, clean)) die("invalid source format: " + clean + " (expected domain/owner/repo)");
     string domain = (clean / "/")[0];
 
     switch (domain) {
@@ -94,7 +96,7 @@ string source_to_name(string src) {
     string clean = _normalize_source(src);
     array(string) clean_parts = (clean / "/") - ({ "" });
     if (sizeof(clean_parts) < 1)
-        die("cannot extract module name from: " + src);
+        die("cannot extract module name from: " + clean);
     return replace(clean_parts[-1], "-", "_");
 }
 
@@ -130,7 +132,7 @@ string source_to_repo_path(string src) {
 
 //! Validate a version tag for safe use in filenames.
 //! Allows empty strings and valid semver tags.
-//! Rejects tags containing /, \\, .., ;, or null bytes.
+//! Rejects tags containing /, \, .., ;, or null bytes.
 void validate_version_tag(string tag) {
     if (sizeof(tag) == 0) return;  // empty is allowed
     if (has_value(tag, "/"))

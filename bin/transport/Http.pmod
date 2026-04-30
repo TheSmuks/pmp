@@ -7,7 +7,7 @@
 //!   - Response body size limit (100 MB)
 //!   - Open redirect protection
 
-inherit .Helpers;
+inherit Helpers;
 
 protected Regexp RE_HEX = Regexp("^[0-9a-fA-F]+$");
 protected Regexp RE_OCTAL = Regexp("^[0-7]+$");

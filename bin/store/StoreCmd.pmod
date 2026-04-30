@@ -1,7 +1,7 @@
 // StoreCmd.pmod — cmd_store: inspect and prune the content-addressable store.
 // All state is passed via context mapping (ctx).
 
-inherit .Helpers;
+inherit Helpers;
 inherit .Store;
 
 private int(0..1) _entry_referenced(string store_dir, string entry_name, string modules_dir) {
@@ -58,7 +58,7 @@ void cmd_store(array(string) args, mapping ctx) {
             array(string) entries = filter(get_dir(ctx["store_dir"]) || ({}),
                 lambda(string ename) { return Stdio.is_dir(combine_path(ctx["store_dir"], ename)); });
             if (!Stdio.is_dir(ctx["local_dir"])) {
-                info("no local modules directory found \u2014 skipping prune");
+                info("no local modules directory found — skipping prune");
                 store_unlock(ctx["store_dir"]);
                 return;
             }

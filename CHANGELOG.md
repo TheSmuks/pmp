@@ -7,25 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Security
-- **Exit code separation** — User errors (exit 1) are now distinguishable from internal failures (exit 2). CI pipelines can differentiate between misconfiguration and bugs.
-- **HTTP transport hardening** — Split timeouts into connect (10s) and read (30s). Added 100 MB response body size limit to prevent OOM. Retry jitter prevents thundering herd. `Retry-After` header respected for 429 responses. Thread handles are no longer leaked on timeout.
-- **Store lock race fix** — Replaced TOCTOU-vulnerable `kill -0` + write with `O_EXCL` atomic create (`Stdio.File("wct")`), eliminating the window for concurrent lock acquisition.
-- **Streaming SHA-256** — `compute_sha256` now reads files in 64 KB chunks instead of loading entire contents into memory, preventing OOM on large packages.
-- **Lockfile format versioning** — Lockfiles now carry a parsed version field (`# pmp lockfile v1`). `read_lockfile` rejects future versions with a clear update suggestion.
-- **Lockfile newline validation** — `write_lockfile` now rejects fields containing newlines alongside tabs, preventing silent format corruption.
-- **`pmp remove` path traversal protection** — Module names containing `/`, `..`, or null bytes are rejected.
-- **install.sh checksum verification** — After pinning to a tag, the installer verifies HEAD matches the expected tag SHA, preventing MITM during clone.
-- **install.sh PATH modification is now opt-in** — Shell RC files are no longer modified by default. Set `PMP_MODIFY_PATH=1` to enable.
-- **Lockfile integrity verification** — `cmd_install_all` now compares `content_sha256` from lockfile against stored hash when installing from lockfile. Tampered or corrupted store entries are detected and rejected.
-- **Tarball extraction hardening** — `extract_targz` uses `--no-same-owner` flag and validates no symlink-path-traversal in extracted archives (CVE-2001-1261 class).
-- **HTTP timeouts** — All HTTP requests now have a 60-second timeout via thread-based timeout wrapper, preventing indefinite hangs on stalled servers.
-- **HTTP retry with backoff** — Transient failures (429, 5xx, connection errors) are retried up to 3 times with exponential backoff.
-- **Sentinel value elimination** — `resolve_commit_sha` and `compute_sha256` no longer return `"unknown"` on failure. `resolve_commit_sha` returns `0`, `compute_sha256` dies on failure. All callers updated.
-- **install.sh hardening** — Added `set -euo pipefail` to the installer script.
-- **SECURITY.md** — Added vulnerability disclosure policy with response timeline.
-
 ### Added
+- docs: added TigerBeetle's Tiger Style coding guide (docs/TIGER_STYLE.md) as a project reference
+- feat: StoreCmdAdversarialTests.pike — 11 new tests for dir_size, human_size, and store pruning logic
+- feat: 4 new Semver adversarial tests for prerelease leading zeros (S-01), at-sign rejection (S-04), build metadata validation (S-05), and build metadata leading zeros acceptance (S-06)
 - PUnit as a dev dependency (`pike.json`) with Pike-level unit tests (81 tests) for `Semver`, `Source`, `Lockfile`, and `Helpers` pure-function modules
 - `tests/pike_tests.sh` entry point — installs PUnit and runs tests via `sh tests/pike_tests.sh`
 - `tests/pike/` directory with `run.pike` harness and 4 test files: `SemverTests.pike`, `SourceTests.pike`, `LockfilePureTests.pike`, `HelpersTests.pike`
@@ -48,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `install.sh` `git fetch --all --tags` before checkout on update
 
 ### Changed
+- refactor: reorganized flat bin/Pmp.pmod/ into layered domain directories (core, transport, store, project, commands) following separation of concerns
+- refactor: updated sh shim and pike_tests.sh to include layered PIKE_MODULE_PATH entries
+- refactor: decomposed Install.pmod (1042 lines) into Install.pmod (~600 lines), Update.pmod (~200 lines), and LockOps.pmod (~280 lines) for focused single-responsibility modules
+- refactor: deduplicated Pike test suites — removed LockfilePureTests, HelpersTests, SourceTests (merged into adversarial counterparts), removed classify_bump/merge_lock_entries duplicates from InstallAdversarialTests and ResolveAdversarialTests
+- docs: reconciled documentation with actual codebase — corrected module counts (16 functional modules), test counts (172 shell + 306 Pike), added missing module entries (Cache.pmod, Verify.pmod), added verify/doctor commands to README
 - Updated `.gitignore` with IDE/OS/environment patterns from template
 - Updated `CONTRIBUTING.md` with branch naming conventions and expanded guidelines
 - Updated `README.md` with changelog badge
@@ -71,7 +61,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Import scanner** — Validates dotted imports (`import Standards.JSON`), relative imports (`import .Foo`), and dotted inherits. Extracts first component for dependency matching.
 - **Error patterns** — Eliminated all `"unknown"` sentinel return values. Functions now return `0` on failure or `die()` for unrecoverable errors.
 
+### Removed
+- Cache.pmod and CacheAdversarialTests.pike — orphaned module never wired into the system (ADR-0002)
+- Removed `Cache.pmod` — orphaned module (~140 lines) that was never wired into module.pmod or called by any other module. 18 tests (CacheAdversarialTests.pike) removed. No behavior change.
+
+### Security
+- **Exit code separation** — User errors (exit 1) are now distinguishable from internal failures (exit 2). CI pipelines can differentiate between misconfiguration and bugs.
+- **HTTP transport hardening** — Split timeouts into connect (10s) and read (30s). Added 100 MB response body size limit to prevent OOM. Retry jitter prevents thundering herd. `Retry-After` header respected for 429 responses. Thread handles are no longer leaked on timeout.
+- **Store lock race fix** — Replaced TOCTOU-vulnerable `kill -0` + write with `O_EXCL` atomic create (`Stdio.File("wct")`), eliminating the window for concurrent lock acquisition.
+- **Streaming SHA-256** — `compute_sha256` now reads files in 64 KB chunks instead of loading entire contents into memory, preventing OOM on large packages.
+- **Lockfile format versioning** — Lockfiles now carry a parsed version field (`# pmp lockfile v1`). `read_lockfile` rejects future versions with a clear update suggestion.
+- **Lockfile newline validation** — `write_lockfile` now rejects fields containing newlines alongside tabs, preventing silent format corruption.
+- **`pmp remove` path traversal protection** — Module names containing `/`, `..`, or null bytes are rejected.
+- **install.sh checksum verification** — After pinning to a tag, the installer verifies HEAD matches the expected tag SHA, preventing MITM during clone.
+- **install.sh PATH modification is now opt-in** — Shell RC files are no longer modified by default. Set `PMP_MODIFY_PATH=1` to enable.
+- **Lockfile integrity verification** — `cmd_install_all` now compares `content_sha256` from lockfile against stored hash when installing from lockfile. Tampered or corrupted store entries are detected and rejected.
+- **Tarball extraction hardening** — `extract_targz` uses `--no-same-owner` flag and validates no symlink-path-traversal in extracted archives (CVE-2001-1261 class).
+- **HTTP timeouts** — All HTTP requests now have a 60-second timeout via thread-based timeout wrapper, preventing indefinite hangs on stalled servers.
+- **HTTP retry with backoff** — Transient failures (429, 5xx, connection errors) are retried up to 3 times with exponential backoff.
+- **Sentinel value elimination** — `resolve_commit_sha` and `compute_sha256` no longer return `"unknown"` on failure. `resolve_commit_sha` returns `0`, `compute_sha256` dies on failure. All callers updated.
+- **install.sh hardening** — Added `set -euo pipefail` to the installer script.
+- **SECURITY.md** — Added vulnerability disclosure policy with response timeline.
+
 ### Fixed
+- fix(security): sanitize URLs in error messages to prevent credential leakage (C-05)
+- fix(source): reject file:// URLs with clear error message — use local paths instead (C-07)
+- fix: verified SHA prefix is 16 chars (C-10), cmd_update locking is safe (C-17), cmd_remove atomicity (P-01), install rollback (H-28), cmd_rollback locking (H-29) — all confirmed already fixed
 - **`pmp install <url>` lockfile race condition** — Lockfile was read before acquiring the project lock, allowing concurrent installs to lose entries. Lockfile read now happens inside the locked section.
 - **`pmp remove` double JSON decode** — `pike.json` was decoded twice (validate + execute phases) without BOM handling. Now decoded once with `_strip_bom`, preserving raw content for rollback.
 - **`cmd_verify` local-source detection** — Inline `ls != "-" && !has_prefix(ls, "./") && !has_prefix(ls, "/")` replaced with `is_local_source()` helper, adding Verify.pmod to the set of modules using the shared function.
@@ -80,6 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`compute_dir_hash` no longer uses `find`** — replaced external `find` command with Pike `get_dir` recursive walk, eliminating a vulnerability where filenames with newlines would corrupt the content hash.
 - **Open redirect protection in HTTP layer** — `http_get` and `http_get_safe` now validate that redirect targets stay on the same domain or a subdomain, preventing SSRF via malicious 302 responses.
 - **Lockfile field validation** — `write_lockfile` now rejects fields containing tab characters, which would silently corrupt the tab-separated format.
+
 ## [0.3.0] - 2026-04-21
 
 ### Added

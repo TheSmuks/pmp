@@ -3,7 +3,7 @@
 //! survive across module inheritance boundaries.
 
 import PUnit;
-import Pmp.Helpers;
+import Helpers;
 inherit PUnit.TestCase;
 
 protected string tmpdir;

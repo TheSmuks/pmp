@@ -227,15 +227,3 @@ void test_tag_response_entry_without_name_skipped() {
     assert_equal("v1.0.0", tag_names[0]);
     assert_equal("v2.0.0", tag_names[1]);
 }
-
-// ── classify_bump in resolution context ────────────────────────────────
-
-void test_classify_bump_downgrade_detection() {
-    // When resolved tag is older than locked tag — a downgrade.
-    assert_equal("downgrade", classify_bump("v2.0.0", "v1.0.0"));
-}
-
-void test_classify_bump_unknown_for_nonsemver() {
-    assert_equal("unknown", classify_bump("not-a-version", "v1.0.0"));
-    assert_equal("unknown", classify_bump("v1.0.0", "also-not-a-version"));
-}

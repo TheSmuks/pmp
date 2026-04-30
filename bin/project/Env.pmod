@@ -1,8 +1,8 @@
 // Env.pmod — environment and run commands: cmd_env, build_paths, cmd_run.
 // All state is passed via context mapping (ctx).
 
-inherit .Config;
-inherit .Helpers;
+inherit Config;
+inherit Helpers;
 inherit .Manifest;
 
 //! Check if a directory tree contains any .h files.

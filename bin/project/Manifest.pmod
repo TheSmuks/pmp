@@ -1,4 +1,4 @@
-inherit .Helpers;
+inherit Helpers;
 
 //! Add a dependency to a pike.json manifest file.
 //! @param pike_json

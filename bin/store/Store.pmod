@@ -1,6 +1,6 @@
-inherit .Helpers;
-inherit .Http;
-inherit .Resolve;
+inherit Helpers;
+inherit Http;
+inherit Resolve;
 
 //! Acquire an advisory lock on the store directory.
 //! Uses a PID-based lock file. Dies if another pmp process holds the lock.

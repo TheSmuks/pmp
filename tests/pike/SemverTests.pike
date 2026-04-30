@@ -1,7 +1,7 @@
 //! Tests for Pmp.Semver — parse_semver, compare_semver, sort_tags_semver, classify_bump.
 
 import PUnit;
-import Pmp.Semver;
+import Semver;
 inherit PUnit.TestCase;
 
 // ── parse_semver ─────────────────────────────────────────────────────

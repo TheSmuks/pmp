@@ -4,10 +4,9 @@ private string _encode_tag(string tag) {
     return Protocols.HTTP.percent_encode(tag);
 }
 
-inherit .Helpers;
+inherit Helpers;
 inherit .Http;
-inherit .Semver;
-
+inherit Semver;
 //! Core tag resolution logic shared by github/gitlab variants.
 //! @param fetch_page
 //!   function(int page) → string body (or 0 on error)

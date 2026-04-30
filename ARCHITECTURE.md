@@ -5,28 +5,40 @@
 - **Name**: pmp (Pike Module Package Manager)
 - **Repository**: github.com/TheSmuks/pmp
 - **Version**: 0.3.0
-- **Date**: 2026-04-21
-
+- **Date**: 2026-04-30
 ## Project Structure
 
 bin/pmp                POSIX sh shim — delegates to bin/pmp.pike, sets PIKE_MODULE_PATH
-bin/pmp.pike           Entry point (~185 lines) — config init, command dispatch
-bin/Pmp.pmod/          Stateless module library (15 modules: 14 sub-modules + module.pmod)
+bin/pmp.pike           Entry point (~252 lines) — config init, command dispatch
+bin/core/              Pure functions (no I/O, no mutable state)
   Config.pmod          PMP_VERSION constant
   Helpers.pmod         die, info, warn, need_cmd, json_field, find_project_root, compute_sha256
+  Semver.pmod          parse_semver, compare_semver, sort_tags_semver, classify_bump
   Source.pmod          detect_source_type, source_to_name/version/domain/repo_path/strip_version
+bin/transport/         Network layer
   Http.pmod            http_get, http_get_safe, github_auth_headers, redirect protection (_url_host, _redirect_allowed_by_host)
   Resolve.pmod         latest_tag_*, resolve_commit_sha (with pagination)
+bin/store/             Content-addressable store
   Store.pmod           store_entry_name, extract_targz, write_meta, compute_dir_hash, store_install_*
+  StoreCmd.pmod        cmd_store (status + prune)
+bin/project/           Project operations
   Lockfile.pmod        lockfile_add_entry, write_lockfile, read_lockfile, lockfile_has_dep
   Manifest.pmod        add_to_manifest, parse_deps
   Validate.pmod        validate_manifests, strip_comments_and_strings, init_std_libs
-  Semver.pmod          parse_semver, compare_semver, sort_tags_semver, classify_bump
-  module.pmod          Re-exports all sub-modules (14 total) via inherit
+  Verify.pmod          cmd_verify, cmd_doctor (project and store integrity verification)
+  Project.pmod         cmd_init, cmd_list, cmd_clean, cmd_remove
+  Env.pmod             cmd_env, cmd_resolve (virtual environment and path resolution)
+bin/commands/          Stateful orchestrators (tie transport + store + project together)
+  Install.pmod         install_one, cmd_install, cmd_install_all, cmd_install_source, project_lock/unlock (~600 lines)
+  Update.pmod          cmd_update (single-module and full update), cmd_outdated, print_update_summary
+  LockOps.pmod         cmd_lock, cmd_rollback, cmd_changelog — lockfile operations and version comparison
+bin/Pmp.pmod/
+  module.pmod          Re-exports all 17 sub-modules via inherit
+docs/
+  TIGER_STYLE.md       TigerBeetle coding style guide (reference for project conventions)
 tests/pike_tests.sh     Entry point for Pike unit tests (installs PUnit, runs tests/pike/run.pike)
-tests/pike/             PUnit test files (SemverTests, SourceTests, LockfilePureTests, HelpersTests)
-tests/test_install.sh   Shell integration test suite (114 tests)
-
+tests/pike/             PUnit test files (SemverTests, SourceTests, LockfilePureTests, HelpersTests, StoreCmdAdversarialTests)
+tests/test_install.sh   Shell integration test suite (172 tests)
 ## System Diagram
 
 ```
@@ -73,7 +85,7 @@ User → pmp CLI (bin/pmp shim → bin/pmp.pike)
 
 ## Core Components
 
-### bin/pmp.pike (entry point, ~185 lines)
+### bin/pmp.pike (entry point, ~252 lines)
 
 Holds all mutable state (`lock_entries`, `visited`, `std_libs`, config paths) and command dispatch. All pure functions are imported from `Pmp.pmod/`.
 
@@ -83,16 +95,30 @@ Holds all mutable state (`lock_entries`, `visited`, `std_libs`, config paths) an
 - **Commands** — `cmd_init`, `cmd_install`, `cmd_install_all`, `cmd_install_source`, `cmd_update`, `cmd_rollback`, `cmd_changelog`, `cmd_lock`, `cmd_store`, `cmd_list`, `cmd_clean`, `cmd_remove`, `cmd_run`, `cmd_env`, `cmd_resolve`
 - **Main dispatch** — `switch (argv[1])`
 
-### bin/Pmp.pmod/ (stateless module library)
+### bin/Pmp.pmod/ (module library, 17 modules across 4 layers)
 
 All modules are pure functions — no mutable global state. State is passed as explicit parameters.
+Layers are ordered by dependency: core ← transport ← store ← project ← commands.
+
+#### bin/core/ — Pure functions (no I/O, no mutable state)
 
 - **Config.pmod** — `PMP_VERSION` constant
 - **Helpers.pmod** — `die`, `info`, `warn`, `need_cmd`, `json_field`, `find_project_root`, `compute_sha256`
+- **Semver.pmod** — `parse_semver`, `compare_semver`, `sort_tags_semver`, `classify_bump`
 - **Source.pmod** — `detect_source_type`, `source_to_name`/`version`/`domain`/`repo_path`/`strip_version`
+
+#### bin/transport/ — Network layer
+
 - **Http.pmod** — `http_get`, `http_get_safe`, `github_auth_headers`, redirect protection (`_url_host`, `_redirect_allowed_by_host`)
 - **Resolve.pmod** — `latest_tag_github`/`gitlab`/`selfhosted`, `resolve_commit_sha` (with pagination)
+
+#### bin/store/ — Content-addressable store
+
 - **Store.pmod** — `store_entry_name`, `extract_targz`, `write_meta`, `compute_dir_hash`, `store_install_*` (return result mappings)
+- **StoreCmd.pmod** — `cmd_store` (status + prune)
+
+#### bin/project/ — Project operations
+
 - **Lockfile.pmod** — `lockfile_add_entry` (returns new array), `write_lockfile`, `read_lockfile`, `lockfile_has_dep`
 - **Manifest.pmod** — `add_to_manifest`, `parse_deps`
 - **Validate.pmod** — `validate_manifests`, `strip_comments_and_strings`, `init_std_libs`
@@ -100,11 +126,15 @@ All modules are pure functions — no mutable global state. State is passed as e
   - Scans `import`, `inherit`, and `#include <Foo.pmod/...>` statements
   - Recurses into all nested directories (not just `.pmod`-suffixed)
   - Builds `std_libs` dynamically from the running Pike's module path
-- **Semver.pmod** — `parse_semver`, `compare_semver`, `sort_tags_semver`, `classify_bump`
-- **Install.pmod** — `install_one`, `cmd_install`, `cmd_install_all`, `cmd_install_source`, `cmd_update`, `cmd_lock`, `cmd_rollback`, `cmd_changelog`, `print_update_summary`
+- **Verify.pmod** — `cmd_verify`, `cmd_doctor` (project and store integrity verification)
 - **Project.pmod** — `cmd_init`, `cmd_list`, `cmd_clean`, `cmd_remove`
-- **StoreCmd.pmod** — `cmd_store` (status + prune)
-- **Env.pmod** — `cmd_env`, `build_paths`, `cmd_run`, `cmd_resolve`
+- **Env.pmod** — `cmd_env`, `cmd_resolve` (virtual environment and path resolution)
+
+#### bin/commands/ — Stateful orchestrators
+
+- **Install.pmod** — `install_one`, `cmd_install`, `cmd_install_all`, `cmd_install_source`, `project_lock`/`project_unlock` (shared lock helpers, ~600 lines)
+- **Update.pmod** — `cmd_update` (single-module and full update with lock management), `cmd_outdated` (compares lockfile versions with latest remote tags), `print_update_summary`
+- **LockOps.pmod** — `cmd_lock` (resolve + write lockfile without installing), `cmd_rollback` (restore modules from pike.lock.prev), `cmd_changelog` (show commit log between versions via GitHub/GitLab compare APIs)
 
 ### Content-addressable store
 
@@ -173,7 +203,7 @@ Runs on `ubuntu-latest` with 3 steps:
 
 ### Local testing
 
-- `sh tests/test_install.sh` — 114 shell tests + 81 Pike unit tests (`tests/pike_tests.sh`)
+- `sh tests/test_install.sh` — 172 shell tests + 306 Pike unit tests (`tests/pike_tests.sh`)
 
 ### Test infrastructure
 

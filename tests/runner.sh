@@ -16,8 +16,15 @@ _TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Set up trap for cleanup
 trap cleanup EXIT
 
+
 # Derive module path from the PMP shim location
 _PMP_DIR="$(dirname "$PMP")"
+
+# Build Pike module path with all layered subdirectories
+_PIKE_M="$_PMP_DIR"
+for _subdir in core transport store project commands; do
+  [ -d "$_PMP_DIR/$_subdir" ] && _PIKE_M="$_PIKE_M -M $_PMP_DIR/$_subdir"
+done
 
 # ── Discover test files ───────────────────────────────────────────
 

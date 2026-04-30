@@ -1,7 +1,7 @@
 //! Adversarial tests for Pmp.Manifest — parse_deps and add_to_manifest.
 
 import PUnit;
-import Pmp.Manifest;
+import Manifest;
 inherit PUnit.TestCase;
 
 protected int _counter = 0;

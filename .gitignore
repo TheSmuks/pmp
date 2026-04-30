@@ -4,6 +4,7 @@ modules/
 *.o
 *.pike.o
 pike.lock
+.tmp-test-lockfile-io-*
 pike.lock.prev
 .tmp-manifest-*
 

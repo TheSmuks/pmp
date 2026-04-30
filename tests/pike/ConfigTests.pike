@@ -7,7 +7,7 @@
 //! indirectly via the shell test suite.
 
 import PUnit;
-inherit Pmp.Config;
+inherit Config;
 inherit PUnit.TestCase;
 
 void test_exit_codes() {

@@ -19,6 +19,11 @@ protected mapping run_in_dir(string cwd, string code) {
         "pike",
         "-M", combine_path(getcwd(), "modules"),
         "-M", combine_path(getcwd(), "bin"),
+        "-M", combine_path(getcwd(), "bin/core"),
+        "-M", combine_path(getcwd(), "bin/transport"),
+        "-M", combine_path(getcwd(), "bin/store"),
+        "-M", combine_path(getcwd(), "bin/project"),
+        "-M", combine_path(getcwd(), "bin/commands"),
         "-e", code
     }), ([
         "cwd": cwd,
@@ -205,6 +210,11 @@ void test_cmd_run_no_args_dies() {
     mapping r = Process.run(({
         "pike", "-M", combine_path(getcwd(), "modules"),
         "-M", combine_path(getcwd(), "bin"),
+        "-M", combine_path(getcwd(), "bin/core"),
+        "-M", combine_path(getcwd(), "bin/transport"),
+        "-M", combine_path(getcwd(), "bin/store"),
+        "-M", combine_path(getcwd(), "bin/project"),
+        "-M", combine_path(getcwd(), "bin/commands"),
         "-e", "import Pmp; cmd_run(({}), (['pike_bin':'/usr/bin/pike','global_dir':'/tmp/g']));"
     }));
     assert_true(r->exitcode != 0,
@@ -215,6 +225,11 @@ void test_cmd_run_relative_pike_bin_dies() {
     mapping r = Process.run(({
         "pike", "-M", combine_path(getcwd(), "modules"),
         "-M", combine_path(getcwd(), "bin"),
+        "-M", combine_path(getcwd(), "bin/core"),
+        "-M", combine_path(getcwd(), "bin/transport"),
+        "-M", combine_path(getcwd(), "bin/store"),
+        "-M", combine_path(getcwd(), "bin/project"),
+        "-M", combine_path(getcwd(), "bin/commands"),
         "-e", "import Pmp; cmd_run(({\"test.pike\"}), (['pike_bin':'piiiike','global_dir':'/tmp/g']));"
     }));
     assert_true(r->exitcode != 0,

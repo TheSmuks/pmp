@@ -1,7 +1,7 @@
 // Project.pmod — project-level commands: init, list, clean, remove.
 // All state is passed via context mapping (ctx).
 
-inherit .Helpers;
+inherit Helpers;
 inherit .Lockfile;
 inherit .Manifest;
 

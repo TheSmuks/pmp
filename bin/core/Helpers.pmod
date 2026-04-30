@@ -5,7 +5,7 @@ string _strip_bom(string raw) {
     return raw;
 }
 
-inherit .Config;
+inherit Config;
 protected Regexp RE_DASHES = Regexp("-+");
 
 //! Cleanup registry for signal handling and error recovery.
@@ -246,7 +246,7 @@ string make_temp_dir() {
 }
 
 //! Resolve a potentially relative local path to absolute.
-//! Prepends project root if path starts with ./.
+//! Prepends project root if path starts with ./
 string resolve_local_path(string path) {
     if (has_prefix(path, "./")) {
         string project_root = find_project_root() || getcwd();

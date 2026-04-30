@@ -49,13 +49,13 @@ void test_add_entry_preserves_existing() {
     assert_equal("new", result[2][0]);
 }
 
-void test_add_entry_empty_strings() {
-    // All fields are empty strings — still valid structurally
-    array(array(string)) entries = ({});
-    entries = lockfile_add_entry(entries, "", "", "", "", "");
-    assert_equal(1, sizeof(entries));
-    assert_equal("", entries[0][0]);
-    assert_equal("", entries[0][4]);
+void test_add_entry_empty_name_dies() {
+    // die() calls exit() which is uncatchable — test via subprocess.
+    int code = run_subprocess(
+        "import Lockfile; "
+        "lockfile_add_entry(({}), \"\", \"src\", \"v1\", \"sha\", \"hash\");"
+    );
+    assert_true(code != 0, "empty name should have died");
 }
 
 // ── merge_lock_entries ───────────────────────────────────────────────
@@ -165,6 +165,21 @@ void test_merge_lock_entries_empty_existing() {
     assert_equal(1, sizeof(merged));
 }
 
+
+// die() calls exit() which is uncatchable — test in subprocess.
+protected int run_subprocess(string code) {
+    mapping result = Process.run(({
+        "pike", "-M", combine_path(getcwd(), "modules"),
+        "-M", combine_path(getcwd(), "bin"),
+        "-M", combine_path(getcwd(), "bin/core"),
+        "-M", combine_path(getcwd(), "bin/transport"),
+        "-M", combine_path(getcwd(), "bin/store"),
+        "-M", combine_path(getcwd(), "bin/project"),
+        "-M", combine_path(getcwd(), "bin/commands"),
+        "-e", code
+    }));
+    return result->exitcode;
+}
 // ── lockfile_has_dep ─────────────────────────────────────────────────
 // lockfile_has_dep reads from disk, so we create temp lockfiles.
 
@@ -234,4 +249,30 @@ void test_has_dep_case_sensitive() {
     assert_equal(0, lockfile_has_dep("mymod", lockfile_path));
     assert_equal(0, lockfile_has_dep("MYMOD", lockfile_path));
     assert_equal(1, lockfile_has_dep("MyMod", lockfile_path));
+}
+
+void test_add_entry_empty_source_dies() {
+    int code = run_subprocess(
+        "import Lockfile; "
+        "lockfile_add_entry(({}), \"name\", \"\", \"v1\", \"sha\", \"hash\");"
+    );
+    assert_true(code != 0, "empty source should have died");
+}
+
+void test_merge_entry_empty_name_dies() {
+    int code = run_subprocess(
+        "import Lockfile; "
+        "merge_lock_entries(({ ({\"\", \"s\", \"v1\", \"sha\", \"hash\"}) }), ({}));"
+    );
+    assert_true(code != 0, "merge with empty name should have died");
+}
+
+void test_read_lockfile_no_version_header_dies() {
+    string tmppath = combine_path(tmpdir, "no-version.lock");
+    Stdio.write_file(tmppath, "foo\tsrc\tv1\tsha\thash\n");
+    int code = run_subprocess(
+        "import Lockfile; "
+        "read_lockfile(\"" + tmppath + "\");"
+    );
+    assert_true(code != 0, "lockfile without version header should have died");
 }

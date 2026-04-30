@@ -136,6 +136,45 @@ void advisory_unlock(string lock_path) {
     }
 }
 
+// ── Project-level lock ───────────────────────────────────────────────
+
+private string _project_lock_path(string project_root) {
+    return combine_path(project_root || getcwd(), ".pmp-install.lock");
+}
+
+//! Acquire a project-level advisory lock. Removes stale locks held by dead processes.
+void project_lock(void|string project_root) {
+    string lock_path = _project_lock_path(project_root);
+    advisory_lock(lock_path, "project");
+    register_project_lock_path(lock_path);
+}
+
+//! Release the project-level lock.
+void project_unlock(void|string project_root) {
+    string lock_path = _project_lock_path(project_root);
+    advisory_unlock(lock_path);
+    register_project_lock_path("");
+}
+
+// ── Store-level lock ──────────────────────────────────────────────────
+
+//! Acquire an advisory lock on the store directory.
+//! Uses a PID-based lock file. Dies if another pmp process holds the lock.
+//! Call store_unlock() when done.
+void store_lock(string store_dir) {
+    Stdio.mkdirhier(store_dir);
+    string lock_path = combine_path(store_dir, ".lock");
+    advisory_lock(lock_path, "store");
+    set_store_lock_state(1, store_dir);
+}
+
+//! Release the store lock.
+void store_unlock(string store_dir) {
+    string lock_path = combine_path(store_dir, ".lock");
+    advisory_unlock(lock_path);
+    set_store_lock_state(0, "");
+}
+
 //! Utility helpers: logging, command checks, JSON reading, SHA-256.
 
 void die(string msg, void|int code) {
@@ -151,6 +190,16 @@ void info(string msg) {
 
 void warn(string msg) {
     werror("pmp: warning: %s\n", msg);
+}
+
+//! Strip credentials from a URL for safe display in error messages.
+//! Replaces user:pass@ or token@ with ***@
+string sanitize_url(string url) {
+    // Match scheme://credentials@host/path
+    if (sscanf(url, "%s://%s@%s", string scheme, string creds, string rest) == 3) {
+        return scheme + "://***@" + rest;
+    }
+    return url;
 }
 
 //! Debug message — only printed when PMP_VERBOSE is set.
@@ -172,13 +221,17 @@ void need_cmd(string name) {
 
 //! Read and parse a JSON file, returning a mapping.
 //! Handles UTF-8 BOM, validates the result is a mapping.
-//! Returns 0 (void) if the file doesn't exist, is empty, or doesn't parse as a mapping.
+//! Returns 0 (void) if the file doesn't exist, is empty, or is valid JSON but not a mapping.
+//! Dies with an error for malformed JSON.
 mapping|void _read_json_mapping(string file) {
-    string raw = _strip_bom(Stdio.read_file(file) || "");
-    if (!raw || sizeof(raw) == 0) return 0;
+    string raw = Stdio.read_file(file);
+    if (!raw) return 0;  // File doesn't exist
+    raw = _strip_bom(raw);
+    if (sizeof(raw) == 0) return 0;  // Empty file
     mixed data;
     mixed err = catch { data = Standards.JSON.decode(raw); };
-    if (err || !mappingp(data)) return 0;
+    if (err) die(file + ": invalid JSON");
+    if (!mappingp(data)) return 0;  // Valid JSON but not a mapping
     return data;
 }
 

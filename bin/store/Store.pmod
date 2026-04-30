@@ -2,23 +2,6 @@ inherit Helpers;
 inherit Http;
 inherit Resolve;
 
-//! Acquire an advisory lock on the store directory.
-//! Uses a PID-based lock file. Dies if another pmp process holds the lock.
-//! Call store_unlock() when done.
-void store_lock(string store_dir) {
-    Stdio.mkdirhier(store_dir);
-    string lock_path = combine_path(store_dir, ".lock");
-    advisory_lock(lock_path, "store");
-    set_store_lock_state(1, store_dir);
-}
-
-//! Release the store lock.
-void store_unlock(string store_dir) {
-    string lock_path = combine_path(store_dir, ".lock");
-    advisory_unlock(lock_path);
-    set_store_lock_state(0, "");
-}
-
 //! Generate store entry name from source, tag, and SHA.
 //! Format: {domain}-{owner}-{repo}-{tag}-{sha_prefix16}
 string store_entry_name(string src, string tag, string sha) {
@@ -388,7 +371,7 @@ mapping store_install_selfhosted(string store_dir, string domain,
     if (r->exitcode != 0) {
         unregister_cleanup_dir(tmpdir);
         Stdio.recursive_rm(tmpdir);
-        die("failed to clone " + url);
+        die("failed to clone " + sanitize_url(url));
     }
 
     _validate_symlinks(repo_dest, repo_dest);

@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- feat: extract `prune_stale_deps()` to Lockfile.pmod — shared BFS transitive dep pruning used by both `cmd_install_all` and `cmd_update`
+- feat: `sanitize_url()` in Helpers.pmod — strips credentials from URLs before display in error messages
+- feat: offline mode hardened — `cmd_outdated --offline`, `cmd_changelog --offline`, `cmd_doctor --offline` skip network calls
+- feat: path traversal protection for resolved local dependency paths — validates resolved path stays within project root
+- feat: IPv6 SSRF bypass fix — explicit `::1` and `::` checks before expansion, fixed `::` group count bug
+- feat: 4 new sanitize_url tests, 1 new file:// rejection test, 2 new path traversal tests
+- docs: ADR 0003 — lockfile v2 design with integrity field and checksum
+- docs: ADR 0004 — semver range constraints design (caret, tilde, wildcard)
+- docs: ADR 0005 — workspace (monorepo) support design
+
+### Changed
+- refactor: moved `project_lock`/`project_unlock` from Install.pmod to Helpers.pmod (architecturally correct placement)
+- refactor: moved `store_lock`/`store_unlock` from Store.pmod to Helpers.pmod
+- refactor: extracted `_follow_with_redirects()` — shared HTTP redirect/SSRF logic, removed 60 lines of duplication from http_get/http_get_safe
+- refactor: extracted `_resolve_remote()` — shared resolve dispatch, consolidated 6 near-duplicate github/gitlab resolve functions
+- fix: `pmp update <module>` now prunes stale transitive deps (BFS walk from direct deps)
+- fix: `lockfile_add_entry` and `merge_lock_entries` die on empty name/source instead of silently dropping
+- fix: `read_lockfile` dies on missing version header instead of silently parsing
+- fix: `_read_json_mapping` dies on malformed JSON instead of returning 0 (missing files still return 0)
+- fix: `classify_bump` restructured with explicit branches for all version transition types
+- fix: `file://` URL rejection already implemented — verified and tested
+- docs: ARCHITECTURE.md version corrected to 0.4.0, layer count to 5, test counts to 174+317
+- docs: AGENTS.md test counts updated, Helpers.pmod description includes new functions
+- docs: stale comments fixed in pmp.pike and Install.pmod
+- docs: removed aspirational TODO from ConfigTests.pike
 - docs: added TigerBeetle's Tiger Style coding guide (docs/TIGER_STYLE.md) as a project reference
 - feat: StoreCmdAdversarialTests.pike — 11 new tests for dir_size, human_size, and store pruning logic
 - feat: 4 new Semver adversarial tests for prerelease leading zeros (S-01), at-sign rejection (S-04), build metadata validation (S-05), and build metadata leading zeros acceptance (S-06)
@@ -37,13 +62,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - refactor: updated sh shim and pike_tests.sh to include layered PIKE_MODULE_PATH entries
 - refactor: decomposed Install.pmod (1042 lines) into Install.pmod (~600 lines), Update.pmod (~200 lines), and LockOps.pmod (~280 lines) for focused single-responsibility modules
 - refactor: deduplicated Pike test suites — removed LockfilePureTests, HelpersTests, SourceTests (merged into adversarial counterparts), removed classify_bump/merge_lock_entries duplicates from InstallAdversarialTests and ResolveAdversarialTests
-- docs: reconciled documentation with actual codebase — corrected module counts (16 functional modules), test counts (172 shell + 306 Pike), added missing module entries (Cache.pmod, Verify.pmod), added verify/doctor commands to README
+- docs: reconciled documentation with actual codebase — corrected module counts (17 modules across 5 layers), test counts (172 shell + 317 Pike), added verify/doctor commands to README
 - Updated `.gitignore` with IDE/OS/environment patterns from template
 - Updated `CONTRIBUTING.md` with branch naming conventions and expanded guidelines
 - Updated `README.md` with changelog badge
 - Updated `AGENTS.md` with CI workflow table, agent behavior section, and template version tracking
 - Rewrote `.agents/skills/pmp-dev/SKILL.md` to reflect current Pike architecture (was describing pre-0.3.0 POSIX sh implementation)
-- Updated `ARCHITECTURE.md` to reflect current version (0.3.0), module list (14 modules), and line counts
+- Updated `ARCHITECTURE.md` to reflect current version (0.4.0), module list (17 modules across 5 layers), and line counts
 - Updated `install.sh` version pin example to `v0.3.0`
 - Updated `RELEASE.md` with correct syntax check command and Pike test command
 - Updated `CONTRIBUTING.md` and `docs/ci.md` with Pike test commands

@@ -157,6 +157,11 @@ private void _print_commit_entry(mapping commit, string sha_field) {
 //! Show changes between versions for a specific module.
 //! Compares current lockfile with .prev lockfile.
 void cmd_changelog(array(string) args, mapping ctx) {
+    if (ctx["offline"]) {
+        info("offline mode: cannot fetch changelog");
+        return;
+    }
+
     if (sizeof(args) == 0)
         die("usage: pmp changelog <module>");
 

@@ -210,16 +210,17 @@ int cmd_doctor(mapping ctx) {
         ok = 0;
     }
 
-    // ── 3. Tokens ──────────────────────────────────────────────
-    string gh_token = getenv("GITHUB_TOKEN") || "";
-    string gl_token = getenv("GITLAB_TOKEN") || "";
-    if (sizeof(gh_token) > 0)
-        write(sprintf("  GITHUB_TOKEN: set (%d chars)\n", sizeof(gh_token)));
-    else
-        write("  GITHUB_TOKEN: not set (public repos only)\n");
-    if (sizeof(gl_token) > 0)
-        write(sprintf("  GITLAB_TOKEN: set (%d chars)\n", sizeof(gl_token)));
-
+    // ── 3. Tokens (network-dependent) ──────────────────────────
+    if (!ctx["offline"]) {
+        string gh_token = getenv("GITHUB_TOKEN") || "";
+        string gl_token = getenv("GITLAB_TOKEN") || "";
+        if (sizeof(gh_token) > 0)
+            write(sprintf("  GITHUB_TOKEN: set (%d chars)\n", sizeof(gh_token)));
+        else
+            write("  GITHUB_TOKEN: not set (public repos only)\n");
+        if (sizeof(gl_token) > 0)
+            write(sprintf("  GITLAB_TOKEN: set (%d chars)\n", sizeof(gl_token)));
+    }
     // ── 4. Store directory ──────────────────────────────────────
     string store_dir = ctx["store_dir"];
     if (Stdio.is_dir(store_dir)) {

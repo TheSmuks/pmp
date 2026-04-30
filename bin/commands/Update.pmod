@@ -100,6 +100,9 @@ void cmd_update(array(string) args, mapping ctx) {
 
             // Merge: dedup by name — new entries replace existing
             ctx["lock_entries"] = merge_lock_entries(existing, ctx["lock_entries"]);
+
+            // Prune stale transitive deps
+            ctx["lock_entries"] = prune_stale_deps(ctx["lock_entries"], ctx["store_dir"], ctx["local_dir"], deps);
             write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
 
         } else {
@@ -127,6 +130,11 @@ void cmd_update(array(string) args, mapping ctx) {
 void cmd_outdated(mapping ctx) {
     if (!Stdio.exist(ctx["pike_json"]))
         die("no pike.json found");
+
+    if (ctx["offline"]) {
+        info("offline mode: cannot check for outdated dependencies");
+        return;
+    }
 
     // Read lockfile for current versions
     mapping(string:array(string)) lock_map = ([]);

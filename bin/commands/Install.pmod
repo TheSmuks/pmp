@@ -1,5 +1,4 @@
-// Install.pmod — install orchestrators: install_one, cmd_install, cmd_update, cmd_lock,
-//                cmd_rollback, cmd_changelog
+// Install.pmod — install orchestrators: install_one, cmd_install, cmd_install_all, cmd_install_source
 // All state is passed via context mapping (ctx).
 
 inherit Config;
@@ -38,27 +37,6 @@ private string get_resolved_sha(string type, string domain,
     }
 }
 
-// ── Project-level lock ───────────────────────────────────────────────
-
-private string _project_lock_path(string project_root) {
-    return combine_path(project_root || getcwd(), ".pmp-install.lock");
-}
-
-//! Acquire a project-level advisory lock. Removes stale locks held by dead processes.
-void project_lock(void|string project_root) {
-    string lock_path = _project_lock_path(project_root);
-    advisory_lock(lock_path, "project");
-    register_project_lock_path(lock_path);
-}
-
-//! Release the project-level lock.
-void project_unlock(void|string project_root) {
-    string lock_path = _project_lock_path(project_root);
-    advisory_unlock(lock_path);
-    register_project_lock_path("");
-}
-
-
 //! Install a single dep from source, including transitive resolution.
 void install_one(string name, string source, string target,
                  mapping ctx) {
@@ -71,6 +49,11 @@ void install_one(string name, string source, string target,
             if (has_value(local_path, ".."))
                 die("local dependency path contains '..' traversal: " + local_path);
             local_path = resolve_local_path(local_path);
+            string resolved = System.resolvepath(local_path) || local_path;
+            string root = find_project_root();
+            if (root && sizeof(root) > 0
+                && !has_prefix(resolved, root + "/") && resolved != root)
+                die("local dependency path escapes project root: " + source, EXIT_INTERNAL);
 
             if (!Stdio.is_dir(local_path))
                 die("local path not found: " + local_path);
@@ -290,6 +273,13 @@ void cmd_install_all(string target, mapping ctx) {
                     if (sizeof(ls) > 0 && ls != "-") {
                         string local_path = ls;
                         local_path = resolve_local_path(local_path);
+                        string resolved = System.resolvepath(local_path) || local_path;
+                        string root = find_project_root();
+                        if (root && sizeof(root) > 0
+                            && !has_prefix(resolved, root + "/") && resolved != root) {
+                            warn("local dep " + ln + " path escapes project root: " + ls);
+                            continue;
+                        }
 
                         if (!Stdio.is_dir(local_path)) {
                             warn("local dep " + ln + " path "
@@ -445,53 +435,8 @@ void cmd_install_all(string target, mapping ctx) {
     }
 
     if (target == ctx["local_dir"] && install_ok) {
-        // Prune stale lockfile entries (deps removed from pike.json)
-        // while preserving transitive deps of remaining direct deps.
-        // Fresh installs already build lock_entries from scratch;
-        // this targets the lockfile-replay path where old entries persist.
         array(array(string)) deps = parse_deps(ctx["pike_json"]);
-        multiset(string) needed = (multiset)column(deps, 0);
-        array(string) queue = column(deps, 0);
-
-        // Build name -> lock_entry lookup for walking transitives
-        array(array(string)) valid = filter(ctx["lock_entries"], lambda(array(string) e) { return sizeof(e[0]) > 0; });
-        mapping(string:array(string)) entry_by_name = mkmapping(column(valid, 0), valid);
-
-        // BFS: walk transitive deps from each installed package's pike.json
-        multiset(string) seen = (<>);
-        while (sizeof(queue) > 0) {
-            string n = queue[0];
-            queue = queue[1..];
-            if (seen[n]) continue;
-            seen[n] = 1;
-            array(string) e = entry_by_name[n];
-            if (!e) continue;
-
-            string pkg_json;
-            if (is_local_source(e[1])) {
-                // Local dep — read pike.json from source path
-                string local_path = e[1];
-                local_path = resolve_local_path(local_path);
-                pkg_json = combine_path(local_path, "pike.json");
-            } else {
-                // Remote dep — find in store
-                string entry_path =
-                    _find_store_entry(ctx["store_dir"], e[1], e[2], e[4]);
-                if (!entry_path || sizeof(entry_path) == 0) continue;
-                pkg_json = combine_path(ctx["store_dir"], entry_path, "pike.json");
-            }
-            if (!Stdio.exist(pkg_json)) continue;
-            foreach (parse_deps(pkg_json); ; array(string) td) {
-                if (!needed[td[0]]) {
-                    needed[td[0]] = 1;
-                    queue += ({ td[0] });
-                }
-            }
-        }
-
-        // Keep only reachable entries
-        ctx["lock_entries"] = filter(ctx["lock_entries"], lambda(array(string) e) { return needed[e[0]]; });
-
+        ctx["lock_entries"] = prune_stale_deps(ctx["lock_entries"], ctx["store_dir"], ctx["local_dir"], deps);
         write_lockfile(ctx["lockfile_path"], ctx["lock_entries"]);
         validate_manifests(ctx["local_dir"], ctx["std_libs"]);
     }

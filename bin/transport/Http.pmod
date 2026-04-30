@@ -148,6 +148,8 @@ int _is_private_host(string host) {
         return 1;
     // IPv6 unspecified and loopback (all forms including non-compressed)
     if (has_value(h, ":")) {
+        // Defense in depth: explicit loopback checks before expansion
+        if (h == "::1" || h == "::") return 1;
         // Expand :: to zero-groups for consistent matching
         string expanded = h;
         int dbl_colon = search(h, "::");
@@ -160,7 +162,7 @@ int _is_private_host(string host) {
             if (sizeof(suffix) > 0) existing += sizeof(suffix / ":");
             int fill = 8 - existing;
             if (fill > 0) {
-                expanded = prefix;
+                expanded = sizeof(prefix) > 0 ? prefix : "";
                 for (int i = 0; i < fill; i++) {
                     if (sizeof(expanded) > 0) expanded += ":";
                     expanded += "0";
@@ -397,7 +399,7 @@ object _do_get_single(string url, mapping request_headers,
                     con->proxy = ({ pu->host, (int)pu->port || 8080 });
                 };
                 if (proxy_err)
-                    die("invalid proxy URL: " + proxy_url);
+                    die("invalid proxy URL: " + sanitize_url(proxy_url));
             }
             Protocols.HTTP.do_method("GET", url, 0, request_headers, con);
             result = con;
@@ -428,8 +430,71 @@ object _do_get_single(string url, mapping request_headers,
     return result;
 }
 
-//! HTTP GET — dies on error. Uses thread-based timeout.
-//! Error messages include host (not full URL — may contain tokens in future).
+//! Shared redirect-following GET pipeline.
+//! Performs SSRF check, follows up to 5 redirects with host validation,
+//! and enforces body size limits.
+//! @param url
+//!   Target URL.
+//! @param request_headers
+//!   Headers mapping (already built by caller with user-agent etc).
+//! @returns
+//!   On success: (["status": int, "body": data]) where data is
+//!   the raw return from con->data() (may be 0).
+//!   On failure: (["status": 0, "error": description]).
+mapping _follow_with_redirects(string url, mapping request_headers) {
+    string original_host = _url_host(url);
+    if (_is_private_host(original_host))
+        return (["status": 0,
+                 "error": "blocked: SSRF protection \u2014 refusing to fetch"
+                         + " private/internal address: " + original_host]);
+
+    int max_redirects = 5;
+    for (int i = 0; i <= max_redirects; i++) {
+        Protocols.HTTP.Query con = _do_get(url, request_headers);
+
+        if (!con)
+            return (["status": 0,
+                     "error": "failed to fetch " + _url_host(url)
+                             + " (timeout or connection error after"
+                             + " " + HTTP_MAX_RETRIES + " attempts)"]);
+
+        // Handle redirects
+        if (con->status >= 300 && con->status < 400) {
+            string location = con->headers["location"];
+            if (!location || sizeof(location) == 0)
+                return (["status": 0,
+                         "error": sprintf("HTTP %d with no Location header fetching %s",
+                                    con->status, _url_host(url))]);
+            if (!_redirect_allowed_by_host(original_host, location))
+                return (["status": 0,
+                         "error": "redirect from " + _url_host(url)
+                                 + " to " + _url_host(location)
+                                 + " blocked \u2014 domain mismatch"]);
+            if (_is_https_downgrade(url, location))
+                return (["status": 0,
+                         "error": "blocked: redirect from HTTPS to HTTP"
+                                 + " \u2014 refusing to expose credentials in cleartext"]);
+            url = location;
+            continue;
+        }
+
+        // Non-redirect response
+        mixed body = con->data();
+        if (body && sizeof(body) > HTTP_MAX_BODY_SIZE)
+            return (["status": 0,
+                     "error": sprintf("response from %s exceeds %d MB limit (%d bytes)",
+                                _url_host(url), HTTP_MAX_BODY_SIZE / (1024 * 1024),
+                                sizeof(body))]);
+
+        return (["status": con->status, "body": body]);
+    }
+
+    return (["status": 0,
+             "error": "too many redirects fetching " + _url_host(url)]);
+}
+
+//! HTTP GET \u2014 dies on error. Uses thread-based timeout.
+//! Error messages include host (not full URL \u2014 may contain tokens in future).
 string http_get(string url, void|mapping(string:string) headers,
                 void|string version) {
     version = version || "0.2.0";
@@ -440,54 +505,17 @@ string http_get(string url, void|mapping(string:string) headers,
     if (headers)
         request_headers |= headers;
 
-    string original_host = _url_host(url);
-    if (_is_private_host(original_host))
-        die("blocked: SSRF protection — refusing to fetch private/internal address: " + original_host);
-
-    // Follow up to 5 HTTP 3xx redirects
-    int max_redirects = 5;
-    for (int i = 0; i <= max_redirects; i++) {
-        Protocols.HTTP.Query con = _do_get(url, request_headers);
-
-        if (!con)
-            die("failed to fetch " + _url_host(url)
-                + " (timeout or connection error after "
-                + HTTP_MAX_RETRIES + " attempts)");
-
-        // Handle redirects
-        if (con->status >= 300 && con->status < 400) {
-            string location = con->headers["location"];
-            if (!location || sizeof(location) == 0)
-                die(sprintf("HTTP %d with no Location header fetching %s",
-                           con->status, _url_host(url)));
-            if (!_redirect_allowed_by_host(original_host, location))
-                die("redirect from " + _url_host(url) + " to " + _url_host(location)
-                    + " blocked — domain mismatch");
-            if (_is_https_downgrade(url, location)) {
-                die("blocked: redirect from HTTPS to HTTP — refusing to expose credentials in cleartext");
-            }
-            url = location;
-            continue;
-        }
-
-        if (con->status != 200)
-            die(sprintf("HTTP %d fetching %s", con->status, _url_host(url)));
-
-        string body = con->data();
-        if (!body)
-            die("no data from " + _url_host(url));
-
-        // Body size limit — prevent OOM from malicious/broken servers
-        if (sizeof(body) > HTTP_MAX_BODY_SIZE)
-            die(sprintf("response from %s exceeds %d MB limit (%d bytes)",
-                _url_host(url), HTTP_MAX_BODY_SIZE / (1024 * 1024),
-                sizeof(body)));
-
-        return body;
-    }
-
-    die("too many redirects fetching " + _url_host(url));
+    mapping result = _follow_with_redirects(url, request_headers);
+    if (!result) die("HTTP error for " + _url_host(url));
+    if (result["status"] == 0) die(result["error"]);
+    if (result["status"] != 200)
+        die(sprintf("HTTP %d fetching %s", result["status"], _url_host(url)));
+    string body = result["body"];
+    if (!body)
+        die("no data from " + _url_host(url));
+    return body;
 }
+
 
 array(int|string) http_get_safe(string url, void|mapping(string:string) headers,
                                  void|string version) {
@@ -499,52 +527,13 @@ array(int|string) http_get_safe(string url, void|mapping(string:string) headers,
     if (headers)
         request_headers |= headers;
 
-    string original_host = _url_host(url);
-    if (_is_private_host(original_host)) {
-        werror("pmp: blocked: SSRF protection — refusing to fetch private/internal address: " + original_host + "\n");
+    mapping result = _follow_with_redirects(url, request_headers);
+    if (!result || result["status"] == 0) {
+        if (result && result["error"])
+            werror("pmp: " + result["error"] + "\n");
         return ({ 0, "" });
     }
-
-    // Follow up to 5 HTTP 3xx redirects
-    int max_redirects = 5;
-    for (int i = 0; i <= max_redirects; i++) {
-        Protocols.HTTP.Query con = _do_get(url, request_headers);
-
-        if (!con)
-            return ({ 0, "" });
-
-        // Handle redirects
-        if (con->status >= 300 && con->status < 400) {
-            string location = con->headers["location"];
-            if (!location || sizeof(location) == 0)
-                return ({ con->status, "" });
-            if (!_redirect_allowed_by_host(original_host, location)) {
-                werror("pmp: redirect from " + _url_host(url) + " to "
-                       + _url_host(location) + " blocked — domain mismatch\n");
-                return ({ 0, "" });
-            }
-            // Block HTTPS→HTTP downgrade (credential/token exposure)
-            if (_is_https_downgrade(url, location)) {
-                werror("pmp: blocked: redirect from HTTPS to HTTP — refusing to expose credentials in cleartext\n");
-                return ({ 0, "" });
-            }
-            url = location;
-            continue;
-        }
-
-        string body = con->data() || "";
-
-        // Body size limit
-        if (sizeof(body) > HTTP_MAX_BODY_SIZE) {
-            warn(sprintf("response from %s exceeds %d MB limit",
-                _url_host(url), HTTP_MAX_BODY_SIZE / (1024 * 1024)));
-            return ({ 0, "" });
-        }
-
-        return ({ con->status, body });
-    }
-
-    return ({ 0, "" });
+    return ({ result["status"], result["body"] || "" });
 }
 
 //! Build auth headers if GITHUB_TOKEN is set.

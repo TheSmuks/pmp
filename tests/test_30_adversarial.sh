@@ -98,6 +98,34 @@ assert "header-only lockfile does not crash" "0" "$_lf_crash"
 _out_vt="$("$PMP" install 'github.com/owner/repo#v1.0..0' 2>&1 || true)"
 assert_output_contains "version tag path traversal rejected" "path traversal" "$_out_vt"
 
+# ── local dep with symlink escaping project root ─────────────────
+
+# Create a project with a local dep symlink pointing outside the project
+_esc_proj="$(mktemp -d)"
+mkdir -p "$_esc_proj"
+cd "$_esc_proj"
+printf '{"name":"escape-test","dependencies":{"evil":"./evil-link"}}' > pike.json
+# Create a symlink inside the project that points to /tmp (outside project)
+ln -s /tmp evil-link
+_out_esc="$("$PMP" install 2>&1 || true)"
+assert_output_contains "symlink to outside project root rejected" "escapes project root" "$_out_esc"
+
+cd "$TESTDIR"
+rm -rf "$_esc_proj"
+
+# ── absolute path local dep outside project root ──────────────────
+
+_abs_proj="$(mktemp -d)"
+mkdir -p "$_abs_proj"
+cd "$_abs_proj"
+printf '{"name":"abs-test","dependencies":{"evil":"/tmp"}}' > pike.json
+_out_abs="$("$PMP" install 2>&1 || true)"
+assert_output_contains "absolute path outside project root rejected" "escapes project root" "$_out_abs"
+
+cd "$TESTDIR"
+rm -rf "$_abs_proj"
+
+
 # ── Cleanup ────────────────────────────────────────────────────────
 rm -rf modules libs pike.lock
 rm -f "${HOME}/.pike/store/.lock"

@@ -4,7 +4,7 @@
 
 - **Name**: pmp (Pike Module Package Manager)
 - **Repository**: github.com/TheSmuks/pmp
-- **Version**: 0.3.0
+- **Version**: 0.4.0
 - **Date**: 2026-04-30
 ## Project Structure
 
@@ -95,7 +95,7 @@ Holds all mutable state (`lock_entries`, `visited`, `std_libs`, config paths) an
 - **Commands** — `cmd_init`, `cmd_install`, `cmd_install_all`, `cmd_install_source`, `cmd_update`, `cmd_rollback`, `cmd_changelog`, `cmd_lock`, `cmd_store`, `cmd_list`, `cmd_clean`, `cmd_remove`, `cmd_run`, `cmd_env`, `cmd_resolve`
 - **Main dispatch** — `switch (argv[1])`
 
-### bin/Pmp.pmod/ (module library, 17 modules across 4 layers)
+### bin/Pmp.pmod/ (module library, 17 modules across 5 layers)
 
 All modules are pure functions — no mutable global state. State is passed as explicit parameters.
 Layers are ordered by dependency: core ← transport ← store ← project ← commands.
@@ -203,7 +203,7 @@ Runs on `ubuntu-latest` with 3 steps:
 
 ### Local testing
 
-- `sh tests/test_install.sh` — 172 shell tests + 306 Pike unit tests (`tests/pike_tests.sh`)
+- `sh tests/test_install.sh` — 174 shell tests + 317 Pike unit tests (`tests/pike_tests.sh`)
 
 ### Test infrastructure
 

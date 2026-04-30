@@ -101,9 +101,24 @@ void test_json_field_nested_value() {
 }
 
 void test_json_field_invalid_json() {
+    // die() calls exit() which is uncatchable — test via subprocess.
     string path = combine_path(tmpdir, "broken.json");
     Stdio.write_file(path, "{broken");
-    assert_equal(0, json_field("field", path));
+    string code = "import Helpers; json_field(\"field\", \"" + path + "\");";
+    mapping r = Process.run(({
+        "pike", "-M", combine_path(getcwd(), "modules"),
+        "-M", combine_path(getcwd(), "bin"),
+        "-M", combine_path(getcwd(), "bin/core"),
+        "-M", combine_path(getcwd(), "bin/transport"),
+        "-M", combine_path(getcwd(), "bin/store"),
+        "-M", combine_path(getcwd(), "bin/project"),
+        "-M", combine_path(getcwd(), "bin/commands"),
+        "-e", code
+    }));
+    // die() exits with code 1 (EXIT_ERROR)
+    assert_equal(1, r->exitcode);
+    assert_true(has_value(r->stderr, "pmp:"), "stderr contains pmp:");
+    assert_true(has_value(r->stderr, "invalid JSON"), "stderr mentions invalid JSON");
 }
 
 void test_json_field_string_value() {

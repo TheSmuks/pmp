@@ -258,3 +258,14 @@ void test_repo_path_bare_with_version() {
     assert_equal("owner/repo",
         source_to_repo_path("github.com/owner/repo#v1.0.0"));
 }
+
+// ── file:// URL rejection ──────────────────────────────────────────
+
+void test_detect_file_url_dies() {
+    // file:// URLs should be rejected with a specific error
+    int code = run_subprocess(
+        "import Source; "
+        "detect_source_type(\"file:///path/to/module\");"
+    );
+    assert_true(code != 0, "file:// URL should have died");
+}

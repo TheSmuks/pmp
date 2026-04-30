@@ -188,18 +188,22 @@ string classify_bump(string|void old_tag, string|void new_tag) {
     if (cmp > 0) return "downgrade";
     if (cmp == 0) return "none";
 
+    // cmp < 0: new is higher than old
     if (new_v["major"] != old_v["major"]) return "major";
     if (new_v["minor"] != old_v["minor"]) return "minor";
+    if (new_v["patch"] != old_v["patch"]) {
+        // Patch bump: could be patch release or prerelease-to-higher-prerelease
+        if (sizeof(new_v["prerelease"]) > 0) return "prerelease";
+        return "patch";
+    }
 
-    // Same major.minor — classify the change
-    // If new version has a prerelease tag, it's a prerelease bump
-    if (sizeof(new_v["prerelease"]) > 0) return "prerelease";
+    // Same major.minor.patch
+    int old_has_pre = sizeof(old_v["prerelease"]) > 0;
+    int new_has_pre = sizeof(new_v["prerelease"]) > 0;
 
-    // New is a release — patch difference determines the bump
-    if (new_v["patch"] != old_v["patch"]) return "patch";
-
-    // Same major.minor.patch — old had prerelease, new doesn't
-    if (sizeof(old_v["prerelease"]) > 0) return "prerelease";
+    if (old_has_pre && !new_has_pre) return "prerelease";  // prerelease → release
+    if (old_has_pre && new_has_pre) return "prerelease";   // prerelease → different prerelease
+    if (!old_has_pre && new_has_pre) return "prerelease";  // release → prerelease (unusual)
 
     return "none";
 }

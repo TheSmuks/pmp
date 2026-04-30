@@ -1,7 +1,7 @@
 #!/usr/bin/env pike
 // pmp — Pike Module Package Manager
 // Entry point — config init, context creation, command dispatch.
-// Commands and orchestrators live in bin/Pmp.pmod/*.pmod
+// Commands and orchestrators live in bin/commands/, bin/project/, bin/store/, bin/transport/, bin/core/
 
 import Pmp;
 import Arg;

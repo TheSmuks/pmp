@@ -1,4 +1,4 @@
-//! Tests for Pmp.Config — exit codes, version format, lock constants.
+//! Tests for Pmp.Config — exit codes, version format.
 //!
 //! Note: set_quiet/set_verbose modify module-level state. In Pike, inherit
 //! copies state at compile time, so changes in Config don't propagate to
@@ -40,11 +40,3 @@ void test_set_verbose_function_exists() {
     mixed err = catch { set_verbose(0); };
     assert_equal(0, !!err);
 }
-
-// TODO: LOCK_MAX_ATTEMPTS_STORE, LOCK_MAX_ATTEMPTS_PROJECT, LOCK_BACKOFF_BASE
-// are defined in behavior-spec.md but not yet implemented in Config.pmod.
-// void test_lock_constants() {
-//     assert_equal(true, LOCK_MAX_ATTEMPTS_STORE > 0);
-//     assert_equal(true, LOCK_MAX_ATTEMPTS_PROJECT > 0);
-//     assert_equal(true, LOCK_BACKOFF_BASE > 0.0);
-// }

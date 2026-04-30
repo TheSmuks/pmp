@@ -11,17 +11,17 @@ pmp (Pike Module Package Manager) installs, versions, and resolves dependencies 
 - Verify syntax: `pike bin/pmp.pike --help`
 - Check version: `pike bin/pmp.pike version` (or `sh bin/pmp version`)
 
-Expected result: 172 passed, 0 failed, exit code 0 (shell tests via `sh tests/runner.sh`); 306 passed for `sh tests/pike_tests.sh`.
+Expected result: 174 passed, 0 failed, exit code 0 (shell tests via `sh tests/runner.sh`); 317 passed for `sh tests/pike_tests.sh`.
 
 ## Architecture
 
 ```
 bin/pmp                POSIX sh shim — sets PIKE_MODULE_PATH to include all layer directories, delegates to pmp.pike
-bin/pmp.pike           Entry point (~252 lines) — config init, context mapping, command dispatch
+bin/pmp.pike           Entry point (~251 lines) — config init, context mapping, command dispatch
 
 bin/core/              Pure-function layer (no network, no I/O side effects)
   Config.pmod          PMP_VERSION constant; EXIT_OK/EXIT_ERROR/EXIT_INTERNAL exit codes; PMP_VERBOSE/PMP_QUIET variables
-  Helpers.pmod         die, die_internal, info, warn, debug, need_cmd, json_field, find_project_root, compute_sha256 (streaming)
+  Helpers.pmod         die, die_internal, info, warn, debug, need_cmd, json_field, find_project_root, compute_sha256 (streaming), sanitize_url, project_lock/unlock, store_lock/unlock
   Semver.pmod          parse_semver, compare_semver, sort_tags_semver, classify_bump
   Source.pmod          detect_source_type, source_to_name/version/domain/repo_path/strip_version
 
@@ -110,7 +110,6 @@ Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 - `read_stored_hash()` — read content_sha256 from .pmp-meta of an existing store entry
 - `merge_lock_entries(existing, new)` — dedup-by-name merge using multiset; new entries replace existing with same name
 - `lockfile_has_dep(name, lf, source?)` — check if dep exists in lockfile; optionally verify source URL matches
-- `resolve_local_dep_paths(project_root)` — resolve local dep paths from pike.json; returns ({mod_paths, inc_paths})
 - `validate_manifests()` — warn on undeclared imports/inherits/includes
 - `write_lockfile()` / `read_lockfile()` — lockfile I/O (takes entries + path as params; write is atomic via tmp+rename)
 - `parse_deps()` — native JSON parsing via Standards.JSON
@@ -190,7 +189,7 @@ The TigerBeetle coding style guide informs our approach. Key principles adapted 
 - Uses `assert`, `assert_exists`, `assert_not_exists`, `assert_output_contains` helpers
 - Tests create temp dirs and clean up on exit
 - Tests that need the store back up/restore `~/.pike/store/`
-- Every change must pass all 172 shell tests and 306 Pike unit tests
+- Every change must pass all 174 shell tests and 317 Pike unit tests
 
 ## Commit conventions
 
@@ -218,7 +217,7 @@ Doc-only changes do NOT trigger this checklist.
 ## PR instructions
 
 - Title format: descriptive summary of the change
-- Run `sh tests/test_install.sh` or `sh tests/runner.sh` before committing — all 172 tests must pass; also run `sh tests/pike_tests.sh`
+- Run `sh tests/test_install.sh` or `sh tests/runner.sh` before committing — all 174 tests must pass; also run `sh tests/pike_tests.sh`
 - If adding new features, add corresponding test cases
 
 

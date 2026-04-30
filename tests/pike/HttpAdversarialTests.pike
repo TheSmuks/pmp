@@ -100,3 +100,21 @@ void test_private_host_ipv4_in_ipv6_expanded_loopback() {
 void test_private_host_ipv4_in_ipv6_expanded_ten() {
     assert_equal(1, _is_private_host("0:0:0:0:0:0:10.0.0.1"));
 }
+
+// ── sanitize_url ──────────────────────────────────────────────────
+
+void test_sanitize_url_with_token() {
+    assert_equal("https://***@github.com/owner/repo",
+                 sanitize_url("https://token@github.com/owner/repo"));
+}
+void test_sanitize_url_with_user_pass() {
+    assert_equal("https://***@host/path",
+                 sanitize_url("https://user:pass@host/path"));
+}
+void test_sanitize_url_no_credentials() {
+    assert_equal("https://github.com/owner/repo",
+                 sanitize_url("https://github.com/owner/repo"));
+}
+void test_sanitize_url_non_url() {
+    assert_equal("not-a-url", sanitize_url("not-a-url"));
+}

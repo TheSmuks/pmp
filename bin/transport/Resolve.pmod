@@ -1,3 +1,80 @@
+//! Resolve the latest tag for a remote source.
+//! @param type
+//!   "github", "gitlab", or "selfhosted"
+//! @param domain
+//!   Domain for selfhosted sources (unused for github/gitlab)
+//! @param repo_path
+//!   Repository path (e.g. "owner/repo")
+//! @param version
+//!   Optional version hint for HTTP calls
+//! @param die_on_error
+//!   If true, dies on HTTP errors. If false, returns ({"", ""}).
+private array(string) _resolve_remote(string type, string domain,
+                                      string repo_path,
+                                      void|string version,
+                                      int(0..1) die_on_error) {
+    switch (type) {
+    case "github": {
+        string base_url = "https://api.github.com/repos/" + repo_path;
+        return _resolve_tags(
+            lambda(int page) {
+                string url = base_url + "/tags?per_page=100&page=" + page;
+                if (die_on_error)
+                    return http_get(url, github_auth_headers(), version);
+                array(int|string) result = http_get_safe(url, github_auth_headers(), version);
+                return result[0] == 200 && result[1];
+            },
+            "sha",
+            lambda(string tag) {
+                if (die_on_error) {
+                    string body = http_get(
+                        base_url + "/commits/" + _encode_tag(tag),
+                        github_auth_headers(), version);
+                    mixed commit_data;
+                    mixed fallback_err = catch { commit_data = Standards.JSON.decode(body); };
+                    if (!fallback_err && mappingp(commit_data))
+                        return commit_data->sha || "";
+                } else {
+                    array(int|string) sha_result = http_get_safe(
+                        base_url + "/commits/" + _encode_tag(tag),
+                        github_auth_headers(), version);
+                    if (sha_result[0] == 200) {
+                        mixed commit_data;
+                        mixed fallback_err = catch { commit_data = Standards.JSON.decode(sha_result[1]); };
+                        if (!fallback_err && mappingp(commit_data))
+                            return commit_data->sha || "";
+                    }
+                }
+                return "";
+            });
+    }
+    case "gitlab": {
+        string encoded = Protocols.HTTP.percent_encode(repo_path);
+        string base_url = "https://gitlab.com/api/v4/projects/" + encoded + "/repository";
+        return _resolve_tags(
+            lambda(int page) {
+                string url = base_url + "/tags?per_page=100&page=" + page;
+                if (die_on_error)
+                    return http_get(url, 0, version);
+                array(int|string) result = http_get_safe(url, 0, version);
+                return result[0] == 200 && result[1];
+            },
+            "id");
+    }
+    case "selfhosted":
+        if (die_on_error)
+            return latest_tag_selfhosted(domain, repo_path);
+        mixed err = catch {
+            return latest_tag_selfhosted(domain, repo_path);
+        };
+        return ({ "", "" });
+    default:
+        if (die_on_error)
+            die("cannot resolve tags for source type: " + type, EXIT_INTERNAL);
+        return ({ "", "" });
+    }
+}
+
 //! URL-encode a string for use in API path segments.
 //! Uses Protocols.HTTP.percent_encode for full RFC 2396 coverage.
 private string _encode_tag(string tag) {
@@ -57,39 +134,12 @@ private array(string) _resolve_tags(
 //! Get latest tag from GitHub — returns highest semver, not most-recently-created.
 //! Paginates through all tags (GitHub caps at 100 per page).
 array(string) latest_tag_github(string repo_path, void|string version) {
-    return _resolve_tags(
-        lambda(int page) {
-            string url = "https://api.github.com/repos/" + repo_path
-                         + "/tags?per_page=100&page=" + page;
-            return http_get(url, github_auth_headers(), version);
-        },
-        "sha",
-        lambda(string tag) {
-            array(int|string) result = http_get_safe(
-                "https://api.github.com/repos/" + repo_path
-                + "/commits/" + _encode_tag(tag),
-                github_auth_headers(), version);
-            if (result[0] == 200) {
-                mixed commit_data;
-                mixed fallback_err = catch { commit_data = Standards.JSON.decode(result[1]); };
-                if (!fallback_err && mappingp(commit_data))
-                    return commit_data->sha || "";
-            }
-            return "";
-        });
+    return _resolve_remote("github", "", repo_path, version, 1);
 }
 
 //! Get latest tag from GitLab — returns highest semver, not most-recently-created.
-//! Paginates through all tags (GitLab caps at 100 per page).
 array(string) latest_tag_gitlab(string repo_path, void|string version) {
-    string encoded = Protocols.HTTP.percent_encode(repo_path);
-    return _resolve_tags(
-        lambda(int page) {
-            string url = "https://gitlab.com/api/v4/projects/"
-                         + encoded + "/repository/tags?per_page=100&page=" + page;
-            return http_get(url, 0, version);
-        },
-        "id");
+    return _resolve_remote("gitlab", "", repo_path, version, 1);
 }
 
 //! Get latest tag from self-hosted git via ls-remote.
@@ -136,72 +186,26 @@ array(string) latest_tag_selfhosted(string domain, string repo_path) {
 //! Resolve latest tag. Returns ({tag, commit_sha}).
 array(string) latest_tag(string type, string domain, string repo_path,
                          void|string version) {
-    switch (type) {
-        case "github":     return latest_tag_github(repo_path, version);
-        case "gitlab":     return latest_tag_gitlab(repo_path, version);
-        case "selfhosted": return latest_tag_selfhosted(domain, repo_path);
-        default: die("cannot resolve tags for source type: " + type, EXIT_INTERNAL);
-    }
+    return _resolve_remote(type, domain, repo_path, version, 1);
 }
 
 //! Non-dying variant of latest_tag_github for batch operations.
 //! Uses http_get_safe so HTTP errors return ({"",""}) instead of killing the process.
 array(string) latest_tag_github_safe(string repo_path, void|string version) {
-    return _resolve_tags(
-        lambda(int page) {
-            string url = "https://api.github.com/repos/" + repo_path
-                         + "/tags?per_page=100&page=" + page;
-            array(int|string) result = http_get_safe(url, github_auth_headers(), version);
-            return result[0] == 200 && result[1];
-        },
-        "sha",
-        lambda(string tag) {
-            array(int|string) sha_result = http_get_safe(
-                "https://api.github.com/repos/" + repo_path
-                + "/commits/" + _encode_tag(tag),
-                github_auth_headers(), version);
-            if (sha_result[0] == 200) {
-                mixed commit_data;
-                mixed fallback_err = catch { commit_data = Standards.JSON.decode(sha_result[1]); };
-                if (!fallback_err && mappingp(commit_data))
-                    return commit_data->sha || "";
-            }
-            return "";
-        });
+    return _resolve_remote("github", "", repo_path, version, 0);
 }
 
 //! Non-dying variant of latest_tag_gitlab for batch operations.
 //! Uses http_get_safe so HTTP errors return ({"",""}) instead of killing the process.
 array(string) latest_tag_gitlab_safe(string repo_path, void|string version) {
-    string encoded = Protocols.HTTP.percent_encode(repo_path);
-    return _resolve_tags(
-        lambda(int page) {
-            string url = "https://gitlab.com/api/v4/projects/"
-                         + encoded + "/repository/tags?per_page=100&page=" + page;
-            array(int|string) result = http_get_safe(url, 0, version);
-            return result[0] == 200 && result[1];
-        },
-        "id");
+    return _resolve_remote("gitlab", "", repo_path, version, 0);
 }
 
 //! Non-dying tag resolution for batch operations like cmd_outdated.
 //! Returns ({"", ""}) on any failure instead of terminating the process.
 array(string) latest_tag_safe(string type, string domain, string repo_path,
                                void|string version) {
-    switch (type) {
-    case "github":
-        return latest_tag_github_safe(repo_path, version);
-    case "gitlab":
-        return latest_tag_gitlab_safe(repo_path, version);
-    case "selfhosted": {
-        mixed err = catch {
-            return latest_tag_selfhosted(domain, repo_path);
-        };
-        return ({ "", "" });
-    }
-    default:
-        return ({ "", "" });
-    }
+    return _resolve_remote(type, domain, repo_path, version, 0);
 }
 
 //! Resolve a specific tag to its commit SHA.

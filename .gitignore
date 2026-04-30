@@ -1,6 +1,7 @@
 # pmp
 .pike-env/
 modules/
+tests/reports/
 *.o
 *.pike.o
 pike.lock

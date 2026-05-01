@@ -50,12 +50,23 @@ protected void write_lockfile(string path, array(array(string)) entries) {
 }
 
 // Run a Pike expression in a subprocess. Returns ({exit_code, stdout, stderr}).
+// Uses temp files for stdout/stderr since Stdio.PIPE is not always available.
 protected array run_pike(string expr) {
+    string outf = combine_path(tmpdir, ".tmp-pike-out-" + getpid());
+    string errf = combine_path(tmpdir, ".tmp-pike-err-" + getpid());
+    object fout = Stdio.File(outf, "cw");
+    object ferr = Stdio.File(errf, "cw");
     object proc = Process.Process(
         ({pike_bin, "-M", combine_path(old_cwd, "bin"), "-e", expr}),
-        (["stdout": Stdio.PIPE, "stderr": Stdio.PIPE]));
+        (["stdout": fout, "stderr": ferr]));
     proc->wait();
-    return ({proc->status(), proc->stdout()->read(), proc->stderr()->read()});
+    int code = proc->status();
+    fout->close();
+    ferr->close();
+    string out = Stdio.read_file(outf) || "";
+    string err = Stdio.read_file(errf) || "";
+    rm(outf); rm(errf);
+    return ({code, out, err});
 }
 
 // Build a Pike expression string that calls cmd_X with a ctx mapping.

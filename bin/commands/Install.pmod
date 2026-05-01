@@ -71,6 +71,12 @@ void install_one(string name, string source, string target,
         case "github":
         case "gitlab":
         case "selfhosted": {
+            // tar is required for github/gitlab tarball extraction
+            if (type == "github" || type == "gitlab") {
+                if (!Process.search_path("tar"))
+                    die("tar is required for " + type + " installs. Install tar or use a self-hosted source.");
+            }
+
             string ver = source_to_version(source);
             string repo_path = source_to_repo_path(source);
             string domain = source_to_domain(source);

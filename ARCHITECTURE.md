@@ -12,12 +12,12 @@ bin/pmp                POSIX sh shim — delegates to bin/pmp.pike, sets PIKE_MO
 bin/pmp.pike           Entry point (~252 lines) — config init, command dispatch
 bin/core/              Pure functions (no I/O, no mutable state)
   Config.pmod          PMP_VERSION constant
-  Helpers.pmod         die, info, warn, need_cmd, json_field, find_project_root, compute_sha256
+  Helpers.pmod         die, info, warn, need_cmd, json_field, find_project_root, compute_sha256, atomic_symlink, atomic_write, sanitize_url, project_lock, project_unlock, store_lock, store_unlock, advisory_lock, advisory_unlock, validate_dep_name, make_temp_dir, resolve_local_path, register_cleanup_dir, run_cleanup
   Semver.pmod          parse_semver, compare_semver, sort_tags_semver, classify_bump
   Source.pmod          detect_source_type, source_to_name/version/domain/repo_path/strip_version
 bin/transport/         Network layer
-  Http.pmod            http_get, http_get_safe, github_auth_headers, redirect protection (_url_host, _redirect_allowed_by_host)
-  Resolve.pmod         latest_tag_*, resolve_commit_sha (with pagination)
+  Http.pmod            http_get, http_get_safe, github_auth_headers, redirect protection (_url_host, _redirect_allowed_by_host), _follow_with_redirects, _do_get_single, _is_private_host, SSRF helpers
+  Resolve.pmod         latest_tag, latest_tag_github_safe, latest_tag_gitlab_safe, latest_tag_safe, _resolve_remote, _resolve_tags, resolve_commit_sha (with pagination)
 bin/store/             Content-addressable store
   Store.pmod           store_entry_name, extract_targz, write_meta, compute_dir_hash, store_install_*
   StoreCmd.pmod        cmd_store (status + prune)
@@ -27,7 +27,7 @@ bin/project/           Project operations
   Validate.pmod        validate_manifests, strip_comments_and_strings, init_std_libs
   Verify.pmod          cmd_verify, cmd_doctor (project and store integrity verification)
   Project.pmod         cmd_init, cmd_list, cmd_clean, cmd_remove
-  Env.pmod             cmd_env, cmd_resolve (virtual environment and path resolution)
+  Env.pmod             cmd_env, cmd_resolve, cmd_run, build_paths (virtual environment, path resolution, script execution)
 bin/commands/          Stateful orchestrators (tie transport + store + project together)
   Install.pmod         install_one, cmd_install, cmd_install_all, cmd_install_source, project_lock/unlock (~600 lines)
   Update.pmod          cmd_update (single-module and full update), cmd_outdated, print_update_summary
@@ -103,14 +103,14 @@ Layers are ordered by dependency: core ← transport ← store ← project ← c
 #### bin/core/ — Pure functions (no I/O, no mutable state)
 
 - **Config.pmod** — `PMP_VERSION` constant
-- **Helpers.pmod** — `die`, `info`, `warn`, `need_cmd`, `json_field`, `find_project_root`, `compute_sha256`
+- **Helpers.pmod** — `die`, `info`, `warn`, `need_cmd`, `json_field`, `find_project_root`, `compute_sha256`, `atomic_symlink`, `atomic_write`, `sanitize_url`, `project_lock`/`project_unlock`, `store_lock`/`store_unlock`, `advisory_lock`/`advisory_unlock`, `validate_dep_name`, `make_temp_dir`, `resolve_local_path`, `register_cleanup_dir`, `run_cleanup`
 - **Semver.pmod** — `parse_semver`, `compare_semver`, `sort_tags_semver`, `classify_bump`
 - **Source.pmod** — `detect_source_type`, `source_to_name`/`version`/`domain`/`repo_path`/`strip_version`
 
 #### bin/transport/ — Network layer
 
-- **Http.pmod** — `http_get`, `http_get_safe`, `github_auth_headers`, redirect protection (`_url_host`, `_redirect_allowed_by_host`)
-- **Resolve.pmod** — `latest_tag_github`/`gitlab`/`selfhosted`, `resolve_commit_sha` (with pagination)
+- **Http.pmod** — `http_get`, `http_get_safe`, `github_auth_headers`, redirect protection (`_url_host`, `_redirect_allowed_by_host`), `_follow_with_redirects`, `_do_get_single`, `_is_private_host`, SSRF helpers
+- **Resolve.pmod** — `latest_tag`, `latest_tag_github_safe`, `latest_tag_gitlab_safe`, `latest_tag_safe`, `_resolve_remote`, `_resolve_tags`, `resolve_commit_sha` (with pagination)
 
 #### bin/store/ — Content-addressable store
 
@@ -128,7 +128,7 @@ Layers are ordered by dependency: core ← transport ← store ← project ← c
   - Builds `std_libs` dynamically from the running Pike's module path
 - **Verify.pmod** — `cmd_verify`, `cmd_doctor` (project and store integrity verification)
 - **Project.pmod** — `cmd_init`, `cmd_list`, `cmd_clean`, `cmd_remove`
-- **Env.pmod** — `cmd_env`, `cmd_resolve` (virtual environment and path resolution)
+- **Env.pmod** — `cmd_env`, `cmd_resolve`, `cmd_run`, `build_paths` (virtual environment, path resolution, script execution)
 
 #### bin/commands/ — Stateful orchestrators
 
@@ -140,7 +140,7 @@ Layers are ordered by dependency: core ← transport ← store ← project ← c
 
 Location: `~/.pike/store/`
 
-Entries are named `{domain}-{owner}-{repo}-{tag}-{sha_prefix8}`. Each entry contains a `.pmp-meta` file with source, tag, commit_sha, content_sha256, and installed_at. The store is shared across projects.
+Entries are named `{domain}-{owner}-{repo}-{tag}-{sha_prefix16}`. Each entry contains a `.pmp-meta` file with source, tag, commit_sha, content_sha256, and installed_at. The store is shared across projects.
 
 ### Lockfile
 
@@ -164,7 +164,7 @@ Generated `bin/pike` wrapper that sets `PIKE_MODULE_PATH` and `PIKE_INCLUDE_PATH
 6. For remote: resolve version (`latest_tag` or pinned `#tag`)
 7. Check cycle via `visited` multiset (`source:repo_path#tag`)
 8. Download via `Protocols.HTTP`, hash via `Crypto.SHA256`, extract via `Filesystem.Tar`
-9. Move to store entry (`~/.pike/store/{slug}-{tag}-{sha8}`)
+9. Move to store entry (`~/.pike/store/{slug}-{tag}-{sha16}`)
 10. Write `.pmp-meta`, create symlink `./modules/{name}` → store entry
 11. Check for transitive deps in installed package's `pike.json`
 12. Repeat recursively for transitive deps
@@ -203,7 +203,7 @@ Runs on `ubuntu-latest` with 3 steps:
 
 ### Local testing
 
-- `sh tests/test_install.sh` — 174 shell tests + 317 Pike unit tests (`tests/pike_tests.sh`)
+- `sh tests/test_install.sh` — 208 shell tests + 330 Pike unit tests (`tests/pike_tests.sh`)
 
 ### Test infrastructure
 

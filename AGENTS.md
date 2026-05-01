@@ -11,7 +11,7 @@ pmp (Pike Module Package Manager) installs, versions, and resolves dependencies 
 - Verify syntax: `pike bin/pmp.pike --help`
 - Check version: `pike bin/pmp.pike version` (or `sh bin/pmp version`)
 
-Expected result: 174 passed, 0 failed, exit code 0 (shell tests via `sh tests/runner.sh`); 325 passed for `sh tests/pike_tests.sh`.
+Expected result: 208 passed, 0 failed, exit code 0 (shell tests via `sh tests/runner.sh`); 330 passed for `sh tests/pike_tests.sh`.
 
 ## Architecture
 
@@ -135,7 +135,7 @@ Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 - JSON parsed natively via `Standards.JSON.decode` — no sed/awk.
 - Error handling: `die("message")` exits with error to stderr.
 - Info messages: `info("message")` to stdout with `pmp:` prefix.
-- No external deps needed (no curl, tar, sha256sum). Pike's native `Protocols.HTTP`, `Standards.JSON`, `Crypto.SHA256`, `Filesystem.Tar` handle everything.
+- One external dependency: tar (for GitHub/GitLab tarball extraction). All other operations use Pike's native HTTP, JSON, Crypto, and Filesystem APIs.
 
 ### Tiger Style (adopted from [TigerBeetle](docs/TIGER_STYLE.md))
 

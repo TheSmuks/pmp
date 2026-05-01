@@ -77,6 +77,7 @@ void print_help() {
     write("\nOptions:\n");
     write("  --verbose         Enable debug output\n");
     write("  --quiet           Suppress informational output\n");
+    write("  --offline         Skip all network operations\n");
     write("\nExit codes:\n");
     write("  0  Success\n");
     write("  1  User error (invalid input, missing deps, network failure)\n");
@@ -216,6 +217,12 @@ void _main(array(string) argv) {
     if (opts->quiet || has_value(rest, "--quiet")) {
         set_quiet(1); set_verbose(0);
         rest -= ({"--quiet"});
+    }
+
+    // Global --offline flag (works with any command)
+    if (has_value(rest, "--offline")) {
+        ctx["offline"] = 1;
+        rest -= ({"--offline"});
     }
 
     if (opts->help) { print_help(); return 0; }

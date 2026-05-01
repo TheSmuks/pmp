@@ -1,16 +1,16 @@
 // Install.pmod — install orchestrators: install_one, cmd_install, cmd_install_all, cmd_install_source
 // All state is passed via context mapping (ctx).
 
-inherit Config;
-inherit Helpers;
-inherit Source;
-inherit Http;
-inherit Resolve;
-inherit Store;
-inherit Lockfile;
-inherit Manifest;
-inherit Semver;
-inherit Validate;
+import .Config;
+import .Helpers;
+import .Source;
+import .Http;
+import .Resolve;
+import .Store;
+import .Lockfile;
+import .Manifest;
+import .Semver;
+import .Validate;
 
 
 

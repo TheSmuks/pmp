@@ -1,4 +1,8 @@
-inherit Helpers;
+import .Config;
+import .Helpers;
+import .Source;
+import .Store;
+import .Manifest;
 
 constant LOCKFILE_VERSION = 1;
 
@@ -162,7 +166,7 @@ array(array(string)) prune_stale_deps(array(array(string)) lock_entries,
         if (!e) continue;
 
         string pkg_json;
-        if (Source.is_local_source(e[1])) {
+        if (is_local_source(e[1])) {
             // Local dep — read pike.json from source path
             string local_path = e[1];
             local_path = resolve_local_path(local_path);
@@ -170,12 +174,12 @@ array(array(string)) prune_stale_deps(array(array(string)) lock_entries,
         } else {
             // Remote dep — find in store
             string entry_path =
-                Store._find_store_entry(store_dir, e[1], e[2], e[4]);
+                _find_store_entry(store_dir, e[1], e[2], e[4]);
             if (!entry_path || sizeof(entry_path) == 0) continue;
             pkg_json = combine_path(store_dir, entry_path, "pike.json");
         }
         if (!Stdio.exist(pkg_json)) continue;
-        foreach (Manifest.parse_deps(pkg_json); ; array(string) td) {
+        foreach (parse_deps(pkg_json); ; array(string) td) {
             if (!needed[td[0]]) {
                 needed[td[0]] = 1;
                 queue += ({ td[0] });

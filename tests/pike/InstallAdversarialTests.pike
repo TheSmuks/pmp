@@ -2,7 +2,7 @@
 //! Tests pure function: print_update_summary,
 
 import PUnit;
-import Pmp;
+import Pmp.Update;
 inherit PUnit.TestCase;
 
 // ── print_update_summary ────────────────────────────────────────────

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- refactor: restructure all 17 modules into canonical Pike layout under `bin/Pmp.pmod/` (flat, no subdirectories)
+- fix: `module.pmod` is now namespace-only — no `inherit` re-exports, sub-modules use `import .Foo;`
+- fix: shell shim sets single `PIKE_MODULE_PATH` instead of 6 colon-separated entries
+- fix: `pmp.pike` uses explicit imports (`import Pmp.Config; import Pmp.Helpers;` etc.)
+- fix: `Config`, `Helpers`, etc. are no longer importable as top-level modules (namespace pollution eliminated)
+- fix: documentation hallucinations corrected — `Filesystem.Tar` is not used (system `tar` required), test counts updated
+- fix: `scripts/doc-sync-check.sh` updated for new module layout
+
 - feat: global `--offline` flag works with any command (`pmp outdated --offline`, `pmp changelog --offline`, `pmp doctor --offline`)
 - feat: `tar` dependency check before GitHub/GitLab installs with actionable error message
 - feat: `tar` availability reporting in `pmp doctor`

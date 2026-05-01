@@ -1,7 +1,7 @@
 //! Adversarial tests for Pmp.Manifest — parse_deps and add_to_manifest.
 
 import PUnit;
-import Manifest;
+import Pmp.Manifest;
 inherit PUnit.TestCase;
 
 protected int _counter = 0;
@@ -147,12 +147,7 @@ void test_add_to_invalid_json() {
     int code = Process.run(({
         "pike", "-M", combine_path(getcwd(), "modules"),
         "-M", combine_path(getcwd(), "bin"),
-        "-M", combine_path(getcwd(), "bin/core"),
-        "-M", combine_path(getcwd(), "bin/transport"),
-        "-M", combine_path(getcwd(), "bin/store"),
-        "-M", combine_path(getcwd(), "bin/project"),
-        "-M", combine_path(getcwd(), "bin/commands"),
-        "-e", "import Manifest; import Helpers; "
+        "-e", "import Pmp.Manifest; import Pmp.Helpers; "
         "add_to_manifest(\"" + path + "\", \"foo\", \"https://example.com\");"
     }))->exitcode;
     rm(path);

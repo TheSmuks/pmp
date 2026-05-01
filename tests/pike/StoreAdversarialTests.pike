@@ -1,7 +1,7 @@
 //! Adversarial tests for Pmp.Store — edge cases and boundary conditions.
 
 import PUnit;
-import Pmp;
+import Pmp.Store;
 inherit PUnit.TestCase;
 
 // ── store_entry_name ─────────────────────────────────────────────────
@@ -53,11 +53,6 @@ protected int run_subprocess(string code) {
     mapping result = Process.run(({
         "pike", "-M", combine_path(getcwd(), "modules"),
         "-M", combine_path(getcwd(), "bin"),
-        "-M", combine_path(getcwd(), "bin/core"),
-        "-M", combine_path(getcwd(), "bin/transport"),
-        "-M", combine_path(getcwd(), "bin/store"),
-        "-M", combine_path(getcwd(), "bin/project"),
-        "-M", combine_path(getcwd(), "bin/commands"),
         "-e", code
     }));
     return result->exitcode;
@@ -144,15 +139,10 @@ void test_resolve_module_path_module_pmod() {
 void test_store_entry_name_empty_sha() {
     // Empty SHA now gets a content-derived fallback (SHA resolution can fail transiently)
     // Verify it produces a valid entry name instead of crashing
-    string code = "import Pmp; write(store_entry_name(\"github.com/owner/repo\", \"v1.0.0\", \"\") + \"\\n\");";
+    string code = "import Pmp.Store; write(store_entry_name(\"github.com/owner/repo\", \"v1.0.0\", \"\") + \"\\n\");";
     mapping result = Process.run(({
         "pike", "-M", combine_path(getcwd(), "modules"),
         "-M", combine_path(getcwd(), "bin"),
-        "-M", combine_path(getcwd(), "bin/core"),
-        "-M", combine_path(getcwd(), "bin/transport"),
-        "-M", combine_path(getcwd(), "bin/store"),
-        "-M", combine_path(getcwd(), "bin/project"),
-        "-M", combine_path(getcwd(), "bin/commands"),
         "-e", code
     }));
     assert_equal(0, result->exitcode, "empty SHA should not crash");

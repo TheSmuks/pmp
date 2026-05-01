@@ -12,4 +12,4 @@ fi
 mkdir -p tests/reports
 
 # Run with JUnit XML output
-exec pike -M modules -M bin -M bin/core -M bin/transport -M bin/store -M bin/project -M bin/commands tests/pike/run.pike --junit tests/reports/pike-junit.xml "$@"
+exec pike -M modules -M bin tests/pike/run.pike --junit tests/reports/pike-junit.xml "$@"

@@ -101,7 +101,7 @@ Rules:
 
 ## Implementation Steps
 
-Changes are confined to `bin/project/Lockfile.pmod`, with minor updates in `bin/Pmp.pmod/Project.pmod` for filename resolution.
+Changes are confined to `bin/Pmp.pmod/Lockfile.pmod`, with minor updates in `bin/Pmp.pmod/Project.pmod` for filename resolution.
 
 1. **Update `LOCKFILE_VERSION` constant** from `1` to `2`.
 

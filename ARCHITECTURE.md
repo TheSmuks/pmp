@@ -8,37 +8,52 @@
 - **Date**: 2026-04-30
 ## Project Structure
 
+```
 bin/pmp                POSIX sh shim — delegates to bin/pmp.pike, sets PIKE_MODULE_PATH
 bin/pmp.pike           Entry point (~252 lines) — config init, command dispatch
-bin/core/              Pure functions (no I/O, no mutable state)
+bin/Pmp.pmod/          Flat module namespace (17 modules + namespace file)
+  module.pmod          Namespace-only — no inherit re-exports; sub-modules accessed as Pmp.Config etc.
   Config.pmod          PMP_VERSION constant
-  Helpers.pmod         die, info, warn, need_cmd, json_field, find_project_root, compute_sha256, atomic_symlink, atomic_write, sanitize_url, project_lock, project_unlock, store_lock, store_unlock, advisory_lock, advisory_unlock, validate_dep_name, make_temp_dir, resolve_local_path, register_cleanup_dir, run_cleanup
+  Helpers.pmod         die, info, warn, need_cmd, json_field, find_project_root, compute_sha256,
+                       atomic_symlink, atomic_write, sanitize_url, project_lock, project_unlock,
+                       store_lock, store_unlock, advisory_lock, advisory_unlock, validate_dep_name,
+                       make_temp_dir, resolve_local_path, register_cleanup_dir, run_cleanup
   Semver.pmod          parse_semver, compare_semver, sort_tags_semver, classify_bump
   Source.pmod          detect_source_type, source_to_name/version/domain/repo_path/strip_version
-bin/transport/         Network layer
-  Http.pmod            http_get, http_get_safe, github_auth_headers, redirect protection (_url_host, _redirect_allowed_by_host), _follow_with_redirects, _do_get_single, _is_private_host, SSRF helpers
-  Resolve.pmod         latest_tag, latest_tag_github_safe, latest_tag_gitlab_safe, latest_tag_safe, _resolve_remote, _resolve_tags, resolve_commit_sha (with pagination)
-bin/store/             Content-addressable store
-  Store.pmod           store_entry_name, extract_targz, write_meta, compute_dir_hash, store_install_*
+  Http.pmod            http_get, http_get_safe, github_auth_headers, redirect protection
+                       (_url_host, _redirect_allowed_by_host), _follow_with_redirects,
+                       _do_get_single, _is_private_host, SSRF helpers
+  Resolve.pmod         latest_tag, latest_tag_github_safe, latest_tag_gitlab_safe,
+                       latest_tag_safe, _resolve_remote, _resolve_tags,
+                       resolve_commit_sha (with pagination)
+  Store.pmod           store_entry_name, extract_targz, write_meta, compute_dir_hash,
+                       store_install_*
   StoreCmd.pmod        cmd_store (status + prune)
-bin/project/           Project operations
   Lockfile.pmod        lockfile_add_entry, write_lockfile, read_lockfile, lockfile_has_dep
   Manifest.pmod        add_to_manifest, parse_deps
   Validate.pmod        validate_manifests, strip_comments_and_strings, init_std_libs
   Verify.pmod          cmd_verify, cmd_doctor (project and store integrity verification)
   Project.pmod         cmd_init, cmd_list, cmd_clean, cmd_remove
-  Env.pmod             cmd_env, cmd_resolve, cmd_run, build_paths (virtual environment, path resolution, script execution)
-bin/commands/          Stateful orchestrators (tie transport + store + project together)
-  Install.pmod         install_one, cmd_install, cmd_install_all, cmd_install_source, project_lock/unlock (~600 lines)
-  Update.pmod          cmd_update (single-module and full update), cmd_outdated, print_update_summary
-  LockOps.pmod         cmd_lock, cmd_rollback, cmd_changelog — lockfile operations and version comparison
-bin/Pmp.pmod/
-  module.pmod          Re-exports all 17 sub-modules via inherit
+  Env.pmod             cmd_env, cmd_resolve, cmd_run, build_paths
+                       (virtual environment, path resolution, script execution)
+  Install.pmod         install_one, cmd_install, cmd_install_all, cmd_install_source,
+                       project_lock/unlock (~600 lines)
+  Update.pmod          cmd_update (single-module and full update), cmd_outdated,
+                       print_update_summary
+  LockOps.pmod         cmd_lock, cmd_rollback, cmd_changelog
+                       — lockfile operations and version comparison
 docs/
   TIGER_STYLE.md       TigerBeetle coding style guide (reference for project conventions)
 tests/pike_tests.sh     Entry point for Pike unit tests (installs PUnit, runs tests/pike/run.pike)
-tests/pike/             PUnit test files (SemverTests, SourceTests, LockfilePureTests, HelpersTests, StoreCmdAdversarialTests)
+tests/pike/             PUnit test files (SemverTests, SourceTests, LockfilePureTests,
+                         HelpersTests, StoreCmdAdversarialTests)
 tests/test_install.sh   Shell integration test suite (172 tests)
+```
+
+## Module Resolution
+
+The shell shim (`bin/pmp`) sets a single `PIKE_MODULE_PATH` pointing at `bin/`. Pike resolves `import Pmp.Config` as `bin/Pmp.pmod/Config.pmod`. Sub-modules use sibling imports (`import .Helpers;`) to reference other modules in the same directory. The `module.pmod` file is a namespace placeholder — it contains no inherit re-exports; all modules are accessed directly via their qualified names (e.g., `Pmp.Config`, `Pmp.Store`).
+
 ## System Diagram
 
 ```
@@ -59,7 +74,7 @@ User → pmp CLI (bin/pmp shim → bin/pmp.pike)
   │     ├─ store_install_*()                     → download, hash, store
   │     │                                        (Protocols.HTTP,
   │     │                                         Crypto.SHA256,
-  │     │                                         Filesystem.Tar)
+  │     │                                         system tar via Process.run)
   │     ├─ symlink STORE_DIR/entry → modules/name
   │     ├─ parse_deps(package/pike.json)          → transitive deps
   │     └─ lockfile_add_entry()                   → accumulate lockfile data
@@ -87,7 +102,7 @@ User → pmp CLI (bin/pmp shim → bin/pmp.pike)
 
 ### bin/pmp.pike (entry point, ~252 lines)
 
-Holds all mutable state (`lock_entries`, `visited`, `std_libs`, config paths) and command dispatch. All pure functions are imported from `Pmp.pmod/`.
+Holds all mutable state (`lock_entries`, `visited`, `std_libs`, config paths) and command dispatch. All pure functions are imported from `Pmp.pmod/` via explicit imports (`import Pmp.Config;`, `import Pmp.Helpers;`, etc.).
 
 - **Configuration** — `pike_bin`, `global_dir`, `local_dir`, `store_dir`, `pike_json`, `lockfile_path`
 - **Mutable state** — `lock_entries` array, `visited` multiset, `std_libs` multiset
@@ -95,29 +110,28 @@ Holds all mutable state (`lock_entries`, `visited`, `std_libs`, config paths) an
 - **Commands** — `cmd_init`, `cmd_install`, `cmd_install_all`, `cmd_install_source`, `cmd_update`, `cmd_rollback`, `cmd_changelog`, `cmd_lock`, `cmd_store`, `cmd_list`, `cmd_clean`, `cmd_remove`, `cmd_run`, `cmd_env`, `cmd_resolve`
 - **Main dispatch** — `switch (argv[1])`
 
-### bin/Pmp.pmod/ (module library, 17 modules across 5 layers)
+### bin/Pmp.pmod/ (module library, 17 modules, flat layout)
 
-All modules are pure functions — no mutable global state. State is passed as explicit parameters.
-Layers are ordered by dependency: core ← transport ← store ← project ← commands.
+All modules are pure functions — no mutable global state. State is passed as explicit parameters. All 17 modules live as flat `.pmod` files under `bin/Pmp.pmod/`. `module.pmod` is namespace-only (no inherit re-exports).
 
-#### bin/core/ — Pure functions (no I/O, no mutable state)
+#### Config & Utilities
 
 - **Config.pmod** — `PMP_VERSION` constant
 - **Helpers.pmod** — `die`, `info`, `warn`, `need_cmd`, `json_field`, `find_project_root`, `compute_sha256`, `atomic_symlink`, `atomic_write`, `sanitize_url`, `project_lock`/`project_unlock`, `store_lock`/`store_unlock`, `advisory_lock`/`advisory_unlock`, `validate_dep_name`, `make_temp_dir`, `resolve_local_path`, `register_cleanup_dir`, `run_cleanup`
 - **Semver.pmod** — `parse_semver`, `compare_semver`, `sort_tags_semver`, `classify_bump`
 - **Source.pmod** — `detect_source_type`, `source_to_name`/`version`/`domain`/`repo_path`/`strip_version`
 
-#### bin/transport/ — Network layer
+#### Network
 
 - **Http.pmod** — `http_get`, `http_get_safe`, `github_auth_headers`, redirect protection (`_url_host`, `_redirect_allowed_by_host`), `_follow_with_redirects`, `_do_get_single`, `_is_private_host`, SSRF helpers
 - **Resolve.pmod** — `latest_tag`, `latest_tag_github_safe`, `latest_tag_gitlab_safe`, `latest_tag_safe`, `_resolve_remote`, `_resolve_tags`, `resolve_commit_sha` (with pagination)
 
-#### bin/store/ — Content-addressable store
+#### Content-addressable store
 
-- **Store.pmod** — `store_entry_name`, `extract_targz`, `write_meta`, `compute_dir_hash`, `store_install_*` (return result mappings)
+- **Store.pmod** — `store_entry_name`, `extract_targz` (uses system `tar` via `Process.run`), `write_meta`, `compute_dir_hash`, `store_install_*` (return result mappings)
 - **StoreCmd.pmod** — `cmd_store` (status + prune)
 
-#### bin/project/ — Project operations
+#### Project operations
 
 - **Lockfile.pmod** — `lockfile_add_entry` (returns new array), `write_lockfile`, `read_lockfile`, `lockfile_has_dep`
 - **Manifest.pmod** — `add_to_manifest`, `parse_deps`
@@ -130,7 +144,7 @@ Layers are ordered by dependency: core ← transport ← store ← project ← c
 - **Project.pmod** — `cmd_init`, `cmd_list`, `cmd_clean`, `cmd_remove`
 - **Env.pmod** — `cmd_env`, `cmd_resolve`, `cmd_run`, `build_paths` (virtual environment, path resolution, script execution)
 
-#### bin/commands/ — Stateful orchestrators
+#### Install & update orchestrators
 
 - **Install.pmod** — `install_one`, `cmd_install`, `cmd_install_all`, `cmd_install_source`, `project_lock`/`project_unlock` (shared lock helpers, ~600 lines)
 - **Update.pmod** — `cmd_update` (single-module and full update with lock management), `cmd_outdated` (compares lockfile versions with latest remote tags), `print_update_summary`
@@ -163,7 +177,7 @@ Generated `bin/pike` wrapper that sets `PIKE_MODULE_PATH` and `PIKE_INCLUDE_PATH
 5. For each dep: `detect_source_type` determines github/gitlab/selfhosted/local
 6. For remote: resolve version (`latest_tag` or pinned `#tag`)
 7. Check cycle via `visited` multiset (`source:repo_path#tag`)
-8. Download via `Protocols.HTTP`, hash via `Crypto.SHA256`, extract via `Filesystem.Tar`
+8. Download via `Protocols.HTTP`, hash via `Crypto.SHA256`, extract via system `tar` (`Process.run`)
 9. Move to store entry (`~/.pike/store/{slug}-{tag}-{sha16}`)
 10. Write `.pmp-meta`, create symlink `./modules/{name}` → store entry
 11. Check for transitive deps in installed package's `pike.json`

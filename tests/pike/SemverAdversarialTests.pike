@@ -2,7 +2,7 @@
 //! compare_semver, compare_prerelease, classify_bump.
 
 import PUnit;
-import Semver;
+import Pmp.Semver;
 inherit PUnit.TestCase;
 
 // ── parse_semver ─────────────────────────────────────────────────────

@@ -7,10 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- feat: global `--offline` flag works with any command (`pmp outdated --offline`, `pmp changelog --offline`, `pmp doctor --offline`)
+- feat: `tar` dependency check before GitHub/GitLab installs with actionable error message
+- feat: `tar` availability reporting in `pmp doctor`
+- feat: `scripts/doc-sync-check.sh` — CI-enforced doc-code consistency (blocks merge on drift)
+- feat: `cmd_rollback` now reports 'restored N of M modules' with per-entry failure listing
+- feat: `tests/test_35_install_pipeline.sh` — 26-assertion end-to-end install pipeline test with local git fixture
+- feat: `tests/pike/ExtractSecurityTests.pike` — 5 adversarial tar extraction security tests
+- test: `test_22_update.sh` now verifies actual version change (not just 'done' in output)
+- test: `test_21_changelog.sh` now includes success-path test with version comparison verification
+- test: `test_25_self_update.sh` now verifies exit code and output format
 ### Added
 - feat: extract `prune_stale_deps()` to Lockfile.pmod — shared BFS transitive dep pruning used by both `cmd_install_all` and `cmd_update`
 - feat: `sanitize_url()` in Helpers.pmod — strips credentials from URLs before display in error messages
-- feat: offline mode hardened — `cmd_outdated --offline`, `cmd_changelog --offline`, `cmd_doctor --offline` skip network calls
+- feat: offline mode hardened — install --offline sets ctx for downstream; cmd_outdated, cmd_changelog, cmd_doctor skip network calls when ctx["offline"] is set (currently only via install --offline)
 - feat: path traversal protection for resolved local dependency paths — validates resolved path stays within project root
 - feat: IPv6 SSRF bypass fix — explicit `::1` and `::` checks before expansion, fixed `::` group count bug
 - feat: 4 new sanitize_url tests, 1 new file:// rejection test, 2 new path traversal tests
@@ -19,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - docs: ADR 0005 — workspace (monorepo) support design
 
 ### Changed
+- fix(docs): purged hallucinated features from behavior-spec.md — removed caching/TTL/ETag/non-existent Config constants
+- fix(docs): ADR-0003 lockfile v2 status corrected from Accepted to Proposed (not implemented)
+- fix(docs): SHA prefix corrected from 8 to 16 chars across ARCHITECTURE.md, README.md
+- fix(docs): test counts corrected to 208 shell + 330 Pike across all doc files
+- fix(docs): AGENTS.md now lists tar as an external dependency (was claiming no external deps)
+- fix(docs): offline flag CHANGELOG entry corrected to reflect actual implementation scope
 - fix(install): Config.pmod path updated from bin/Pmp.pmod/ to bin/core/ in install.sh
 - fix(tests): convert in-process die() tests to subprocess in LockfileIOAdversarialTests and ManifestAdversarialTests
 - fix(deps): parse_deps no longer dies on malformed JSON (resilient query function)
@@ -33,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix: `_read_json_mapping` dies on malformed JSON instead of returning 0 (missing files still return 0)
 - fix: `classify_bump` restructured with explicit branches for all version transition types
 - fix: `file://` URL rejection already implemented — verified and tested
-- docs: ARCHITECTURE.md version corrected to 0.4.0, layer count to 5, test counts to 174+317
+- docs: ARCHITECTURE.md version corrected to 0.4.0, layer count to 5, test counts to 174+325
 - docs: AGENTS.md test counts updated, Helpers.pmod description includes new functions
 - docs: stale comments fixed in pmp.pike and Install.pmod
 - docs: removed aspirational TODO from ConfigTests.pike
@@ -66,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - refactor: updated sh shim and pike_tests.sh to include layered PIKE_MODULE_PATH entries
 - refactor: decomposed Install.pmod (1042 lines) into Install.pmod (~600 lines), Update.pmod (~200 lines), and LockOps.pmod (~280 lines) for focused single-responsibility modules
 - refactor: deduplicated Pike test suites — removed LockfilePureTests, HelpersTests, SourceTests (merged into adversarial counterparts), removed classify_bump/merge_lock_entries duplicates from InstallAdversarialTests and ResolveAdversarialTests
-- docs: reconciled documentation with actual codebase — corrected module counts (17 modules across 5 layers), test counts (172 shell + 317 Pike), added verify/doctor commands to README
+- docs: reconciled documentation with actual codebase — corrected module counts (17 modules across 5 layers), test counts (208 shell + 330 Pike), added verify/doctor commands to README
 - Updated `.gitignore` with IDE/OS/environment patterns from template
 - Updated `CONTRIBUTING.md` with branch naming conventions and expanded guidelines
 - Updated `README.md` with changelog badge

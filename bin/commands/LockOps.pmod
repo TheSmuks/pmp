@@ -137,9 +137,18 @@ void cmd_rollback(mapping ctx) {
 
         }
 
-        write_lockfile(ctx["lockfile_path"], restored_entries);
+        int failed_count = sizeof(prev_entries) - sizeof(restored_entries);
 
-        info("rollback complete — restored " + sizeof(restored_entries) + " modules");
+        info(sprintf("rollback complete — restored %d of %d modules",
+            sizeof(restored_entries), sizeof(prev_entries)));
+        if (failed_count > 0) {
+            multiset(string) restored_names = (<>);
+            foreach (restored_entries; ; array(string) e)
+                restored_names[e[0]] = 1;
+            foreach (prev_entries; ; array(string) e)
+                if (sizeof(e[0]) > 0 && !restored_names[e[0]])
+                    warn("  failed to restore: " + e[0]);
+        }
     };
     store_unlock(ctx["store_dir"]);
     project_unlock(find_project_root());

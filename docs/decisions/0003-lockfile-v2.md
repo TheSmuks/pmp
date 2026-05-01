@@ -1,8 +1,10 @@
 # 0003: Lockfile v2 — Per-Entry Integrity and Whole-File Checksum
 
-**Status**: Accepted
+**Status**: Proposed
 **Date**: 2026-04-30
 **Decision Maker**: @TheSmuks
+
+**Note**: Implementation pending. Current lockfile version is 1 (5-field TSV, filename: pike.lock). This ADR describes a v2 format that has not been implemented.
 
 ## Context
 

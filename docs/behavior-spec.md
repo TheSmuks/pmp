@@ -304,11 +304,11 @@ Module paths are relative to `bin/` with subdirectories: `core/` (Semver, Source
 **Outputs**: `array(array(string))` — merged entries with new entries taking priority.
 
 **Edge Cases**:
-- Entries with empty name or empty first element are silently skipped.
+- Entries with empty name die via `die()` with `EXIT_INTERNAL`.
 - Duplicate names within `new_entries`: last occurrence wins (deduplicated internally).
 - Empty arrays are valid.
 
-**Failure Modes**: Never throws or dies.
+**Failure Modes**: Dies via `die()` with `EXIT_INTERNAL` on entries with empty name. Never throws.
 
 ---
 
@@ -369,7 +369,7 @@ Module paths are relative to `bin/` with subdirectories: `core/` (Semver, Source
 **Outputs**: `void`.
 
 **Edge Cases**:
-- Each entry must have exactly 5 fields.
+- Each entry must have at least 5 fields.
 - Name field (entry[0]) must be non-empty.
 - No field may contain tab, newline, or carriage return characters.
 - Falls back to copy+rm if `mv` fails (cross-filesystem).
@@ -492,9 +492,9 @@ Module paths are relative to `bin/` with subdirectories: `core/` (Semver, Source
 
 ### Resolve.latest_tag(string type, string domain, string repo_path, void|string version)
 
-**Contract**: Resolve the latest (highest semver) tag for a repository. Results are cached in memory with a 60-second TTL.
+**Contract**: Resolve the latest (highest semver) tag for a repository.
 
-**Determinism**: Depends on external state (remote API/git, in-memory cache). Cached results are returned as copies.
+**Determinism**: Depends on external state (remote API/git).
 
 **Inputs**:
 - `type` — `"github"`, `"gitlab"`, or `"selfhosted"`.
@@ -505,8 +505,6 @@ Module paths are relative to `bin/` with subdirectories: `core/` (Semver, Source
 **Outputs**: `array(string)` — `({tag_name, commit_sha})`. Both may be `""` if no tags found.
 
 **Edge Cases**:
-- Returns a copy of cached result (caller can mutate safely).
-- Pagination capped at `MAX_TAG_PAGES` (20) with warning.
 - No tags found → returns `({"", ""})`.
 
 **Failure Modes**: Dies via `die()` for unknown source type. Individual backends die on API parse failures (first page only) and warn on subsequent pages.
@@ -541,9 +539,9 @@ Module paths are relative to `bin/` with subdirectories: `core/` (Semver, Source
 
 ### Http.http_get(string url, void|mapping(string:string) headers, void|string version)
 
-**Contract**: Perform an HTTP GET request. Dies on any error (connection failure, non-200 status, empty body). Provides specific error messages for 401/403 from GitHub (token guidance). Caches API responses with ETag support.
+**Contract**: Perform an HTTP GET request. Dies on any error (connection failure, non-200 status, empty body). Provides specific error messages for 401/403 from GitHub (token guidance).
 
-**Determinism**: Depends on external state (network, cache).
+**Determinism**: Depends on external state (network).
 
 **Inputs**:
 - `url` — HTTP(S) URL string.
@@ -555,7 +553,6 @@ Module paths are relative to `bin/` with subdirectories: `core/` (Semver, Source
 **Edge Cases**:
 - Error messages include only the host, not the full URL (tokens may appear in URLs in future).
 - GitHub 401/403: provides specific guidance about `GITHUB_TOKEN` setup.
-- Caches `api.github.com` and `gitlab.com/api` responses with ETag/304 support.
 
 **Failure Modes**: Dies via `die()` on connection failure, non-200 status, or empty body. Specific messaging for auth errors.
 
@@ -563,9 +560,9 @@ Module paths are relative to `bin/` with subdirectories: `core/` (Semver, Source
 
 ### Http.http_get_safe(string url, void|mapping(string:string) headers, void|string version)
 
-**Contract**: Perform an HTTP GET request without dying. Returns status and body as a tuple. Handles redirects, caching, body size limits, and redirect security.
+**Contract**: Perform an HTTP GET request without dying. Returns status and body as a tuple. Handles redirects, body size limits, and redirect security.
 
-**Determinism**: Depends on external state (network, cache).
+**Determinism**: Depends on external state (network).
 
 **Inputs**:
 - `url` — HTTP(S) URL string.
@@ -579,7 +576,6 @@ Module paths are relative to `bin/` with subdirectories: `core/` (Semver, Source
 - HTTPS-to-HTTP downgrade redirects are blocked.
 - Non-HTTP scheme redirects are blocked (prevents `file:///etc/passwd`).
 - Response bodies exceeding `HTTP_MAX_BODY_SIZE` (default 100 MB) are rejected.
-- 304 Not Modified: returns cached body if available, re-fetches if cache expired.
 - Retries transient failures (429, 5xx, connection errors) with exponential backoff + jitter (max `HTTP_MAX_RETRIES`, default 3).
 - 429 respects `Retry-After` header.
 
@@ -599,9 +595,6 @@ Module paths are relative to `bin/` with subdirectories: `core/` (Semver, Source
 | `EXIT_INTERNAL` | int | `2` | Internal error (invariant violation, store corruption) |
 | `PMP_VERBOSE` | int | `(int)(getenv("PMP_VERBOSE") \|\| "0")` | Verbosity level (env-configurable) |
 | `PMP_QUIET` | int | `(int)(getenv("PMP_QUIET") \|\| "0")` | Suppress non-error output (env-configurable) |
-| `LOCK_MAX_ATTEMPTS_STORE` | int | `10` | Max lock acquisition retries for store |
-| `LOCK_MAX_ATTEMPTS_PROJECT` | int | `10` | Max lock acquisition retries for project |
-| `LOCK_BACKOFF_BASE` | float | `0.1` | Initial backoff delay in seconds |
 
 ### Mutators
 
@@ -612,12 +605,12 @@ Module paths are relative to `bin/` with subdirectories: `core/` (Semver, Source
 
 ## 10. Http Configuration Constants
 
-| Constant | Type | Default | Env Override | Description |
-|---|---|---|---|---|
-| `HTTP_CONNECT_TIMEOUT` | int | `10` | `PMP_HTTP_TIMEOUT` | Connect timeout in seconds |
-| `HTTP_READ_TIMEOUT` | int | `30` | `PMP_HTTP_READ_TIMEOUT` | Read timeout in seconds |
-| `HTTP_MAX_RETRIES` | int | `3` | `PMP_HTTP_RETRIES` | Max retries for transient failures |
-| `HTTP_MAX_BODY_SIZE` | int | `104857600` | `PMP_MAX_BODY_SIZE` | Max response body size in bytes (100 MB) |
+| Constant | Type | Default | Description |
+|---|---|---|---|
+| `HTTP_CONNECT_TIMEOUT` | int | `10` | Connect timeout in seconds |
+| `HTTP_READ_TIMEOUT` | int | `30` | Read timeout in seconds |
+| `HTTP_MAX_RETRIES` | int | `3` | Max retries for transient failures |
+| `HTTP_MAX_BODY_SIZE` | int | `104857600` | Max response body size in bytes (100 MB) |
 
 ---
 

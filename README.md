@@ -97,14 +97,14 @@ pmp uses a global content-addressable store at `~/.pike/store/`. Each package ve
 
 ```
 ~/.pike/store/
-  github.com-thesmuks-punit-v1.0.0-a1b2c3d4/   # immutable store entry
+  github.com-thesmuks-punit-v1.0.0-a1b2c3d4e5f67890/   # immutable store entry
     PUnit.pmod/
     pike.json
     .pmp-meta                                     # source, tag, commit SHA, content hash
 
 your-project/
   modules/
-    PUnit/    → symlink to ~/.pike/store/github.com-thesmuks-punit-v1.0.0-a1b2c3d4/
+    PUnit/    → symlink to ~/.pike/store/github.com-thesmuks-punit-v1.0.0-a1b2c3d4e5f67890/
 ```
 
 **Benefits:**
@@ -112,7 +112,7 @@ your-project/
 - Zero disk duplication across projects
 - Store survives `pmp clean` — only project symlinks are removed
 
-Store entry names include the first 8 characters of the commit SHA to disambiguate force-pushed tags.
+Store entry names include the first 16 characters of the commit SHA to disambiguate force-pushed tags.
 
 ## pike.lock (lockfile)
 

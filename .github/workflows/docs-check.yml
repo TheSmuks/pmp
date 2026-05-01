@@ -44,3 +44,7 @@ jobs:
           else
             echo "Doc sync check passed."
           fi
+
+
+      - name: Doc content sync check
+        run: sh scripts/doc-sync-check.sh .

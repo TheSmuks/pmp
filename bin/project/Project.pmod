@@ -105,9 +105,8 @@ void cmd_remove(array(string) args, mapping ctx) {
     string name = rest[0];
     // Strip .pmod suffix — users may pass "Foo.pmod" but pike.json keys are bare names
     if (has_suffix(name, ".pmod")) name = name[..<5];
-    // Path traversal protection
-    if (has_value(name, "/") || has_value(name, "..") || has_value(name, "\0"))
-        die("invalid module name: " + name);
+    // Centralized validation (path traversal, special chars)
+    validate_dep_name(name);
     string lock_path = combine_path(find_project_root() || getcwd(), ".pmp-install.lock");
     advisory_lock(lock_path, "project");
     register_project_lock_path(lock_path);

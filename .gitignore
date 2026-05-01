@@ -7,7 +7,7 @@ tests/reports/
 pike.lock
 .tmp-test-lockfile-io-*
 pike.lock.prev
-.tmp-manifest-*
+.tmp-*
 
 # Environment and secrets
 .env

@@ -143,10 +143,19 @@ void test_add_duplicate() {
 void test_add_to_invalid_json() {
     string path = make_temp_path();
     Stdio.write_file(path, "{invalid json!!!");
-    // Should warn to stderr, not crash
-    mixed err = catch {
-        add_to_manifest(path, "foo", "https://example.com");
-    };
+    // die() calls exit() which is uncatchable, so test in subprocess
+    int code = Process.run(({
+        "pike", "-M", combine_path(getcwd(), "modules"),
+        "-M", combine_path(getcwd(), "bin"),
+        "-M", combine_path(getcwd(), "bin/core"),
+        "-M", combine_path(getcwd(), "bin/transport"),
+        "-M", combine_path(getcwd(), "bin/store"),
+        "-M", combine_path(getcwd(), "bin/project"),
+        "-M", combine_path(getcwd(), "bin/commands"),
+        "-e", "import Manifest; import Helpers; "
+        "add_to_manifest(\"" + path + "\", \"foo\", \"https://example.com\");"
+    }))->exitcode;
     rm(path);
-    assert_equal(0, err);
+    // die() exits with EXIT_ERROR (1)
+    assert_true(code != 0, "invalid JSON should have died");
 }

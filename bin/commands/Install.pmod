@@ -150,6 +150,19 @@ void install_one(string name, string source, string target,
                                 ctx["lock_entries"], name,
                                 source_strip_version(source),
                                 existing_ver, kept_sha, content_hash);
+
+                            // Resolve transitive dependencies from the kept version
+                            string kept_pkg = combine_path(resolved, "pike.json");
+                            if (!Stdio.exist(kept_pkg))
+                                kept_pkg = combine_path(version_dir, "pike.json");
+                            if (Stdio.exist(kept_pkg)) {
+                                array(array(string)) trans_deps =
+                                    parse_deps(kept_pkg);
+                                foreach (trans_deps; ; array(string) dep) {
+                                    info("  transitive: " + dep[0] + " from " + dep[1]);
+                                    install_one(dep[0], dep[1], target, ctx);
+                                }
+                            }
                             return;
                         }
                     }

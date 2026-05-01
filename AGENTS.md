@@ -11,7 +11,7 @@ pmp (Pike Module Package Manager) installs, versions, and resolves dependencies 
 - Verify syntax: `pike bin/pmp.pike --help`
 - Check version: `pike bin/pmp.pike version` (or `sh bin/pmp version`)
 
-Expected result: 174 passed, 0 failed, exit code 0 (shell tests via `sh tests/runner.sh`); 317 passed for `sh tests/pike_tests.sh`.
+Expected result: 174 passed, 0 failed, exit code 0 (shell tests via `sh tests/runner.sh`); 325 passed for `sh tests/pike_tests.sh`.
 
 ## Architecture
 
@@ -189,7 +189,7 @@ The TigerBeetle coding style guide informs our approach. Key principles adapted 
 - Uses `assert`, `assert_exists`, `assert_not_exists`, `assert_output_contains` helpers
 - Tests create temp dirs and clean up on exit
 - Tests that need the store back up/restore `~/.pike/store/`
-- Every change must pass all 174 shell tests and 317 Pike unit tests
+- Every change must pass all 174 shell tests and 325 Pike unit tests
 
 ## Commit conventions
 

@@ -167,14 +167,17 @@ void test_has_dep_entries_source_mismatch() {
 // ── Unversioned lockfile handling ──────────────────────────────────
 
 void test_read_lockfile_no_version_header() {
-    // Lockfile with data lines but no version header should still return
-    // entries (with a warning to stderr). This tests backward compat.
+    // Lockfile without version header should die — tested in subprocess
+    // because die() calls exit() which is uncatchable.
     string content = "# name\tsource\ttag\tcommit_sha\tcontent_sha256\n"
         "mod1\tsrc1\tv1\tsha1\thash1\n";
     Stdio.write_file(lockfile_path, content);
-    array(array(string)) entries = read_lockfile(lockfile_path);
-    assert_equal(1, sizeof(entries));
-    assert_equal("mod1", entries[0][0]);
+    int code = run_subprocess(
+        "import Lockfile; "
+        "read_lockfile(\"" + lockfile_path + "\");"
+    );
+    // die() exits with EXIT_ERROR (1)
+    assert_equal(1, code);
 }
 
 void test_read_lockfile_version_header_present() {

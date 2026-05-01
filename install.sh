@@ -154,7 +154,7 @@ fi
 
 # Try to read installed version
 _ver=""
-_conf="$PMP_INSTALL_DIR/bin/Pmp.pmod/Config.pmod"
+_conf="$PMP_INSTALL_DIR/bin/core/Config.pmod"
 if [ -f "$_conf" ]; then
     _ver=$(sed -n 's/.*PMP_VERSION *= *"\([^"]*\)".*/\1/p' "$_conf" 2>/dev/null)
 fi

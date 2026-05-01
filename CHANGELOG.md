@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - docs: ADR 0005 — workspace (monorepo) support design
 
 ### Changed
+- fix(install): Config.pmod path updated from bin/Pmp.pmod/ to bin/core/ in install.sh
+- fix(tests): convert in-process die() tests to subprocess in LockfileIOAdversarialTests and ManifestAdversarialTests
+- fix(deps): parse_deps no longer dies on malformed JSON (resilient query function)
+- fix(install): resolve transitive deps for kept-existing modules
 - refactor: moved `project_lock`/`project_unlock` from Install.pmod to Helpers.pmod (architecturally correct placement)
 - refactor: moved `store_lock`/`store_unlock` from Store.pmod to Helpers.pmod
 - refactor: extracted `_follow_with_redirects()` — shared HTTP redirect/SSRF logic, removed 60 lines of duplication from http_get/http_get_safe
@@ -105,7 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **HTTP timeouts** — All HTTP requests now have a 60-second timeout via thread-based timeout wrapper, preventing indefinite hangs on stalled servers.
 - **HTTP retry with backoff** — Transient failures (429, 5xx, connection errors) are retried up to 3 times with exponential backoff.
 - **Sentinel value elimination** — `resolve_commit_sha` and `compute_sha256` no longer return `"unknown"` on failure. `resolve_commit_sha` returns `0`, `compute_sha256` dies on failure. All callers updated.
-- **install.sh hardening** — Added `set -euo pipefail` to the installer script.
+- **install.sh hardening** — Added `set -eu` to the installer script.
 - **SECURITY.md** — Added vulnerability disclosure policy with response timeline.
 
 ### Fixed

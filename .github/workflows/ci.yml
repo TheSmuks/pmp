@@ -27,4 +27,10 @@ jobs:
         run: sh bin/pmp install
 
       - name: Run Pike unit tests
-        run: sh tests/pike_tests.sh
+        run: |
+          set -x
+          mkdir -p tests/reports
+          pike -M modules -M bin tests/pike/run.pike --junit tests/reports/pike-junit.xml
+          _exit=$?
+          echo "PIKE TESTS EXIT: $_exit"
+          exit $_exit

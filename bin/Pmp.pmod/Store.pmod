@@ -1,6 +1,7 @@
-inherit Helpers;
-inherit Http;
-inherit Resolve;
+import .Helpers;
+import .Config;
+import .Http;
+import .Resolve;
 
 //! Generate store entry name from source, tag, and SHA.
 //! Format: {domain}-{owner}-{repo}-{tag}-{sha_prefix16}

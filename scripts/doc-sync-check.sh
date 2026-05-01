@@ -9,9 +9,9 @@ cd "$REPO_ROOT"
 ERRORS=""
 
 # ── 1. PMP_VERSION consistency ────────────────────────────────────
-CONFIG_VER=$(sed -n 's/.*PMP_VERSION *= *"\([^"]*\)".*/\1/p' bin/core/Config.pmod | head -1)
+CONFIG_VER=$(sed -n 's/.*PMP_VERSION *= *"\([^"]*\)".*/\1/p' bin/Pmp.pmod/Config.pmod | head -1)
 if [ -z "$CONFIG_VER" ]; then
-    ERRORS="${ERRORS}ERROR: Cannot extract PMP_VERSION from bin/core/Config.pmod\n"
+    ERRORS="${ERRORS}ERROR: Cannot extract PMP_VERSION from bin/Pmp.pmod/Config.pmod\n"
 fi
 
 # Check ARCHITECTURE.md mentions the correct version
@@ -34,7 +34,7 @@ fi
 
 # ── 3. SHA prefix consistency ─────────────────────────────────────
 # Store.pmod uses sha[..15] which is 16 chars
-SHA_PREFIX_CODE=$(grep -o 'sha\[\.\.15\]' bin/store/Store.pmod 2>/dev/null | head -1)
+SHA_PREFIX_CODE=$(grep -o 'sha\[\.\.15\]' bin/Pmp.pmod/Store.pmod 2>/dev/null | head -1)
 if [ -n "$SHA_PREFIX_CODE" ]; then
     # ARCHITECTURE.md and README should say 16, not 8
     if grep -q 'sha_prefix8\|8 characters\|8-char' ARCHITECTURE.md 2>/dev/null; then

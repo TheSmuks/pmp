@@ -1,7 +1,7 @@
 //! Adversarial tests for Pmp.Project — edge cases for project management.
 
 import PUnit;
-import Pmp;
+import Pmp.Project;
 inherit PUnit.TestCase;
 
 protected string tmpdir;
@@ -43,11 +43,6 @@ protected mapping run_subprocess_full(string code) {
         "pike",
         "-M", combine_path(base_dir, "modules"),
         "-M", combine_path(base_dir, "bin"),
-        "-M", combine_path(base_dir, "bin/core"),
-        "-M", combine_path(base_dir, "bin/transport"),
-        "-M", combine_path(base_dir, "bin/store"),
-        "-M", combine_path(base_dir, "bin/project"),
-        "-M", combine_path(base_dir, "bin/commands"),
         "-e", code
     }));
 }
@@ -86,7 +81,7 @@ void test_init_rejects_existing_pike_json() {
 
     // cmd_init should die() — test via subprocess
     int code = run_subprocess(
-        "import Pmp; "
+        "import Pmp.Project; "
         + "cd(\"" + tmpdir + "\"); "
         + "cmd_init(([\"pike_json\":\"" + ctx["pike_json"] + "\"]));"
     );
@@ -141,7 +136,7 @@ void test_list_json_output_empty() {
     cd(tmpdir);
 
     // Capture stdout via subprocess — JSON flag
-    string code = "import Pmp; "
+    string code = "import Pmp.Project; "
         + "cmd_list(({\"--json\"}), ("
         + "  [\"global_dir\":\"" + ctx["global_dir"] + "\","
         + "   \"local_dir\":\"" + ctx["local_dir"] + "\","
@@ -235,7 +230,7 @@ void test_clean_counts_symlinks() {
 void test_remove_no_args_dies() {
     // cmd_remove with empty args should die("usage: ...")
     int code = run_subprocess(
-        "import Pmp; "
+        "import Pmp.Project; "
         + "cmd_remove(({}), ([]));"
     );
     assert_equal(1, code, "remove with no args should die with EXIT_ERROR");
@@ -243,7 +238,7 @@ void test_remove_no_args_dies() {
 
 void test_remove_path_traversal_slash() {
     int code = run_subprocess(
-        "import Pmp; "
+        "import Pmp.Project; "
         + "cmd_remove(({\"etc/passwd\"}), ([]));"
     );
     assert_equal(1, code,
@@ -252,7 +247,7 @@ void test_remove_path_traversal_slash() {
 
 void test_remove_path_traversal_dotdot() {
     int code = run_subprocess(
-        "import Pmp; "
+        "import Pmp.Project; "
         + "cmd_remove(({\"..\"}), ([]));"
     );
     assert_equal(1, code,
@@ -261,7 +256,7 @@ void test_remove_path_traversal_dotdot() {
 
 void test_remove_path_traversal_null_byte() {
     int code = run_subprocess(
-        "import Pmp; "
+        "import Pmp.Project; "
         + "cmd_remove(({\"foo\\0bar\"}), ([]));"
     );
     assert_equal(1, code,
@@ -278,7 +273,7 @@ void test_remove_not_found_dies() {
         Standards.JSON.encode(data, Standards.JSON.HUMAN_READABLE) + "\n");
 
     int code = run_subprocess(
-        "import Pmp; "
+        "import Pmp.Project; "
         + "cd(\"" + d + "\"); "
         + "cmd_remove(({\"nonexistent\"}), (["
         + "  \"pike_json\":\"" + combine_path(d, "pike.json") + "\","

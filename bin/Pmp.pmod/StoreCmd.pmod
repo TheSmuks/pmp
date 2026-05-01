@@ -1,8 +1,8 @@
 // StoreCmd.pmod — cmd_store: inspect and prune the content-addressable store.
 // All state is passed via context mapping (ctx).
 
-inherit Helpers;
-inherit .Store;
+import .Helpers;
+import .Store;
 
 private int(0..1) _entry_referenced(string store_dir, string entry_name, string modules_dir) {
     if (!Stdio.is_dir(modules_dir)) return 0;

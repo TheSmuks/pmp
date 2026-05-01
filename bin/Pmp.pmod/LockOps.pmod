@@ -1,14 +1,16 @@
 // LockOps.pmod — lock, rollback, and changelog commands.
 // All state is passed via context mapping (ctx).
 
-inherit Helpers;
-inherit Http;
-inherit Resolve;
-inherit Store;
-inherit Lockfile;
-inherit Source;
-inherit Semver;
-inherit .Install;
+import .Config;
+import .Helpers;
+import .Http;
+import .Resolve;
+import .Store;
+import .Lockfile;
+import .Manifest;
+import .Source;
+import .Semver;
+import .Install;
 
 void cmd_lock(mapping ctx) {
     if (!Stdio.exist(ctx["pike_json"]))

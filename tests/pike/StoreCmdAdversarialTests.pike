@@ -2,7 +2,7 @@
 // Tests dir_size, human_size, _entry_referenced (via proxy), and cmd_store logic.
 
 import PUnit;
-import Pmp;
+import Pmp.StoreCmd;
 inherit PUnit.TestCase;
 
 // ── dir_size tests ──────────────────────────────────────────────────

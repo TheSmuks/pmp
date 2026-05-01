@@ -3,7 +3,7 @@
 //! in the resolution context.
 
 import PUnit;
-import Pmp;
+import Pmp.Resolve; import Pmp.Semver;
 inherit PUnit.TestCase;
 
 // ── Module structure ──────────────────────────────────────────────────

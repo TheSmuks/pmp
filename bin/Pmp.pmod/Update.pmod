@@ -1,15 +1,16 @@
 // Update.pmod — update and outdated commands.
 // All state is passed via context mapping (ctx).
 
-inherit Config;
-inherit Helpers;
-inherit Source;
-inherit Http;
-inherit Resolve;
-inherit Store;
-inherit Lockfile;
-inherit Semver;
-inherit .Install;
+import .Config;
+import .Helpers;
+import .Source;
+import .Http;
+import .Resolve;
+import .Store;
+import .Lockfile;
+import .Manifest;
+import .Semver;
+import .Install;
 
 //! Print update summary table comparing old and new lockfile entries.
 void print_update_summary(array(array(string)) old_entries,

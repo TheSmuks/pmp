@@ -2,7 +2,7 @@
 //! json_field key-existence vs falsy values, display_name, find_project_root.
 
 import PUnit;
-import Helpers;
+import Pmp.Helpers;
 inherit PUnit.TestCase;
 
 protected string tmpdir;
@@ -104,15 +104,10 @@ void test_json_field_invalid_json() {
     // die() calls exit() which is uncatchable — test via subprocess.
     string path = combine_path(tmpdir, "broken.json");
     Stdio.write_file(path, "{broken");
-    string code = "import Helpers; json_field(\"field\", \"" + path + "\");";
+    string code = "import Pmp.Helpers; json_field(\"field\", \"" + path + "\");";
     mapping r = Process.run(({
         "pike", "-M", combine_path(getcwd(), "modules"),
         "-M", combine_path(getcwd(), "bin"),
-        "-M", combine_path(getcwd(), "bin/core"),
-        "-M", combine_path(getcwd(), "bin/transport"),
-        "-M", combine_path(getcwd(), "bin/store"),
-        "-M", combine_path(getcwd(), "bin/project"),
-        "-M", combine_path(getcwd(), "bin/commands"),
         "-e", code
     }));
     // die() exits with code 1 (EXIT_ERROR)
@@ -165,16 +160,11 @@ void test_display_name_nested_pmod() {
 void test_sha256_missing_file_exits() {
     // compute_sha256 on a nonexistent file calls die_internal() -> exit(2).
     // PUnit cannot catch exit(), so we test via subprocess.
-    string code = "import Helpers; compute_sha256(\"/nonexistent/path/"
+    string code = "import Pmp.Helpers; compute_sha256(\"/nonexistent/path/"
         + getpid() + "\");";
     mapping r = Process.run(({
         "pike", "-M", combine_path(getcwd(), "modules"),
         "-M", combine_path(getcwd(), "bin"),
-        "-M", combine_path(getcwd(), "bin/core"),
-        "-M", combine_path(getcwd(), "bin/transport"),
-        "-M", combine_path(getcwd(), "bin/store"),
-        "-M", combine_path(getcwd(), "bin/project"),
-        "-M", combine_path(getcwd(), "bin/commands"),
         "-e", code
     }));
     // Stdio.File throws on missing file before the if(!f) guard, so the

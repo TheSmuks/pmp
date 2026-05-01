@@ -51,7 +51,7 @@ The root `pike.json` declares workspace membership via glob patterns:
 
 ### Implementation Approach
 
-1. **`Workspace.pmod`** in `bin/project/` — workspace discovery, member resolution, and dependency graph merging.
+1. **`Workspace.pmod`** in `bin/Pmp.pmod/` — workspace discovery, member resolution, and dependency graph merging.
 2. **`find_project_root`** gains workspace awareness — detects `workspace` field and returns root metadata.
 3. **Lockfile v2** records per-member origin for each resolved dependency, enabling selective install/update.
 4. **Dependency resolution** merges member graphs; version conflicts are errors, not silent overrides.

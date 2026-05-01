@@ -1,3 +1,5 @@
+import .Config;
+
 //! Strip UTF-8 BOM from raw file content if present.
 string _strip_bom(string raw) {
     if (sizeof(raw) >= 3 && has_prefix(raw, "\xef\xbb\xbf"))
@@ -5,8 +7,7 @@ string _strip_bom(string raw) {
     return raw;
 }
 
-inherit Config;
-protected Regexp RE_DASHES = Regexp("-+");
+public Regexp RE_DASHES = Regexp("-+");
 
 //! Cleanup registry for signal handling and error recovery.
 //! Uses getenv/putenv for shared state across module inheritance copies.

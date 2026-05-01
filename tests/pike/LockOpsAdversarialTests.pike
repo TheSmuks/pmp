@@ -59,8 +59,7 @@ protected array run_pike(string expr) {
     object proc = Process.Process(
         ({pike_bin, "-M", combine_path(old_cwd, "bin"), "-e", expr}),
         (["stdout": fout, "stderr": ferr]));
-    proc->wait();
-    int code = proc->status();
+    int code = proc->wait();
     fout->close();
     ferr->close();
     string out = Stdio.read_file(outf) || "";
@@ -206,7 +205,7 @@ void test_rollback_restores_local_dep() {
     Stdio.write_file(combine_path(lib, "MyLib.pmod", "module.pmod"), "// lib v1");
 
     write_lockfile(ctx["lockfile_path"] + ".prev", ({
-        ({"MyLib", "./libs/my-lib", "-", "sha123", "hash456"}),
+        ({"MyLib", lib, "-", "sha123", "hash456"}),
     }));
 
     array result = run_pike(sprintf(

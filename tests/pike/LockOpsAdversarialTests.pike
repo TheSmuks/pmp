@@ -50,12 +50,22 @@ protected void write_lockfile(string path, array(array(string)) entries) {
 }
 
 // Run a Pike expression in a subprocess. Returns ({exit_code, stdout, stderr}).
+// Uses temp files for stdout/stderr since Stdio.PIPE is not always available.
 protected array run_pike(string expr) {
+    string outf = combine_path(tmpdir, ".tmp-pike-out-" + getpid());
+    string errf = combine_path(tmpdir, ".tmp-pike-err-" + getpid());
+    object fout = Stdio.File(outf, "cw");
+    object ferr = Stdio.File(errf, "cw");
     object proc = Process.Process(
         ({pike_bin, "-M", combine_path(old_cwd, "bin"), "-e", expr}),
-        (["stdout": Stdio.PIPE, "stderr": Stdio.PIPE]));
-    proc->wait();
-    return ({proc->status(), proc->stdout()->read(), proc->stderr()->read()});
+        (["stdout": fout, "stderr": ferr]));
+    int code = proc->wait();
+    fout->close();
+    ferr->close();
+    string out = Stdio.read_file(outf) || "";
+    string err = Stdio.read_file(errf) || "";
+    rm(outf); rm(errf);
+    return ({code, out, err});
 }
 
 // Build a Pike expression string that calls cmd_X with a ctx mapping.
@@ -195,7 +205,7 @@ void test_rollback_restores_local_dep() {
     Stdio.write_file(combine_path(lib, "MyLib.pmod", "module.pmod"), "// lib v1");
 
     write_lockfile(ctx["lockfile_path"] + ".prev", ({
-        ({"MyLib", "./libs/my-lib", "-", "sha123", "hash456"}),
+        ({"MyLib", lib, "-", "sha123", "hash456"}),
     }));
 
     array result = run_pike(sprintf(

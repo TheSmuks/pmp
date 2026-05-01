@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - test: `test_22_update.sh` now verifies actual version change (not just 'done' in output)
 - test: `test_21_changelog.sh` now includes success-path test with version comparison verification
 - test: `test_25_self_update.sh` now verifies exit code and output format
+- fix(ci): install PUnit before running Pike tests — modules/ is gitignored and not populated on CI checkout
+- fix(ci): replace `Stdio.PIPE` with temp-file capture in `LockOpsAdversarialTests.pike` — `Stdio.PIPE` unavailable on CI Pike build
+- fix(test): convert test_outdated_no_pike_json to subprocess isolation — die() calls exit() which cannot be caught by PUnit catch blocks, killing the entire test runner process
+- fix(test): correct `run_pike` helper in `LockOpsAdversarialTests` — use `proc->wait()` return value for exit code instead of `proc->status()` which returns process state constant, not exit code
+- fix(test): use absolute path for local dep in `test_rollback_restores_local_dep` — relative `./libs/my-lib` resolved against CWD (pmp repo root) instead of temp project directory
 ### Added
 - feat: extract `prune_stale_deps()` to Lockfile.pmod — shared BFS transitive dep pruning used by both `cmd_install_all` and `cmd_update`
 - feat: `sanitize_url()` in Helpers.pmod — strips credentials from URLs before display in error messages

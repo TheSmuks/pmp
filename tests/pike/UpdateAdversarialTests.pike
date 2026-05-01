@@ -142,10 +142,19 @@ void test_outdated_no_pike_json() {
     string d = combine_path(tmpdir, "no-proj");
     Stdio.mkdirhier(d);
     mapping ctx = make_ctx(d);
-    cd(d);
 
-    mixed err = catch { cmd_outdated(ctx); };
-    assert_true(!!err, "outdated without pike.json should die");
+    // die() calls exit() which is uncatchable — test via subprocess.
+    string code = "import Pmp.Update; import Pmp.Helpers;"
+        + "; cmd_outdated(([\"pike_json\":\"" + ctx["pike_json"]
+        + "\",\"lockfile_path\":\"" + ctx["lockfile_path"]
+        + "\",\"local_dir\":\"" + ctx["local_dir"]
+        + "\",\"store_dir\":\"" + ctx["store_dir"] + "\"]));";
+    mapping r = Process.run(({
+        "pike", "-M", combine_path(getcwd(), "modules"),
+        "-M", combine_path(getcwd(), "bin"), "-e", code
+    }));
+    assert_not_equal(0, r->exitcode,
+        "outdated without pike.json should die");
 }
 
 void test_outdated_empty_deps() {

@@ -1,11 +1,11 @@
 import .Helpers;
 import .Manifest;
 // Pre-compiled regexps for import/inherit/include scanning
-public Regexp RE_IMPORT = Regexp("import[ \t]+([.A-Za-z_][A-Za-z0-9_.]*)");
-public Regexp RE_INHERIT = Regexp("inherit[ \t]+([.A-Za-z_][A-Za-z0-9_.]*)");
-public Regexp RE_INCLUDE_PMOD = Regexp("#include[ \t]*<([.A-Za-z_][A-Za-z0-9_.]*).pmod/");
-public Regexp RE_IF_CONSTANT = Regexp("#if[ \t]+constant[ \t]*[(][ \t]*([A-Za-z_][A-Za-z0-9_]*)[)]");
-public Regexp RE_IMPORT_STRING = Regexp("import[ \t]+\"([^\"]+)\"");
+Regexp RE_IMPORT = Regexp("import[ \t]+([.A-Za-z_][A-Za-z0-9_.]*)");
+Regexp RE_INHERIT = Regexp("inherit[ \t]+([.A-Za-z_][A-Za-z0-9_.]*)");
+Regexp RE_INCLUDE_PMOD = Regexp("#include[ \t]*<([.A-Za-z_][A-Za-z0-9_.]*).pmod/");
+Regexp RE_IF_CONSTANT = Regexp("#if[ \t]+constant[ \t]*[(][ \t]*([A-Za-z_][A-Za-z0-9_]*)[)]");
+Regexp RE_IMPORT_STRING = Regexp("import[ \t]+\"([^\"]+)\"");
 
 
 string strip_comments_and_strings(string content) {

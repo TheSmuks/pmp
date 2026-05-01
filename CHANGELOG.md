@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- fix: `PUnit.Process` shadowed Pike's `Process` — store-level rename `Process.pmod` → `PikeProcess.pmod` prevents shadowing
+- fix: lockfile replay validates store entry before symlinking (stale lockfile no longer creates broken symlinks)
+- fix: test infrastructure — shell tests and Pike tests can run in sequence without store pollution
+- fix: test counts updated to 211 shell + 342 Pike
+- docs: `bin/pmp` is the only supported entry point; `pike bin/pmp.pike` requires `PIKE_MODULE_PATH`
+- docs: store integrity strategy documented (content-addressable naming + SHA-256)
+- docs: out-of-scope features (ADR-0003/0004/0005) documented as unimplemented
 - refactor: restructure all 17 modules into canonical Pike layout under `bin/Pmp.pmod/` (flat, no subdirectories)
 - fix: `module.pmod` is now namespace-only — no `inherit` re-exports, sub-modules use `import .Foo;`
 - fix: shell shim sets single `PIKE_MODULE_PATH` instead of 6 colon-separated entries
@@ -45,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(docs): purged hallucinated features from behavior-spec.md — removed caching/TTL/ETag/non-existent Config constants
 - fix(docs): ADR-0003 lockfile v2 status corrected from Accepted to Proposed (not implemented)
 - fix(docs): SHA prefix corrected from 8 to 16 chars across ARCHITECTURE.md, README.md
-- fix(docs): test counts corrected to 208 shell + 330 Pike across all doc files
+- fix(docs): test counts corrected to 211 shell + 342 Pike across all doc files
 - fix(docs): AGENTS.md now lists tar as an external dependency (was claiming no external deps)
 - fix(docs): offline flag CHANGELOG entry corrected to reflect actual implementation scope
 - fix(install): Config.pmod path updated from bin/Pmp.pmod/ to bin/core/ in install.sh
@@ -95,7 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - refactor: updated sh shim and pike_tests.sh to include layered PIKE_MODULE_PATH entries
 - refactor: decomposed Install.pmod (1042 lines) into Install.pmod (~600 lines), Update.pmod (~200 lines), and LockOps.pmod (~280 lines) for focused single-responsibility modules
 - refactor: deduplicated Pike test suites — removed LockfilePureTests, HelpersTests, SourceTests (merged into adversarial counterparts), removed classify_bump/merge_lock_entries duplicates from InstallAdversarialTests and ResolveAdversarialTests
-- docs: reconciled documentation with actual codebase — corrected module counts (17 modules across 5 layers), test counts (208 shell + 330 Pike), added verify/doctor commands to README
+- docs: reconciled documentation with actual codebase — corrected module counts (17 modules across 5 layers), test counts (211 shell + 342 Pike), added verify/doctor commands to README
 - Updated `.gitignore` with IDE/OS/environment patterns from template
 - Updated `CONTRIBUTING.md` with branch naming conventions and expanded guidelines
 - Updated `README.md` with changelog badge

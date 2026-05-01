@@ -8,8 +8,8 @@
 //! as version 0.0.0 and sort last.
 
 // Pre-compiled regexps for identifier validation (used in parse_semver + compare_prerelease)
-protected Regexp RE_IDENT = Regexp("^[0-9A-Za-z-]+$");
-protected Regexp RE_NUMERIC = Regexp("^[0-9]+$");
+public Regexp RE_IDENT = Regexp("^[0-9A-Za-z-]+$");
+public Regexp RE_NUMERIC = Regexp("^[0-9]+$");
 
 //! Parse a version string into a mapping.
 //! Handles: "1.2.3", "v1.2.3", "1.2.3-alpha", "1.2.3-alpha.1", "1.2.3-alpha.1+build"

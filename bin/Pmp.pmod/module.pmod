@@ -1,17 +1,3 @@
-inherit Config;
-inherit Helpers;
-inherit Semver;
-inherit Source;
-inherit Http;
-inherit Resolve;
-inherit Store;
-inherit StoreCmd;
-inherit Lockfile;
-inherit Manifest;
-inherit Validate;
-inherit Verify;
-inherit Project;
-inherit Env;
-inherit Install;
-inherit Update;
-inherit LockOps;
+// Pmp — Pike Module Package Manager
+// Package namespace. Sub-modules are accessible as Pmp.Config, Pmp.Helpers, etc.
+// Use `import Pmp.Config; import Pmp.Helpers;` etc. for unqualified symbol access.

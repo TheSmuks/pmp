@@ -1,7 +1,8 @@
 //! Adversarial tests for Pmp.Http — pure functions and auth header edge cases.
 
 import PUnit;
-import Http;
+import Pmp.Helpers;
+import Pmp.Http;
 inherit PUnit.TestCase;
 
 // ── _url_host ─────────────────────────────────────────────────────────

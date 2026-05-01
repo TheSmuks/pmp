@@ -2,18 +2,14 @@
 
 # Derive module path from the PMP shim location
 _PMP_DIR="$(dirname "$PMP")"
-
-# Build layered module path
+# Module path: all modules now under Pmp.pmod/
 _SEMVER_M="$_PMP_DIR"
-for _sd in core transport store project commands; do
-  [ -d "$_PMP_DIR/$_sd" ] && _SEMVER_M="$_SEMVER_M:$_PMP_DIR/$_sd"
-done
 
 printf '\n=== Semver: parse and compare ===\n'
 TESTDIR="$(mktemp -d)"
 cd "$TESTDIR"
 _out="$(PIKE_MODULE_PATH="$_SEMVER_M" pike -e '
-import Pmp;
+import Pmp.Semver;
 mapping v = parse_semver("v1.2.3");
 write("%d.%d.%d\n", v["major"], v["minor"], v["patch"]);
 write("cmp: %d\n", compare_semver(parse_semver("1.0.0"), parse_semver("2.0.0")));
@@ -29,7 +25,7 @@ assert_output_contains "classify major" "bump: major" "$_out"
 
 printf '\n=== Semver: non-semver tags sort last ===\n'
 _out="$(PIKE_MODULE_PATH="$_SEMVER_M" pike -e '
-import Pmp;
+import Pmp.Semver;
 write("%s\n", sort_tags_semver(({"latest", "v1.0.0", "v0.5.0", "nightly"})) * ", ");
 ')"
 # v1.0.0 should be first (highest semver), non-semver last

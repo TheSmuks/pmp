@@ -1,7 +1,7 @@
 //! Adversarial tests for Pmp.Lockfile — read/write edge cases.
 
 import PUnit;
-import Lockfile;
+import Pmp.Lockfile;
 inherit PUnit.TestCase;
 
 protected string tmpdir;
@@ -28,11 +28,6 @@ int run_subprocess(string code) {
     mapping result = Process.run(({
         "pike", "-M", combine_path(base_dir, "modules"),
         "-M", combine_path(base_dir, "bin"),
-        "-M", combine_path(base_dir, "bin/core"),
-        "-M", combine_path(base_dir, "bin/transport"),
-        "-M", combine_path(base_dir, "bin/store"),
-        "-M", combine_path(base_dir, "bin/project"),
-        "-M", combine_path(base_dir, "bin/commands"),
         "-e", code
     }));
     return result->exitcode;
@@ -67,7 +62,7 @@ void test_write_empty_entries() {
 
 void test_write_tab_in_field_dies() {
     int code = run_subprocess(
-        "import Lockfile; "
+        "import Pmp.Lockfile; "
         "write_lockfile(\"" + lockfile_path + "\", "
         "({ ({ \"bad\\tmod\", \"src\", \"v1\", \"sha\", \"hash\" }) }));"
     );
@@ -76,7 +71,7 @@ void test_write_tab_in_field_dies() {
 
 void test_write_newline_in_field_dies() {
     int code = run_subprocess(
-        "import Lockfile; "
+        "import Pmp.Lockfile; "
         "write_lockfile(\"" + lockfile_path + "\", "
         "({ ({ \"bad\\nmod\", \"src\", \"v1\", \"sha\", \"hash\" }) }));"
     );
@@ -85,7 +80,7 @@ void test_write_newline_in_field_dies() {
 
 void test_write_fewer_than_5_fields_dies() {
     int code = run_subprocess(
-        "import Lockfile; "
+        "import Pmp.Lockfile; "
         "write_lockfile(\"" + lockfile_path + "\", "
         "({ ({ \"a\", \"b\", \"c\" }) }));"
     );
@@ -173,7 +168,7 @@ void test_read_lockfile_no_version_header() {
         "mod1\tsrc1\tv1\tsha1\thash1\n";
     Stdio.write_file(lockfile_path, content);
     int code = run_subprocess(
-        "import Lockfile; "
+        "import Pmp.Lockfile; "
         "read_lockfile(\"" + lockfile_path + "\");"
     );
     // die() exits with EXIT_ERROR (1)

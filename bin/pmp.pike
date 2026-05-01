@@ -1,9 +1,25 @@
 #!/usr/bin/env pike
 // pmp — Pike Module Package Manager
 // Entry point — config init, context creation, command dispatch.
-// Commands and orchestrators live in bin/commands/, bin/project/, bin/store/, bin/transport/, bin/core/
+// All command and library modules live under bin/Pmp.pmod/
 
-import Pmp;
+import Pmp.Config;
+import Pmp.Helpers;
+import Pmp.Semver;
+import Pmp.Source;
+import Pmp.Http;
+import Pmp.Resolve;
+import Pmp.Store;
+import Pmp.StoreCmd;
+import Pmp.Lockfile;
+import Pmp.Manifest;
+import Pmp.Validate;
+import Pmp.Verify;
+import Pmp.Project;
+import Pmp.Env;
+import Pmp.Install;
+import Pmp.Update;
+import Pmp.LockOps;
 import Arg;
 
 void cmd_version() {

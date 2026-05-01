@@ -7,11 +7,11 @@
 //!   - Response body size limit (100 MB)
 //!   - Open redirect protection
 
-inherit Helpers;
+import .Helpers;
 
-protected Regexp RE_HEX = Regexp("^[0-9a-fA-F]+$");
-protected Regexp RE_OCTAL = Regexp("^[0-7]+$");
-protected Regexp RE_DIGITS = Regexp("^[0-9]+$");
+public Regexp RE_HEX = Regexp("^[0-9a-fA-F]+$");
+public Regexp RE_OCTAL = Regexp("^[0-7]+$");
+public Regexp RE_DIGITS = Regexp("^[0-9]+$");
 
 //! Check if a redirect from original_url to location would be an HTTPS→HTTP downgrade.
 private int(0..1) _is_https_downgrade(string original_url, string location) {
@@ -64,7 +64,7 @@ string _url_host(string url) {
 //! Pike's (int) does NOT handle 0x/0 prefixes — use sscanf.
 //! Parse integer with octal (0x/0X hex, 0 octal) prefix support.
 //! Returns -1 on parse failure (non-numeric input).
-protected int _parse_int(string s) {
+public int _parse_int(string s) {
     if (sizeof(s) == 0) return -1;
     if (has_prefix(s, "0x") || has_prefix(s, "0X")) {
         if (sizeof(s) == 2) return -1;
@@ -86,7 +86,7 @@ protected int _parse_int(string s) {
     return (int)s;
 }
 
-protected string _normalize_ip_host(string host) {
+public string _normalize_ip_host(string host) {
     if (has_value(host, ":")) return host;
     if (!has_value(host, ".")) return host;
     array(string) parts = host / ".";

@@ -1,9 +1,9 @@
 // Project.pmod — project-level commands: init, list, clean, remove.
 // All state is passed via context mapping (ctx).
 
-inherit Helpers;
-inherit .Lockfile;
-inherit .Manifest;
+import .Helpers;
+import .Lockfile;
+import .Manifest;
 
 void cmd_init(mapping ctx) {
     if (Stdio.exist(ctx["pike_json"]))

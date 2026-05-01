@@ -1,7 +1,7 @@
 //! Adversarial tests for Pmp.Verify — edge cases for project and store verification.
 
 import PUnit;
-import Pmp;
+import Pmp.Verify; import Pmp.Store;
 inherit PUnit.TestCase;
 
 protected string tmpdir;

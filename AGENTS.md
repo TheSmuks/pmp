@@ -2,7 +2,7 @@
 
 ## Project overview
 
-pmp (Pike Module Package Manager) installs, versions, and resolves dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths. The architecture is a modular split: `bin/pmp.pike` (~252 lines, entry point with config init, error handling, and command dispatch) and a layered module library under `bin/` (17 functional modules across 5 domain directories + 1 aggregator), invoked via a POSIX sh shim `bin/pmp` that sets `PIKE_MODULE_PATH` to include all subdirectories.
+pmp (Pike Module Package Manager) installs, versions, and resolves dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths. The architecture is a flat module layout: `bin/pmp.pike` (~252 lines, entry point with config init, error handling, and command dispatch) and a module library under `bin/Pmp.pmod/` (17 functional modules as flat `.pmod` files + 1 namespace-only `module.pmod`), invoked via a POSIX sh shim `bin/pmp` that sets a single `PIKE_MODULE_PATH` to `bin/`. Sub-modules use `import .Foo;` for sibling access; pmp.pike uses `import Pmp.Config; import Pmp.Helpers;` etc. Required external tools: tar/gunzip (for `.tar.gz` extraction), git (for self-hosted and self-update).
 
 ## Setup commands
 
@@ -16,38 +16,28 @@ Expected result: 208 passed, 0 failed, exit code 0 (shell tests via `sh tests/ru
 ## Architecture
 
 ```
-bin/pmp                POSIX sh shim — sets PIKE_MODULE_PATH to include all layer directories, delegates to pmp.pike
-bin/pmp.pike           Entry point (~251 lines) — config init, context mapping, command dispatch
+bin/pmp                POSIX sh shim — sets PIKE_MODULE_PATH=bin/, delegates to pmp.pike
+bin/pmp.pike           Entry point (~251 lines) — uses `import Pmp.Config; import Pmp.Helpers;` etc.; config init, context mapping, command dispatch
 
-bin/core/              Pure-function layer (no network, no I/O side effects)
+bin/Pmp.pmod/          Flat module library (all 17 functional modules + module.pmod namespace)
+  module.pmod          Namespace-only file — no inherit re-exports; makes `import Pmp` work
   Config.pmod          PMP_VERSION constant; EXIT_OK/EXIT_ERROR/EXIT_INTERNAL exit codes; PMP_VERBOSE/PMP_QUIET variables
   Helpers.pmod         die, die_internal, info, warn, debug, need_cmd, json_field, find_project_root, compute_sha256 (streaming), sanitize_url, project_lock/unlock, store_lock/unlock
   Semver.pmod          parse_semver, compare_semver, sort_tags_semver, classify_bump
   Source.pmod          detect_source_type, source_to_name/version/domain/repo_path/strip_version
-
-bin/transport/         Network layer
   Http.pmod            http_get, http_get_safe, github_auth_headers; retry with jitter, Retry-After, split connect/read timeouts, body size limit
   Resolve.pmod         latest_tag_*, resolve_commit_sha
-
-bin/store/             Content-addressable store layer
-  Store.pmod           store_entry_name, extract_targz, write_meta, compute_dir_hash, read_stored_hash, store_install_*; O_EXCL lock, Pike mv()
+  Store.pmod           store_entry_name, extract_targz (via system tar), write_meta, compute_dir_hash, read_stored_hash, store_install_*; O_EXCL lock, Pike mv()
   StoreCmd.pmod        cmd_store (status + prune)
-
-bin/project/           Project operations layer
   Lockfile.pmod        lockfile_add_entry, write_lockfile, read_lockfile, lockfile_has_dep, merge_lock_entries; LOCKFILE_VERSION, tab/newline validation
   Manifest.pmod        add_to_manifest, parse_deps
   Validate.pmod        validate_manifests — warn on undeclared imports/inherits/includes
   Verify.pmod          Project and store integrity verification (~259 lines). Functions: cmd_verify(mapping ctx)→int, cmd_doctor(mapping ctx)→int.
   Project.pmod         cmd_init (write verification), cmd_list (column headers), cmd_clean (summary), cmd_remove (path traversal protection)
   Env.pmod             cmd_env, build_paths, cmd_run, cmd_resolve (Pike-native _has_headers)
-
-bin/commands/          Stateful orchestrator layer (take mapping ctx)
   Install.pmod         install_one, cmd_install, cmd_install_all, cmd_install_source
   Update.pmod          Update and outdated commands (~200 lines). Functions: cmd_update, cmd_outdated, print_update_summary.
   LockOps.pmod         Lock, rollback, and changelog commands (~280 lines). Functions: cmd_lock, cmd_rollback, cmd_changelog.
-
-bin/Pmp.pmod/          Aggregator
-  module.pmod          Inherits all 17 sub-modules using flat names (resolved via PIKE_MODULE_PATH)
 
 tests/test_install.sh  Test suite (pure sh, delegates to runner.sh)
 install.sh             curl-pipe-sh installer (POSIX sh)
@@ -73,37 +63,37 @@ Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 - `cmd_version()` — version output
 - `cmd_self_update()` — update pmp to the latest version (git fetch + tag checkout)
 
-**In commands/Install.pmod (stateful install orchestrators, take `mapping ctx`):
+**In Install.pmod (stateful install orchestrators, take `mapping ctx`):
 - `install_one()` — install a single dep including transitive resolution
 - `cmd_install_all()` — orchestrates lockfile check, dep resolution, lockfile write
 - `cmd_install()`, `cmd_install_source()` — install-family command entry points
 
-**In commands/Update.pmod (stateful commands, take `mapping ctx`):
+**In Update.pmod (stateful commands, take `mapping ctx`):
 - `cmd_update()` — update dependencies to latest versions
 - `cmd_outdated()` — list dependencies with newer versions available
 - `print_update_summary(old, new)` — show old→new version table
 
-**In commands/LockOps.pmod (stateful commands, take `mapping ctx`):
+**In LockOps.pmod (stateful commands, take `mapping ctx`):
 - `cmd_lock()` — lock dependencies at current versions
 - `cmd_rollback()` — restore all modules from pike.lock.prev
 - `cmd_changelog(args, ctx)` — show commit log between versions
 
-**In project/Project.pmod, store/StoreCmd.pmod, project/Env.pmod (stateful commands, take `mapping ctx`):
+**In Project.pmod, StoreCmd.pmod, Env.pmod (stateful commands, take `mapping ctx`):
 - `cmd_init()`, `cmd_list()`, `cmd_clean()`, `cmd_remove()` — project management
 - `cmd_store()` — store inspection and pruning
 - `cmd_env()`, `build_paths()`, `cmd_run()` — environment and script execution
 
-**In project/Verify.pmod (stateful commands, take `mapping ctx`):
+**In Verify.pmod (stateful commands, take `mapping ctx`):
 - `cmd_verify(ctx)` — verify project integrity (lockfile vs store vs modules consistency check)
 - `cmd_doctor(ctx)` — diagnose common issues (missing store entries, broken symlinks, stale lockfile)
 
-**In core/Semver.pmod (stateless pure functions):
+**In Semver.pmod (stateless pure functions):
 - `parse_semver(tag)` — parse version string into (major, minor, patch, prerelease)
 - `compare_semver(a, b)` — compare two parsed versions (-1/0/1)
 - `sort_tags_semver(tags)` — sort tag strings by semver (highest first)
 - `classify_bump(old, new)` — classify change as major/minor/patch/prerelease/downgrade
 
-**In core/, transport/, store/, project/ (stateless pure functions):
+**In stateless modules (Config, Helpers, Source, Http, Resolve, Store, Lockfile, Manifest, Validate):
 - `detect_source_type()` — classifies URL as github/gitlab/selfhosted/local
 - `store_entry_name()` — generates store entry name from source+tag+sha
 - `store_install_*()` — download to store, compute hashes, return result mapping
@@ -125,7 +115,8 @@ Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 - Pure-function modules (Config, Helpers, Source, etc.) remain stateless — no mutable globals
 - `lockfile_add_entry()` returns a new array (Pike `+=` creates new arrays)
 - `store_install_*()` return result mappings instead of setting globals
-- `module.pmod` uses flat `inherit SubModule;` (no dot prefix) — modules are resolved via `PIKE_MODULE_PATH` which the sh shim sets to include all layer directories
+- `module.pmod` is a namespace-only file — no inherit re-exports; sub-modules use `import .Foo;` for sibling access
+- `pmp.pike` uses explicit imports (`import Pmp.Config; import Pmp.Helpers;` etc.)
 
 ## Code style
 
@@ -135,7 +126,7 @@ Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 - JSON parsed natively via `Standards.JSON.decode` — no sed/awk.
 - Error handling: `die("message")` exits with error to stderr.
 - Info messages: `info("message")` to stdout with `pmp:` prefix.
-- One external dependency: tar (for GitHub/GitLab tarball extraction). All other operations use Pike's native HTTP, JSON, Crypto, and Filesystem APIs.
+- External dependencies: tar/gunzip (required for `.tar.gz` extraction — Filesystem.Tar unavailable because Gz module is not compiled in this Pike build), git (required for self-hosted repos and self-update). All other operations use Pike's native HTTP, JSON, Crypto, and Filesystem APIs.
 
 ### Tiger Style (adopted from [TigerBeetle](docs/TIGER_STYLE.md))
 
@@ -180,8 +171,9 @@ The TigerBeetle coding style guide informs our approach. Key principles adapted 
 - `compile_string` resolves `""` includes relative to source file
 - pmp enforces isolation at install time (manifest validation), not at runtime
 - `catch` blocks use `mixed err = catch { ... }; if (err) ...` pattern
-- `inherit .Foo` in `.pmod` files copies state — shared mutable state does not work across modules. Use explicit parameter passing instead. In the new layout, inherit lines use flat names (e.g., `inherit Config;`) resolved via `PIKE_MODULE_PATH`.
+- `import .Foo` in `.pmod` files imports the public symbols of sibling module Foo — this is the preferred pattern for inter-module access in the flat layout
 - `import .Foo` does not expose `protected` symbols — use `inherit .Foo` when internal access is needed, or make symbols public
+- `inherit .Foo` copies state — shared mutable state does not work across modules. Use explicit parameter passing instead
 
 ## Testing instructions
 
@@ -189,7 +181,7 @@ The TigerBeetle coding style guide informs our approach. Key principles adapted 
 - Uses `assert`, `assert_exists`, `assert_not_exists`, `assert_output_contains` helpers
 - Tests create temp dirs and clean up on exit
 - Tests that need the store back up/restore `~/.pike/store/`
-- Every change must pass all 174 shell tests and 325 Pike unit tests
+- Every change must pass all 208 shell tests and 330 Pike unit tests
 
 ## Commit conventions
 
@@ -217,7 +209,7 @@ Doc-only changes do NOT trigger this checklist.
 ## PR instructions
 
 - Title format: descriptive summary of the change
-- Run `sh tests/test_install.sh` or `sh tests/runner.sh` before committing — all 174 tests must pass; also run `sh tests/pike_tests.sh`
+- Run `sh tests/test_install.sh` or `sh tests/runner.sh` before committing — all 208 tests must pass; also run `sh tests/pike_tests.sh` (330 tests)
 - If adding new features, add corresponding test cases
 
 

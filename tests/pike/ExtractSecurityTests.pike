@@ -4,7 +4,7 @@
 //! is uncatchable, so rejection tests spawn a subprocess and check the exit code.
 
 import PUnit;
-import Pmp;
+// import Pmp — no direct Pmp symbols used (all via subprocess)
 inherit PUnit.TestCase;
 
 protected string tmpdir;
@@ -27,11 +27,6 @@ protected int run_subprocess(string code) {
     mapping result = Process.run(({
         "pike", "-M", combine_path(getcwd(), "modules"),
         "-M", combine_path(getcwd(), "bin"),
-        "-M", combine_path(getcwd(), "bin/core"),
-        "-M", combine_path(getcwd(), "bin/transport"),
-        "-M", combine_path(getcwd(), "bin/store"),
-        "-M", combine_path(getcwd(), "bin/project"),
-        "-M", combine_path(getcwd(), "bin/commands"),
         "-e", code
     }));
     return result->exitcode;
@@ -109,7 +104,7 @@ void test_reject_path_traversal_dotdot() {
     Stdio.mkdirhier(dest);
 
     string code = sprintf(
-        "import Pmp; extract_targz(%O, %O);",
+        "import Pmp.Store; extract_targz(%O, %O);",
         tarball, dest
     );
     int exitcode = run_subprocess(code);
@@ -126,7 +121,7 @@ void test_reject_absolute_path() {
 
     // GNU tar strips leading /, so extraction succeeds but file is inside dest
     string code = sprintf(
-        "import Pmp; extract_targz(%O, %O);",
+        "import Pmp.Store; extract_targz(%O, %O);",
         tarball, dest
     );
     int exitcode = run_subprocess(code);
@@ -152,7 +147,7 @@ void test_reject_symlink_escape() {
     Stdio.mkdirhier(dest);
 
     string code = sprintf(
-        "import Pmp; extract_targz(%O, %O);",
+        "import Pmp.Store; extract_targz(%O, %O);",
         tarball, dest
     );
     int exitcode = run_subprocess(code);
@@ -168,7 +163,7 @@ void test_reject_mixed_paths() {
     Stdio.mkdirhier(dest);
 
     string code = sprintf(
-        "import Pmp; extract_targz(%O, %O);",
+        "import Pmp.Store; extract_targz(%O, %O);",
         tarball, dest
     );
     int exitcode = run_subprocess(code);
@@ -184,17 +179,12 @@ void test_valid_tar_succeeds() {
     Stdio.mkdirhier(dest);
 
     string code = sprintf(
-        "import Pmp; string name = extract_targz(%O, %O); write(name);",
+        "import Pmp.Store; string name = extract_targz(%O, %O); write(name);",
         tarball, dest
     );
     mapping result = Process.run(({
         "pike", "-M", combine_path(getcwd(), "modules"),
         "-M", combine_path(getcwd(), "bin"),
-        "-M", combine_path(getcwd(), "bin/core"),
-        "-M", combine_path(getcwd(), "bin/transport"),
-        "-M", combine_path(getcwd(), "bin/store"),
-        "-M", combine_path(getcwd(), "bin/project"),
-        "-M", combine_path(getcwd(), "bin/commands"),
         "-e", code
     }));
     assert_equal(0, result->exitcode,

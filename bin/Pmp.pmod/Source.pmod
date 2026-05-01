@@ -1,4 +1,4 @@
-inherit Helpers;
+import .Helpers;
 
 //! Check if a source string represents a local path.
 int(0..1) is_local_source(string s) {

@@ -9,9 +9,9 @@ cd "$REPO_ROOT"
 ERRORS=""
 
 # ── 1. PMP_VERSION consistency ────────────────────────────────────
-CONFIG_VER=$(sed -n 's/.*PMP_VERSION *= *"\([^"]*\)".*/\1/p' bin/core/Config.pmod | head -1)
+CONFIG_VER=$(sed -n 's/.*PMP_VERSION *= *"\([^"]*\)".*/\1/p' bin/Pmp.pmod/Config.pmod | head -1)
 if [ -z "$CONFIG_VER" ]; then
-    ERRORS="${ERRORS}ERROR: Cannot extract PMP_VERSION from bin/core/Config.pmod\n"
+    ERRORS="${ERRORS}ERROR: Cannot extract PMP_VERSION from bin/Pmp.pmod/Config.pmod\n"
 fi
 
 # Check ARCHITECTURE.md mentions the correct version
@@ -22,9 +22,9 @@ if [ -n "$CONFIG_VER" ]; then
 fi
 
 # ── 2. Module count consistency ───────────────────────────────────
-MODULE_COUNT=$(grep -c 'inherit ' bin/Pmp.pmod/module.pmod 2>/dev/null || echo 0)
+MODULE_COUNT=$(ls bin/Pmp.pmod/*.pmod 2>/dev/null | grep -v module.pmod | wc -l)
 if [ "$MODULE_COUNT" -eq 0 ]; then
-    ERRORS="${ERRORS}ERROR: Cannot count modules in bin/Pmp.pmod/module.pmod\n"
+    ERRORS="${ERRORS}ERROR: Cannot count modules in bin/Pmp.pmod/\n"
 fi
 
 # ARCHITECTURE.md should mention the correct module count
@@ -34,7 +34,7 @@ fi
 
 # ── 3. SHA prefix consistency ─────────────────────────────────────
 # Store.pmod uses sha[..15] which is 16 chars
-SHA_PREFIX_CODE=$(grep -o 'sha\[\.\.15\]' bin/store/Store.pmod 2>/dev/null | head -1)
+SHA_PREFIX_CODE=$(grep -o 'sha\[\.\.15\]' bin/Pmp.pmod/Store.pmod 2>/dev/null | head -1)
 if [ -n "$SHA_PREFIX_CODE" ]; then
     # ARCHITECTURE.md and README should say 16, not 8
     if grep -q 'sha_prefix8\|8 characters\|8-char' ARCHITECTURE.md 2>/dev/null; then
@@ -45,13 +45,10 @@ if [ -n "$SHA_PREFIX_CODE" ]; then
     fi
 fi
 
-# ── 4. Layer directory consistency ────────────────────────────────
-LAYERS="core transport store project commands"
-for layer in $LAYERS; do
-    if [ ! -d "bin/$layer" ]; then
-        ERRORS="${ERRORS}ERROR: Expected layer directory bin/$layer does not exist\n"
-    fi
-done
+# ── 4. Module directory consistency ────────────────────────────────
+if [ ! -d "bin/Pmp.pmod" ]; then
+    ERRORS="${ERRORS}ERROR: Expected module directory bin/Pmp.pmod does not exist\n"
+fi
 
 # ── 5. Test count in AGENTS.md matches runner ─────────────────────
 # We can't run the tests here, but we can check that AGENTS.md

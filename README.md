@@ -61,6 +61,12 @@ Remove the PATH line from your shell rc (`~/.bashrc`, `~/.zshrc`, or `~/.profile
 export PATH="$HOME/.pmp/bin:$PATH"
 ```
 
+## Invoking pmp
+
+Use `sh bin/pmp` (or `$PATH/pmp` after installation). The shell shim sets `PIKE_MODULE_PATH` to the `bin/` directory so Pike can resolve `import Pmp.Config` etc.
+
+Direct invocation (`pike bin/pmp.pike`) does **not** work — Pike resolves `import Pmp.Config` before the shim runs, and `PIKE_MODULE_PATH` is not set. The shell shim (`bin/pmp`) sets this correctly before delegating to Pike.
+
 ## Quick start
 
 ```bash

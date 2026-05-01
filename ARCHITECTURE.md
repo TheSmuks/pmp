@@ -185,6 +185,27 @@ Generated `bin/pike` wrapper that sets `PIKE_MODULE_PATH` and `PIKE_INCLUDE_PATH
 13. Write `pike.lock` with all resolved entries
 14. `validate_manifests()` scans for undeclared imports
 
+## Store Integrity
+
+The store uses content-addressable naming and SHA-256 hashes to ensure integrity:
+
+- **Entry name**: `{domain}-{owner}-{repo}-{tag}-{sha16}` — SHA prefix ensures uniqueness across versions
+- **Content hash**: `compute_dir_hash()` walks the extracted directory tree and computes a SHA-256 hash of sorted file paths + content. This hash is recorded in both `.pmp-meta` (in the store entry) and `pike.lock`.
+- **Lockfile verification**: On lockfile-based reinstall, the stored hash is compared against the actual directory hash. Mismatch triggers a re-download.
+- **Verification**: `pmp verify` checks that every symlink target exists and hashes match; `pmp doctor` diagnoses missing store entries and broken symlinks.
+
+## Out of Scope
+
+The following proposed features are **not implemented** and are marked as out of scope for the current release:
+
+| Feature | ADR | Reason |
+|---|---|---|
+| Lockfile v2 (per-entry integrity + whole-file checksum) | ADR-0003 | Would require lockfile format migration |
+| Semver range constraints in `pike.json` | ADR-0004 | Version resolution is tag-based only |
+| Workspace / monorepo support | ADR-0005 | Single-project model only |
+
+See `docs/decisions/` for the full ADR text.
+
 ## Extension Points
 
 ### New source types
@@ -217,7 +238,7 @@ Runs on `ubuntu-latest` with 3 steps:
 
 ### Local testing
 
-- `sh tests/test_install.sh` — 208 shell tests + 330 Pike unit tests (`tests/pike_tests.sh`)
+- `sh tests/test_install.sh` — 211 shell tests + 342 Pike unit tests (`tests/pike_tests.sh`)
 
 ### Test infrastructure
 

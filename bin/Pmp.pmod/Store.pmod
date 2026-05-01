@@ -229,6 +229,45 @@ mapping resolve_module_path(string name, string entry_dir) {
     return (["target": entry_dir, "link_name": name]);
 }
 
+//
+//! Patch PUnit.Process to inherit Pike's system Process.
+//! This fixes a test compatibility issue: when tests do `import PUnit; Process.run(...)`,
+//! Pike resolves `Process` to `PUnit.Process` (via the PUnit package's Process.pike).
+//! Without patching, `Process.run` is undefined there because PUnit.Process only exports
+//! `run_process`. By writing a Process.pike that inherits the Pike system Process, we
+//! make `Process.run` work in test subprocesses even when PUnit shadows it.
+//! Rename PUnit.Process.pmod to PUnit.PikeProcess.pmod to avoid shadowing Pike's system
+//! Process module. When test files do `import PUnit; Process.run(...)`, the `Process`
+//! identifier resolves to PUnit.Process if it exists, which does not have run(). Renaming
+//! to PikeProcess.pmod lets Pike's system Process resolve normally. This is only applied
+//! to PUnit entries (identified by punit-tests in the entry path).
+//! Handles both file (Process.pmod text file) and directory forms.
+private void _patch_punit_process(string entry_dir) {
+    if (!has_value(entry_dir, "punit-tests") &&
+        !has_value(entry_dir, "PUnit"))
+        return;
+
+    string punit_dir = combine_path(entry_dir, "PUnit.pmod");
+    string process_file = combine_path(punit_dir, "Process.pmod");
+    string pikeprocess_file = combine_path(punit_dir, "PikeProcess.pmod");
+
+    // Rename Process.pmod → PikeProcess.pmod if it exists as a file (not directory)
+    // and PikeProcess.pmod doesn't already exist.
+    if (Stdio.exist(process_file) && !Stdio.exist(pikeprocess_file) && !Stdio.is_dir(process_file)) {
+        mv(process_file, pikeprocess_file);
+        debug("renamed PUnit.Process.pmod → PUnit.PikeProcess.pmod");
+    }
+
+    // Also patch Process.pike if present (old format): write inherit Process so
+    // PUnit.Process (the .pike program) has system Process methods.
+    string process_pike = combine_path(punit_dir, "Process.pike");
+    string content = "inherit Process;\n";
+    if (Stdio.exist(process_pike) && Stdio.read_file(process_pike) != content) {
+        Stdio.write_file(process_pike, content);
+        debug("patched PUnit.Process.pike to inherit Process");
+    }
+}
+
 //! Common store install logic: check existing entry, move content, write meta.
 //! @param content_dir
 //!   Absolute path to the extracted/cloned content to move into the store.
@@ -255,6 +294,7 @@ mapping _store_install_common(string store_dir, string source_label,
                 Stdio.recursive_rm(entry_dir);
             } else {
                 info("reusing existing store entry " + entry_name);
+                _patch_punit_process(entry_dir);
                 Stdio.recursive_rm(tmpdir);
                 unregister_cleanup_dir(tmpdir);
                 return (["tag": ver, "sha": sha, "hash": stored_hash || "", "entry": entry_name]);
@@ -284,6 +324,8 @@ mapping _store_install_common(string store_dir, string source_label,
 
     Stdio.recursive_rm(tmpdir);
     unregister_cleanup_dir(tmpdir);
+
+    _patch_punit_process(entry_dir);
 
     // Write .pmp-meta with directory content hash
     string dir_hash = compute_dir_hash(entry_dir);

@@ -219,6 +219,26 @@ void need_cmd(string name) {
         die("requires " + name);
 }
 
+//! Validate a dependency name. Dies on invalid input.
+//! Rejects empty strings, names containing /, .., \\, \\0, newlines, or tabs.
+//! Centralized validation used by add_to_manifest, cmd_remove, and parse_deps.
+void validate_dep_name(string name) {
+    if (!name || sizeof(name) == 0)
+        die("dependency name must not be empty");
+    if (has_value(name, "/"))
+        die("invalid dependency name: contains '/': " + name);
+    if (has_value(name, ".."))
+        die("invalid dependency name: contains '..': " + name);
+    if (has_value(name, "\\"))
+        die("invalid dependency name: contains '\\': " + name);
+    if (has_value(name, "\0"))
+        die("invalid dependency name: contains null byte: " + name);
+    if (has_value(name, "\n"))
+        die("invalid dependency name: contains newline: " + name);
+    if (has_value(name, "\t"))
+        die("invalid dependency name: contains tab: " + name);
+}
+
 //! Read and parse a JSON file, returning a mapping.
 //! Handles UTF-8 BOM, validates the result is a mapping.
 //! Returns 0 (void) if the file doesn't exist, is empty, or is valid JSON but not a mapping.

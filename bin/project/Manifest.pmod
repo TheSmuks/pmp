@@ -8,6 +8,7 @@ inherit Helpers;
 //! @param source
 //!   Dependency source URL.
 void add_to_manifest(string pike_json, string name, string source) {
+    validate_dep_name(name);
     mapping data = _read_json_mapping(pike_json);
     if (!data) {
         warn("failed to read " + pike_json);
@@ -35,8 +36,16 @@ void add_to_manifest(string pike_json, string name, string source) {
 //! @returns
 //!   Array of ({name, source}) pairs, sorted by name.
 array(array(string)) parse_deps(string file) {
-    mapping data = _read_json_mapping(file);
-    if (!data || !mappingp(data->dependencies))
+    // Read and validate JSON before _read_json_mapping, which dies on
+    // malformed JSON. parse_deps is a query function — it returns empty, not die.
+    string raw = Stdio.read_file(file);
+    if (!raw) return ({});
+    raw = _strip_bom(raw);
+    mixed data;
+    mixed err = catch { data = Standards.JSON.decode(raw); };
+    if (err || !mappingp(data)) return ({});
+
+    if (!mappingp(data->dependencies))
         return ({});
 
     mapping deps = data->dependencies;

@@ -221,20 +221,27 @@ pmp install <url>                           Add + install (latest tag)
 pmp install <url>#tag                       Install specific version
 pmp install ./local/path                    Local dependency (symlinked)
 pmp install -g <url>                        Install system-wide
+pmp install --frozen-lockfile               CI: fail if lockfile is missing or stale
+pmp install --offline                       Install from store only (no network)
+pmp add <url>                               Alias for pmp install <url>
 pmp update                                  Update all to latest tags
 pmp update <module>                         Update one dependency
+pmp rollback                                Rollback to previous lockfile
+pmp changelog <module>                      Show commit log between versions
 pmp lock                                    Resolve and write pike.lock without installing
 pmp store                                   Show store entries and disk usage
-pmp store prune                             Show unused store entries
-pmp list                                    Show installed modules
-pmp clean                                   Remove ./modules/ (keeps store)
+pmp store prune [--force]                   Remove unused store entries
+pmp list [-g]                               Show installed modules
 pmp env                                     Create .pike-env/
+pmp clean                                   Remove ./modules/ (keeps store)
+pmp remove <name>                           Remove a dependency
 pmp run <script>                            Run script with module paths
+pmp outdated                                Show deps with newer versions available
+pmp resolve [module]                        Print resolved module paths
 pmp version                                 Show pmp version
-pmp rollback                               Rollback to previous lockfile (pike.lock.prev)
-pmp changelog <module>                     Show commit log between installed versions
-pmp verify                                 Verify project integrity (lockfile vs store vs modules)
-pmp doctor                                 Diagnose common issues (missing entries, broken symlinks)
+pmp self-update                             Update pmp to the latest version
+pmp verify                                  Verify installed dependencies
+pmp doctor                                  Diagnose common project issues
 ```
 
 > **Note:** pmp uses [Semantic Versioning](https://semver.org/) for tag comparison. Only tags matching MAJOR.MINOR.PATCH (with optional `v` prefix and `-prerelease` suffix) are sorted correctly. Non-semver tags are deprioritized.

@@ -192,12 +192,12 @@ string classify_bump(string|void old_tag, string|void new_tag) {
     if (new_v["major"] != old_v["major"]) return "major";
     if (new_v["minor"] != old_v["minor"]) return "minor";
     if (new_v["patch"] != old_v["patch"]) {
-        // Patch bump: could be patch release or prerelease-to-higher-prerelease
+        // Patch bump or patch-level prerelease
         if (sizeof(new_v["prerelease"]) > 0) return "prerelease";
         return "patch";
     }
 
-    // Same major.minor.patch
+    // Same major.minor.patch — only prerelease differs
     int old_has_pre = sizeof(old_v["prerelease"]) > 0;
     int new_has_pre = sizeof(new_v["prerelease"]) > 0;
 

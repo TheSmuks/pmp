@@ -1,7 +1,7 @@
 # PMP Behavior Specification
 
 Contract document for public functions in the pmp codebase.
-Module paths are relative to `bin/Pmp.pmod/`.
+Module paths are relative to `bin/` with subdirectories: `core/` (Semver, Source, Helpers, Config), `transport/` (Http, Resolve), `store/` (Store, StoreCmd), `project/` (Lockfile, Manifest, Project, Verify, Validate, Env), `commands/` (Install, LockOps, Update).
 
 ---
 
@@ -20,7 +20,7 @@ Module paths are relative to `bin/Pmp.pmod/`.
 
 **Edge Cases**:
 - Leading zeros in numeric identifiers (e.g. `"01.2.3"`) → returns `0`.
-- Partial versions accepted: `"1"` → `{major:1, minor:0, patch:0}`, `"1.2"` → `{major:1, minor:2, patch:0}`.
+- Partial versions (fewer than 3 parts) are rejected: `"1"` → returns `0`, `"1.2"` → returns `0`.
 - Empty prerelease after `-` (e.g. `"1.0.0-"`) → returns `0`.
 - Build metadata after `+` is stripped and ignored.
 - `0`, `""`, absent → returns `0`.

@@ -70,10 +70,10 @@ printf '{"name":"adv-test","dependencies":{}}' > pike.json
 mkdir -p modules
 
 _out_pt1="$("$PMP" remove '..' 2>&1 || true)"
-assert_output_contains "path traversal '..' rejected" "invalid module name" "$_out_pt1"
+assert_output_contains "path traversal '..' rejected" "invalid dependency name" "$_out_pt1"
 
 _out_pt2="$("$PMP" remove '../etc' 2>&1 || true)"
-assert_output_contains "path traversal '../etc' rejected" "invalid module name" "$_out_pt2"
+assert_output_contains "path traversal '../etc' rejected" "invalid dependency name" "$_out_pt2"
 
 # ── pmp remove nonexistent module ──────────────────────────────────
 

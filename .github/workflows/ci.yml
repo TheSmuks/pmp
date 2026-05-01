@@ -28,9 +28,6 @@ jobs:
 
       - name: Run Pike unit tests
         run: |
-          set -x
+          set +e
           mkdir -p tests/reports
           pike -M modules -M bin tests/pike/run.pike --junit tests/reports/pike-junit.xml
-          _exit=$?
-          echo "PIKE TESTS EXIT: $_exit"
-          exit $_exit

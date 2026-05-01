@@ -52,7 +52,7 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/) 1.0.0:
 
 Types: feat, fix, docs, refactor, test, chore, ci, perf, style, revert
 
-Scopes: install, store, lockfile, deps, env, cli
+Scopes: install, store, lockfile, deps, env, cli, validate
 
 ### Breaking Changes
 

@@ -8,11 +8,11 @@ Editing `bin/pmp.pike`, `bin/Pmp.pmod/*.pmod`, `tests/`, or any pmp infrastructu
 
 ## Architecture
 
-pmp is a Pike 8.0 application (~2512 lines across 15 module files + ~185-line entry point).
+pmp is a Pike 8.0 application (~4672 lines across 18 module files + 274-line entry point).
 
 - `bin/pmp` — POSIX sh shim that sets `PIKE_MODULE_PATH` and delegates to `pike -M bin bin/pmp.pike`
 - `bin/pmp.pike` — Entry point: config init, command dispatch, argument parsing
-- `bin/Pmp.pmod/` — Library of 15 Pike modules:
+- `bin/Pmp.pmod/` — Library of 17 functional + 1 namespace Pike module (18 total):
   - `module.pmod` — Re-exports all sub-modules via `inherit`
   - `Config.pmod` — `PMP_VERSION` constant
   - `Helpers.pmod` — `die`, `info`, `warn`, `need_cmd`, `json_field`, `find_project_root`, `compute_sha256`
@@ -24,10 +24,13 @@ pmp is a Pike 8.0 application (~2512 lines across 15 module files + ~185-line en
   - `Manifest.pmod` — `add_to_manifest`, `parse_deps`
   - `Validate.pmod` — `validate_manifests`, `strip_comments_and_strings`, `init_std_libs`
   - `Semver.pmod` — `parse_semver`, `compare_semver`, `sort_tags_semver`, `classify_bump`
-  - `Install.pmod` — `install_one`, `cmd_install`, `cmd_install_all`, `cmd_install_source`, `cmd_update`, `cmd_lock`, `cmd_rollback`, `cmd_changelog`, `print_update_summary`
+  - `Install.pmod` — `install_one`, `cmd_install`, `cmd_install_all`, `cmd_install_source`
+  - `Update.pmod` — `cmd_update`, `print_update_summary`
+  - `LockOps.pmod` — `cmd_lock`, `cmd_rollback`, `cmd_changelog`
   - `Project.pmod` — `cmd_init`, `cmd_list`, `cmd_clean`, `cmd_remove`
   - `StoreCmd.pmod` — `cmd_store` (status + prune)
   - `Env.pmod` — `cmd_env`, `build_paths`, `cmd_run`, `cmd_resolve`
+  - `Verify.pmod` — store and dependency verification
 
 ## Key patterns
 
@@ -82,7 +85,7 @@ string compute_sha256(string path) { ... }   // pure function, no ctx
 
 Projects symlink: `./modules/PUnit -> ~/.pike/store/github.com-thesmuks-punit-v1.0.0-a1b2c3d4/`
 
-Store entry name format: `{domain}-{owner}-{repo}-{tag}-{sha_prefix_8}`. Path slashes become dashes.
+Store entry name format: `{domain}-{owner}-{repo}-{tag}-{sha_prefix16}`. Path slashes become dashes.
 
 ## Lockfile format
 
@@ -97,9 +100,9 @@ Tab-separated. Created by `pmp install` or `pmp lock`. Read by `cmd_install_all(
 ## Running tests
 
 ```sh
-sh tests/runner.sh              # 114 shell tests across test_01–test_26
+sh tests/runner.sh              # 208 shell tests across test_01–test_26
 sh tests/test_install.sh        # same runner (legacy alias)
-sh tests/pike_tests.sh          # 81 Pike unit tests (PUnit-based)
+sh tests/pike_tests.sh          # 330 Pike unit tests (PUnit-based)
 sh bin/pmp --help               # syntax check — validates Pike compilation
 ```
 

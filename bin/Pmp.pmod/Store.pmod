@@ -30,8 +30,6 @@ string store_entry_name(string src, string tag, string sha) {
     return sprintf("%s-%s-%s", slug, safe_tag, sha_prefix);
 }
 
-//! Extract a .tar.gz file to a directory.
-//! Extract a .tar.gz file to a directory.
 //! Uses system tar with security hardening: --no-same-owner prevents
 //! UID/GID leaks, and symlink-path-traversal is validated after extraction.
 string extract_targz(string tarball_path, string dest_dir) {

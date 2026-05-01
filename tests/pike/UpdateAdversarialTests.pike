@@ -1,10 +1,24 @@
-//! Adversarial tests for Pmp.Install — edge cases for install orchestrators.
-//! Tests pure function: print_update_summary,
+//! Adversarial tests for Pmp.Update — edge cases for update orchestrators.
+//! Tests pure function: print_update_summary and cmd_outdated edge cases.
 
 import PUnit;
-import Pmp.Update;
+import Pmp.Update; import Pmp.Helpers;
 inherit PUnit.TestCase;
 
+protected string tmpdir;
+protected string old_cwd;
+
+void setup() {
+    tmpdir = combine_path(getcwd(), ".tmp-test-update-adv-" + getpid());
+    Stdio.mkdirhier(tmpdir);
+    old_cwd = getcwd();
+}
+
+void teardown() {
+    if (old_cwd) cd(old_cwd);
+    if (tmpdir && Stdio.exist(tmpdir))
+        Stdio.recursive_rm(tmpdir);
+}
 // ── print_update_summary ────────────────────────────────────────────
 // This function is pure (writes to stdout, no side effects beyond that).
 // We wrap calls in catch to verify no crashes.
@@ -91,4 +105,86 @@ void test_update_summary_downgrade() {
     array nw  = ({ ({ "pkg", "src", "v1.0.0", "s2", "h2" }) });
     mixed err = catch { print_update_summary(old, nw); };
     assert_false(!!err, "downgrade should not crash");
+}
+
+
+
+protected mapping make_ctx(string project_dir) {
+    string store_dir = combine_path(tmpdir, "store");
+    Stdio.mkdirhier(store_dir);
+    return ([
+        "pike_bin": Process.locate_binary((getenv("PATH") || "/usr/bin:/bin") / ":", "pike") || "pike",
+        "global_dir": combine_path(tmpdir, "global-modules"),
+        "local_dir": combine_path(project_dir, "modules"),
+        "store_dir": store_dir,
+        "pike_json": combine_path(project_dir, "pike.json"),
+        "lockfile_path": combine_path(project_dir, "pike.lock"),
+    ]);
+}
+
+protected string make_project(string name, void|mapping deps) {
+    string d = combine_path(tmpdir, name);
+    Stdio.mkdirhier(combine_path(d, "modules"));
+    if (!deps) deps = ([]);
+    string json = Standards.JSON.encode((["name": name, "dependencies": deps]));
+    Stdio.write_file(combine_path(d, "pike.json"), json);
+    return d;
+}
+
+protected void write_lf(string path, array(array(string)) entries) {
+    string buf = "# pmp lockfile v1 \xe2\x80\x94 DO NOT EDIT\n";
+    foreach (entries; ; array(string) e)
+        buf += e * "\t" + "\n";
+    Stdio.write_file(path, buf);
+}
+
+void test_outdated_no_pike_json() {
+    string d = combine_path(tmpdir, "no-proj");
+    Stdio.mkdirhier(d);
+    mapping ctx = make_ctx(d);
+    cd(d);
+
+    mixed err = catch { cmd_outdated(ctx); };
+    assert_true(!!err, "outdated without pike.json should die");
+}
+
+void test_outdated_empty_deps() {
+    string proj = make_project("outdated-empty");
+    mapping ctx = make_ctx(proj);
+    cd(proj);
+
+    // Should not die — just reports "no dependencies declared"
+    mixed err = catch { cmd_outdated(ctx); };
+    assert_false(!!err, "outdated with empty deps should not die");
+}
+
+void test_outdated_local_dep_skipped() {
+    string proj = make_project("outdated-local", (["my-lib": "./libs/my-lib"]));
+    mapping ctx = make_ctx(proj);
+    cd(proj);
+
+    // Create the local dep
+    string lib = combine_path(proj, "libs", "my-lib");
+    Stdio.mkdirhier(lib);
+    Stdio.write_file(combine_path(lib, "module.pmod"), "// ok");
+
+    // Write a lockfile with the local dep
+    write_lf(ctx["lockfile_path"], ({
+        ({"my-lib", "./libs/my-lib", "-", "sha1", "hash1"}),
+    }));
+
+    // Should not die — local deps are skipped
+    mixed err = catch { cmd_outdated(ctx); };
+    assert_false(!!err, "outdated with local dep should not die");
+}
+
+void test_outdated_offline_mode() {
+    string proj = make_project("outdated-offline", (["pkg": "github.com/u/pkg"]));
+    mapping ctx = make_ctx(proj);
+    ctx["offline"] = 1;
+    cd(proj);
+
+    // Offline mode should just print a message and return, not die
+    mixed err = catch { cmd_outdated(ctx); };
+    assert_false(!!err, "outdated in offline mode should not die");
 }

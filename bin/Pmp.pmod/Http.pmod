@@ -7,6 +7,7 @@
 //!   - Response body size limit (100 MB)
 //!   - Open redirect protection
 
+import .Config;
 import .Helpers;
 
 public Regexp RE_HEX = Regexp("^[0-9a-fA-F]+$");
@@ -497,7 +498,7 @@ mapping _follow_with_redirects(string url, mapping request_headers) {
 //! Error messages include host (not full URL \u2014 may contain tokens in future).
 string http_get(string url, void|mapping(string:string) headers,
                 void|string version) {
-    version = version || "0.2.0";
+    version = version || PMP_VERSION;
     mapping request_headers = ([
         "user-agent": "pmp/" + version,
     ]);
@@ -519,7 +520,7 @@ string http_get(string url, void|mapping(string:string) headers,
 
 array(int|string) http_get_safe(string url, void|mapping(string:string) headers,
                                  void|string version) {
-    version = version || "0.2.0";
+    version = version || PMP_VERSION;
     mapping request_headers = ([
         "user-agent": "pmp/" + version,
     ]);

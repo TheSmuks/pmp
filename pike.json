@@ -1,7 +1,6 @@
 {
   "dependencies": {
-    "punit-tests": "github.com/TheSmuks/punit-tests",
-    "bak-lib": "./libs/bak-lib"
+    "punit-tests": "github.com/TheSmuks/punit-tests"
   },
   "name": "test"
 }

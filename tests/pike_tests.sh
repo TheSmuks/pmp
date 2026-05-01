@@ -12,4 +12,6 @@ fi
 mkdir -p tests/reports
 
 # Run with JUnit XML output
-exec pike -M modules -M bin tests/pike/run.pike --junit tests/reports/pike-junit.xml "$@"
+# Note: we specify --nojit to avoid potential JIT caching issues
+# that can cause non-deterministic behavior in test runners
+exec pike --nojit -M modules -M bin tests/pike/run_tests.pike --junit tests/reports/pike-junit.xml "$@"

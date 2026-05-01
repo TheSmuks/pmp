@@ -27,7 +27,4 @@ jobs:
         run: sh bin/pmp install
 
       - name: Run Pike unit tests
-        run: |
-          set +e
-          mkdir -p tests/reports
-          pike -M modules -M bin tests/pike/run.pike --junit tests/reports/pike-junit.xml
+        run: sh tests/pike_tests.sh

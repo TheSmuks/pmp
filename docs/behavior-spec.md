@@ -1,7 +1,7 @@
 # PMP Behavior Specification
 
 Contract document for public functions in the pmp codebase.
-Module paths are relative to `bin/` with subdirectories: `core/` (Semver, Source, Helpers, Config), `transport/` (Http, Resolve), `store/` (Store, StoreCmd), `project/` (Lockfile, Manifest, Project, Verify, Validate, Env), `commands/` (Install, LockOps, Update).
+Module paths are relative to `bin/Pmp.pmod/`. All modules are flat (no subdirectories).
 
 ---
 
@@ -546,7 +546,7 @@ Module paths are relative to `bin/` with subdirectories: `core/` (Semver, Source
 **Inputs**:
 - `url` — HTTP(S) URL string.
 - `headers` — optional additional request headers.
-- `version` — optional pmp version string (defaults to `"0.2.0"`).
+- `version` — optional pmp version string (defaults to `Config.PMP_VERSION`).
 
 **Outputs**: `string` — response body on success (status 200 with non-empty body).
 
@@ -567,7 +567,7 @@ Module paths are relative to `bin/` with subdirectories: `core/` (Semver, Source
 **Inputs**:
 - `url` — HTTP(S) URL string.
 - `headers` — optional additional request headers.
-- `version` — optional pmp version string (defaults to `"0.2.0"`).
+- `version` — optional pmp version string (defaults to `Config.PMP_VERSION`).
 
 **Outputs**: `array(int|string)` — `({status_code, body_string})`. Status `0` indicates a client-side error (timeout, connection failure, security block), with body containing an error description.
 

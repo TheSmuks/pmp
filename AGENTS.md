@@ -2,7 +2,7 @@
 
 ## Project overview
 
-pmp (Pike Module Package Manager) installs, versions, and resolves dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths. The architecture is a flat module layout: `bin/pmp.pike` (~252 lines, entry point with config init, error handling, and command dispatch) and a module library under `bin/Pmp.pmod/` (17 functional modules as flat `.pmod` files + 1 namespace-only `module.pmod`), invoked via a POSIX sh shim `bin/pmp` that sets a single `PIKE_MODULE_PATH` to `bin/`. Sub-modules use `import .Foo;` for sibling access; pmp.pike uses `import Pmp.Config; import Pmp.Helpers;` etc. Required external tools: tar/gunzip (for `.tar.gz` extraction), git (for self-hosted and self-update).
+pmp (Pike Module Package Manager) installs, versions, and resolves dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths. The architecture is a flat module layout: `bin/pmp.pike` (~274 lines, entry point with config init, error handling, and command dispatch) and a module library under `bin/Pmp.pmod/` (17 functional modules as flat `.pmod` files + 1 namespace-only `module.pmod`, ~4672 lines total source), invoked via a POSIX sh shim `bin/pmp` that sets a single `PIKE_MODULE_PATH` to `bin/`. Sub-modules use `import .Foo;` for sibling access; pmp.pike uses `import Pmp.Config; import Pmp.Helpers;` etc. Required external tools: tar/gunzip (for `.tar.gz` extraction), git (for self-hosted and self-update).
 
 ## Setup commands
 
@@ -17,7 +17,7 @@ Expected result: 208 passed, 0 failed, exit code 0 (shell tests via `sh tests/ru
 
 ```
 bin/pmp                POSIX sh shim — sets PIKE_MODULE_PATH=bin/, delegates to pmp.pike
-bin/pmp.pike           Entry point (~251 lines) — uses `import Pmp.Config; import Pmp.Helpers;` etc.; config init, context mapping, command dispatch
+bin/pmp.pike           Entry point (~274 lines) — uses `import Pmp.Config; import Pmp.Helpers;` etc.; config init, context mapping, command dispatch
 
 bin/Pmp.pmod/          Flat module library (all 17 functional modules + module.pmod namespace)
   module.pmod          Namespace-only file — no inherit re-exports; makes `import Pmp` work
@@ -47,7 +47,7 @@ docs/TIGER_STYLE.md    TigerBeetle coding style guide — principles adopted in 
 
 ### Content-addressable store
 
-Packages are downloaded once to `~/.pike/store/` with entries named `{domain}-{owner}-{repo}-{tag}-{sha_prefix_8}`. Projects symlink from `./modules/{name}/` to the store entry. Store is shared across projects — deleting `./modules/` does not affect the store.
+Packages are downloaded once to `~/.pike/store/` with entries named `{domain}-{owner}-{repo}-{tag}-{sha_prefix16}`. Projects symlink from `./modules/{name}/` to the store entry. Store is shared across projects — deleting `./modules/` does not affect the store.
 
 ### Lockfile (`pike.lock`)
 

@@ -1,0 +1,155 @@
+{
+  "project": "pmp",
+  "branchName": "ralph/codebase-audit-remediation",
+  "description": "Fix Pike module structure, correct documentation hallucinations, add semver ranges, lockfile integrity, and pmp why command",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Move all modules into Pmp.pmod/ flat directory",
+      "description": "Move all 17 .pmod files from bin/core/, bin/transport/, bin/store/, bin/project/, bin/commands/ into bin/Pmp.pmod/ as a flat list. Update module.pmod inherits to use dot-prefix (inherit .Config). Remove the now-empty subdirectories.",
+      "acceptanceCriteria": [
+        "All 17 .pmod files exist directly under bin/Pmp.pmod/ (Config.pmod, Helpers.pmod, Semver.pmod, Source.pmod, Http.pmod, Resolve.pmod, Store.pmod, StoreCmd.pmod, Lockfile.pmod, Manifest.pmod, Validate.pmod, Verify.pmod, Project.pmod, Env.pmod, Install.pmod, Update.pmod, LockOps.pmod)",
+        "bin/Pmp.pmod/module.pmod uses inherit .Config; inherit .Helpers; etc. (dot-prefix for all)",
+        "bin/core/, bin/transport/, bin/store/, bin/project/, bin/commands/ directories no longer exist",
+        "No .pmod files exist outside bin/Pmp.pmod/",
+        "pike -M bin -e 'import Pmp; write(PMP_VERSION);' works with only -M bin (single entry)",
+        "pike -M bin -e 'import Config;' fails with a compilation error (Config not a top-level module)",
+        "pike bin/pmp.pike --help outputs the help text without errors",
+        "Sh tests/runner.sh passes all 208 tests",
+        "Sh tests/pike_tests.sh passes all Pike unit tests"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "This is rename-only. No logic changes. Move files, update inherit statements in module.pmod and in each module that uses inherit .Foo (same-directory references). Cross-module inherits within Pmp.pmod/ use dot-prefix. pmp.pike already does 'import Pmp' so no change needed there."
+    },
+    {
+      "id": "US-002",
+      "title": "Update shell shim to single PIKE_MODULE_PATH",
+      "description": "Update bin/pmp shim to set PIKE_MODULE_PATH to only the bin/ directory. Remove the multi-directory -M entries from tests/pike_tests.sh.",
+      "acceptanceCriteria": [
+        "bin/pmp shim sets PIKE_MODULE_PATH to only the directory containing itself (no colon-separated list)",
+        "tests/pike_tests.sh uses only -M modules -M bin (no -M bin/core etc.)",
+        "tests/runner.sh no longer builds multi-directory PIKE_MODULE_PATH",
+        "sh bin/pmp --help works via the shim",
+        "sh bin/pmp version outputs the version",
+        "Sh tests/runner.sh passes all 208 tests"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Depends on US-001. The shim currently builds a colon-separated PIKE_MODULE_PATH with 6 entries. After US-001, only one entry is needed."
+    },
+    {
+      "id": "US-003",
+      "title": "Fix cross-module inherit statements for flat layout",
+      "description": "Update all internal inherits to use dot-prefix for same-directory references. Currently some modules use unqualified inherits (inherit Http;) which resolve via PIKE_MODULE_PATH. After US-001, everything is in the same directory so dot-prefix works correctly.",
+      "acceptanceCriteria": [
+        "All inherits between modules inside Pmp.pmod/ use dot-prefix: inherit .Http; inherit .Resolve; inherit .Store; etc.",
+        "No unqualified inherits remain (grep '^inherit [A-Z]' should find zero matches inside Pmp.pmod/)",
+        "inherit Config; in module.pmod becomes inherit .Config;",
+        "inherit Helpers; in module.pmod becomes inherit .Helpers;",
+        "Cross-directory references that used inherit .Install (e.g., in LockOps, Update) now work because all files are in the same directory",
+        "pike bin/pmp.pike --help works",
+        "Sh tests/runner.sh passes all 208 tests"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Depends on US-001. After moving files into Pmp.pmod/, all cross-module inherits are same-directory. Change every 'inherit Foo;' to 'inherit .Foo;' inside Pmp.pmod/*.pmod. The module.pmod itself also needs dot-prefix."
+    },
+    {
+      "id": "US-004",
+      "title": "Fix documentation: remove Filesystem.Tar claim, correct module paths",
+      "description": "ARCHITECTURE.md and README.md claim Pike's Filesystem.Tar is used and that there are no external dependencies. In reality, system tar is required (Pike's Gz module is not compiled in). Update all docs to reflect the actual flat Pmp.pmod/ layout and correct external dependency list.",
+      "acceptanceCriteria": [
+        "ARCHITECTURE.md data flow step 8 says 'extract via system tar' not 'Filesystem.Tar'",
+        "ARCHITECTURE.md system diagram and module listing shows flat bin/Pmp.pmod/ layout",
+        "README.md accurately lists tar as an external dependency (alongside git for self-hosted and self-update)",
+        "README.md no longer claims 'No external deps needed (no curl, tar, sha256sum)'",
+        "AGENTS.md Architecture section lists modules under bin/Pmp.pmod/ not bin/Pmp.pmod/*.pmod or subdirectories",
+        "AGENTS.md test counts match actual (208 shell, verify Pike count)",
+        "No references to bin/core/, bin/transport/, bin/store/, bin/project/, bin/commands/ remain in any documentation"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Depends on US-001, US-002, US-003. Must update ARCHITECTURE.md, README.md, AGENTS.md, and any other docs referencing the old layout."
+    },
+    {
+      "id": "US-005",
+      "title": "Add satisfies_range function to Semver.pmod",
+      "description": "Add a satisfies_range(string tag, string range) function that checks whether a semver tag satisfies a range constraint. Support caret (^) and tilde (~) prefixes.",
+      "acceptanceCriteria": [
+        "New function satisfies_range(string tag, string range) in Semver.pmod",
+        "satisfies_range('v1.3.0', '^1.2.0') returns 1 (>=1.2.0, <2.0.0)",
+        "satisfies_range('v2.0.0', '^1.2.0') returns 0 (>=2.0.0 not allowed)",
+        "satisfies_range('v0.2.5', '^0.2.0') returns 1 (>=0.2.0, <0.3.0)",
+        "satisfies_range('v0.3.0', '^0.2.0') returns 0",
+        "satisfies_range('v1.2.5', '~1.2.0') returns 1 (>=1.2.0, <1.3.0)",
+        "satisfies_range('v1.3.0', '~1.2.0') returns 0",
+        "Empty range returns 1 (no constraint = any version)",
+        "Non-range (exact tag like 'v1.2.0') returns 1 only if tag matches exactly",
+        "Pike unit tests for satisfies_range pass",
+        "pike bin/pmp.pike --help still works"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Pure function, no I/O. Can be tested independently. Follow cargo semver range semantics."
+    },
+    {
+      "id": "US-006",
+      "title": "Wire range constraints into install_one resolution",
+      "description": "Update source_to_version to extract range prefixes (^, ~) from #suffix. Update install_one to filter resolved tags through satisfies_range when a range is specified. Lockfile stores exact resolved version, not the range.",
+      "acceptanceCriteria": [
+        "source_to_version('github.com/owner/repo#^1.2.0') returns '^1.2.0'",
+        "source_to_version('github.com/owner/repo#v1.2.0') returns 'v1.2.0' (unchanged)",
+        "source_to_version('github.com/owner/repo') returns '' (unchanged)",
+        "install_one with range constraint resolves to the latest tag satisfying the range",
+        "install_one with range constraint that no tag satisfies dies with clear error message",
+        "Lockfile entry stores the exact resolved tag (e.g., 'v1.3.0'), not the range ('^1.2.0')",
+        "pike.json stores the range in the source URL: 'github.com/owner/repo#^1.2.0'",
+        "Sh tests/runner.sh passes all 208 tests",
+        "New shell test for range-based install"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Depends on US-005. Changes Source.pmod (source_to_version), Install.pmod (install_one), and Resolve.pmod (add a filter step). The range is in the source URL, resolved at install time, and the exact version is stored in the lockfile."
+    },
+    {
+      "id": "US-007",
+      "title": "Add lockfile v2 with integrity checksum",
+      "description": "Extend the lockfile format to v2 with a self-verifying integrity line. The integrity line is the SHA-256 hash of all entry lines (excluding comments and the integrity line itself). v1 lockfiles are still readable.",
+      "acceptanceCriteria": [
+        "write_lockfile() writes v2 header: '# pmp lockfile v2'",
+        "write_lockfile() appends integrity line: '# integrity<TAB><sha256>'",
+        "Integrity hash computed over all entry lines concatenated with newlines",
+        "read_lockfile() validates integrity on v2 lockfiles; dies on mismatch",
+        "read_lockfile() reads v1 lockfiles without error (forward compat)",
+        "v2 lockfile rejected by pmp that only knows v1 (version check already exists)",
+        "Lockfile round-trip: write then read produces identical entries",
+        "Tampered lockfile (changed entry) detected on read",
+        "All 208 shell tests pass",
+        "New tests for v2 integrity verification"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Changes Lockfile.pmod only. Bump LOCKFILE_VERSION from 1 to 2. The integrity line covers all non-comment, non-empty data lines."
+    },
+    {
+      "id": "US-008",
+      "title": "Add pmp why command for dependency tree tracing",
+      "description": "Add cmd_why(string module_name, mapping ctx) that traces the dependency path from pike.json direct dependencies to the requested module via BFS through installed packages' pike.json files.",
+      "acceptanceCriteria": [
+        "pmp why <installed-module> prints dependency chain: 'module v1.2.3 (direct)' or 'module v1.2.3 <- parent v2.0.0 <- root v1.0.0'",
+        "pmp why for a direct dependency shows '(direct)' suffix",
+        "pmp why for a transitive dependency shows the full chain",
+        "pmp why for a non-existent module dies with 'module not found'",
+        "pmp why works with both local and remote dependencies",
+        "Add 'pmp why' to help text in pmp.pike print_help()",
+        "Add 'why' case to command dispatch switch in _main()",
+        "All 208 shell tests pass",
+        "pike bin/pmp.pike --help shows the why command"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "New command in a new file or added to Project.pmod. Reads lockfile for installed versions, then BFS through each package's pike.json dependencies. Simple graph traversal."
+    }
+  ]
+}

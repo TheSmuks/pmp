@@ -7,7 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- fix: `PUnit.Process` shadowed Pike's `Process` — store-level rename `Process.pmod` → `PikeProcess.pmod` prevents shadowing
+## [0.4.0] - 2026-05-01
+
 - fix: lockfile replay validates store entry before symlinking (stale lockfile no longer creates broken symlinks)
 - fix: test infrastructure — shell tests and Pike tests can run in sequence without store pollution
 - fix: test counts updated to 211 shell + 342 Pike

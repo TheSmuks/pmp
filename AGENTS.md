@@ -11,7 +11,7 @@ pmp (Pike Module Package Manager) installs, versions, and resolves dependencies 
 - Verify syntax: `pike bin/pmp.pike --help`
 - Check version: `pike bin/pmp.pike version` (or `sh bin/pmp version`)
 
-Expected result: 208 passed, 0 failed, exit code 0 (shell tests via `sh tests/runner.sh`); 330 passed for `sh tests/pike_tests.sh`.
+Expected result: 211 passed, 0 failed, exit code 0 (shell tests via `sh tests/runner.sh`); 342 passed for `sh tests/pike_tests.sh`.
 
 ## Architecture
 
@@ -181,7 +181,7 @@ The TigerBeetle coding style guide informs our approach. Key principles adapted 
 - Uses `assert`, `assert_exists`, `assert_not_exists`, `assert_output_contains` helpers
 - Tests create temp dirs and clean up on exit
 - Tests that need the store back up/restore `~/.pike/store/`
-- Every change must pass all 208 shell tests and 330 Pike unit tests
+- Every change must pass all 211 shell tests and 342 Pike unit tests
 
 ## Commit conventions
 
@@ -200,7 +200,7 @@ Scopes: `install`, `store`, `lockfile`, `deps`, `env`, `cli`, `validate`
 | Source file changed | Must also update |
 |---|---|
 | `bin/pmp.pike` or `bin/Pmp.pmod/` (behavior changes) | `CHANGELOG.md`, `ARCHITECTURE.md` |
-| `tests/test_install.sh` (count changes) | `CHANGELOG.md`, `AGENTS.md` (baseline) |
+| `tests/test_install.sh` (test count changes) | `CHANGELOG.md`, `AGENTS.md` (baseline) |
 | `bin/pmp.pike` (new commands/flags) | `ARCHITECTURE.md`, `AGENTS.md` |
 | Any source file | `CHANGELOG.md` ([Unreleased]) |
 
@@ -209,7 +209,7 @@ Doc-only changes do NOT trigger this checklist.
 ## PR instructions
 
 - Title format: descriptive summary of the change
-- Run `sh tests/test_install.sh` or `sh tests/runner.sh` before committing — all 208 tests must pass; also run `sh tests/pike_tests.sh` (330 tests)
+- Run `sh tests/test_install.sh` or `sh tests/runner.sh` before committing — all 211 tests must pass; also run `sh tests/pike_tests.sh` (342 tests)
 - If adding new features, add corresponding test cases
 
 

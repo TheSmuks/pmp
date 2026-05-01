@@ -9,6 +9,7 @@
 PMP="$(cd "$(dirname "$0")/.." && pwd)/bin/pmp"
 TESTDIR=""
 STORE_BACKUP=""
+_STORE_HAD_CONTENT=""  # set to 1 if store was non-empty when tests started
 
 pass=0
 fail=0
@@ -89,7 +90,10 @@ assert_output_contains() {
 
 # Backup the real store before tests that might modify it
 backup_store() {
-    if [ -d "${HOME:-/tmp}/.pike/store" ]; then
+    # Don't back up an empty store — it just wastes tmp space and complicates restore.
+    # If the store is empty, tests that need isolation (like test_10_store.sh)
+    # will create their own mock entries.
+    if [ -d "${HOME:-/tmp}/.pike/store" ] && [ -n "$(ls -A "${HOME:-/tmp}/.pike/store" 2>/dev/null)" ]; then
         _STORE_BACKUP=$(mktemp -d)
         cp -a "${HOME:-/tmp}/.pike/store" "$_STORE_BACKUP/store"
         export _STORE_BACKUP
@@ -97,12 +101,37 @@ backup_store() {
 }
 
 restore_store() {
-    if [ -n "$_STORE_BACKUP" ] && [ -d "$_STORE_BACKUP/store" ]; then
-        rm -rf "${HOME:-/tmp}/.pike/store"
-        mv "$_STORE_BACKUP/store" "${HOME:-/tmp}/.pike/store"
-        rm -rf "$_STORE_BACKUP"
-        unset _STORE_BACKUP
+    # Restore the store from runner.sh's startup backup (_PMP_STORE_BACKUP).
+    # Individual tests may have their own $_STORE_BACKUP for isolation (e.g. test_10_store.sh).
+    # At cleanup, we restore from the runner.sh backup first.
+    if [ "$_STORE_HAD_CONTENT" = "1" ] && [ -n "$_PMP_STORE_BACKUP" ] && [ -d "$_PMP_STORE_BACKUP/store" ]; then
+        if [ -n "$(ls -A "$_PMP_STORE_BACKUP/store" 2>/dev/null)" ]; then
+            rm -rf "${HOME:-/tmp}/.pike/store"
+            mv "$_PMP_STORE_BACKUP/store" "${HOME:-/tmp}/.pike/store"
+        fi
     fi
+    # Recreate modules/ directory and PUnit symlink if store is non-empty but modules/ is missing.
+    # Some tests end with `cd /` so we need to cd to the project dir.
+    _proj_root=$(cd "$(dirname "$PMP")/.." && pwd)
+    if [ -d "${HOME:-/tmp}/.pike/store" ] && [ -n "$(ls -A "${HOME:-/tmp}/.pike/store" 2>/dev/null)" ]; then
+        if ! [ -e "$_proj_root/modules/PUnit.pmod" ]; then
+            # Create modules/ dir and symlink PUnit directly from the store.
+            # This avoids calling `pmp install` which requires network.
+            mkdir -p "$_proj_root/modules"
+            # Find the PUnit store entry (punit-tests repo)
+            for _entry in "${HOME:-/tmp}/.pike/store"/*; do
+                if [ -d "$_entry/PUnit.pmod" ]; then
+                    ln -sf "$_entry/PUnit.pmod" "$_proj_root/modules/PUnit.pmod"
+                    break
+                fi
+            done
+        fi
+    fi
+    [ -n "$_PMP_STORE_BACKUP" ] && rm -rf "$_PMP_STORE_BACKUP"
+    unset _PMP_STORE_BACKUP _STORE_HAD_CONTENT
+    # Also clean up any test-specific backup (test_10_store.sh etc.)
+    [ -n "$_STORE_BACKUP" ] && rm -rf "$_STORE_BACKUP"
+    unset _STORE_BACKUP
 }
 
 # ── Temp dir tracking ──────────────────────────────────────────────

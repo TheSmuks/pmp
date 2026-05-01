@@ -1,5 +1,38 @@
 # test_update.sh — Update summary tests
 
+printf '\n=== Update: update preserves unrelated modules ===\n'
+# Install two packages, update only one — the other must not be touched
+rm -rf modules libs pike.lock pike.lock.prev pike.json .pike-env
+mkdir -p libs/pkg-a libs/pkg-b
+
+cat > libs/pkg-a/module.pmod << 'PIKE'
+// pkg-a
+constant pkg = "a";
+PIKE
+
+cat > libs/pkg-b/module.pmod << 'PIKE'
+// pkg-b
+constant pkg = "b";
+PIKE
+
+echo '{"name":"test","dependencies":{"pkg-a":"./libs/pkg-a","pkg-b":"./libs/pkg-b"}}' > pike.json
+$PMP install
+
+# Get the symlink target of pkg-b before the update
+_pkg_b_target_before="$(readlink modules/pkg-b.pmod 2>/dev/null || echo)"
+
+# Update (no args = update all)
+_upd_out="$($PMP update 2>&1)"
+_rc=$?
+assert "update exits 0" "0" "$_rc"
+
+# pkg-b symlink must still exist and point to the same target
+_pkg_b_target_after="$(readlink modules/pkg-b.pmod 2>/dev/null || echo)"
+assert "pkg-b symlink preserved after update" "$_pkg_b_target_before" "$_pkg_b_target_after"
+case "$(cat modules/pkg-b.pmod/module.pmod 2>/dev/null)" in
+    *'constant pkg = "b";'*) _ok=1 ;; *) _ok=0 ;; esac
+assert "pkg-b content unchanged" "1" "$_ok"
+
 printf '\n=== Update: pmp update shows table ===\n'
 # Create a project with two versions of a local dep to test actual version change
 rm -rf modules libs pike.lock pike.lock.prev pike.json .pike-env

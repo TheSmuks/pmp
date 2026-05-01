@@ -319,6 +319,17 @@ void cmd_install_all(string target, mapping ctx) {
                     if (sizeof(found_entry) > 0) {
                         string entry_full = combine_path(ctx["store_dir"], found_entry);
 
+                        // Validate that the store entry exists and has valid structure.
+                        // resolve_module_path() checks for name.pmod/ or module.pmod inside
+                        // entry_full. If neither exists, the lockfile entry is stale.
+                        mapping rmp = resolve_module_path(ln, entry_full);
+                        if (!Stdio.exist(rmp->target)) {
+                            info("lockfile entry for " + ln
+                                 + " not in store (stale) — re-resolving");
+                            use_lockfile = 0;
+                            break;
+                        }
+
                         // Verify content integrity
                         if (sizeof(lhash) > 0) {
                             string stored = read_stored_hash(entry_full);
@@ -332,7 +343,6 @@ void cmd_install_all(string target, mapping ctx) {
                         }
 
                         Stdio.mkdirhier(target);
-                        mapping rmp = resolve_module_path(ln, entry_full);
                         string dest = combine_path(target, rmp->link_name);
                         atomic_symlink(rmp->target, dest);
                         info("installed " + ln + " " + lt

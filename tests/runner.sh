@@ -25,6 +25,25 @@ _PMP_DIR="$(dirname "$PMP")"
 # Build Pike module path — all modules under Pmp.pmod/
 _PIKE_M="$_PMP_DIR"
 
+# Check if store had content before tests start — used by cleanup() in helpers.sh
+# to decide whether to restore the store.
+if [ -d "${HOME:-/tmp}/.pike/store" ] && [ -n "$(ls -A "${HOME:-/tmp}/.pike/store" 2>/dev/null)" ]; then
+    _STORE_HAD_CONTENT=1
+else
+    _STORE_HAD_CONTENT=0
+fi
+export _STORE_HAD_CONTENT
+
+# Backup the store at startup (before any test can modify it).
+# Uses _PMP_STORE_BACKUP so test-specific backup_store() calls don't overwrite it.
+# Tests that need isolated store backups (test_10_store.sh etc.) use their own $_STORE_BACKUP
+# via backup_store(). At cleanup time, restore_store() restores from _PMP_STORE_BACKUP first.
+if [ -d "${HOME:-/tmp}/.pike/store" ]; then
+    _PMP_STORE_BACKUP=$(mktemp -d)
+    cp -a "${HOME:-/tmp}/.pike/store" "$_PMP_STORE_BACKUP/store"
+    export _PMP_STORE_BACKUP
+fi
+
 # ── Discover test files ───────────────────────────────────────────
 
 if [ $# -gt 0 ]; then

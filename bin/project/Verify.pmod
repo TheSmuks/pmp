@@ -210,6 +210,15 @@ int cmd_doctor(mapping ctx) {
         ok = 0;
     }
 
+    // ── 2b. tar ──────────────────────────────────────────────────
+    string tar_bin = Process.search_path("tar");
+    if (tar_bin) {
+        write(sprintf("  tar:         %s\n", tar_bin));
+    } else {
+        warn("tar not found in PATH — required for GitHub/GitLab installs");
+        ok = 0;
+    }
+
     // ── 3. Tokens (network-dependent) ──────────────────────────
     if (!ctx["offline"]) {
         string gh_token = getenv("GITHUB_TOKEN") || "";

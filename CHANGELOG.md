@@ -38,7 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(test): convert test_outdated_no_pike_json to subprocess isolation — die() calls exit() which cannot be caught by PUnit catch blocks, killing the entire test runner process
 - fix(test): correct `run_pike` helper in `LockOpsAdversarialTests` — use `proc->wait()` return value for exit code instead of `proc->status()` which returns process state constant, not exit code
 - fix(test): use absolute path for local dep in `test_rollback_restores_local_dep` — relative `./libs/my-lib` resolved against CWD (pmp repo root) instead of temp project directory
-### Added
 - feat: extract `prune_stale_deps()` to Lockfile.pmod — shared BFS transitive dep pruning used by both `cmd_install_all` and `cmd_update`
 - feat: `sanitize_url()` in Helpers.pmod — strips credentials from URLs before display in error messages
 - feat: offline mode hardened — install --offline sets ctx for downstream; cmd_outdated, cmd_changelog, cmd_doctor skip network calls when ctx["offline"] is set (currently only via install --offline)

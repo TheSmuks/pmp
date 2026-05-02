@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 9co|
 10ke|### Fixed
 11ke|fix(docs): corrected AGENTS.md line counts (Verify ~269, Update ~210, LockOps ~281) and total source (~4825)
-fix(install): install.sh now uses `^{commit}` to dereference annotated tags during version verification — prevents false checksum mismatch on annotated tag checkouts
+11ke|fix(install): install.sh now uses `^{commit}` to dereference annotated tags during version verification — prevents false checksum mismatch on annotated tag checkouts
 12ke|fix(docs): corrected ARCHITECTURE.md line counts (pmp.pike ~274, Install.pmod ~582)
 13ke|fix(docs): updated AGENTS.md and ARCHITECTURE.md shell test count to 211 (were 172 in ARCHITECTURE.md)
 14ke|fix(docs): updated install.sh and README.md version examples to v0.4.0

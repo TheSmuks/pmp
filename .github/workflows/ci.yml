@@ -20,6 +20,18 @@ jobs:
       - name: Verify Pike
         run: pike --version
 
+      - name: Test install script with version pin
+        run: |
+          TMPDIR=$(mktemp -d)
+          PMP_VERSION=v0.4.0 PMP_INSTALL_DIR="$TMPDIR/pmp" sh install.sh
+          "$TMPDIR/pmp/bin/pmp" version
+          rm -rf "$TMPDIR"
+      - name: Test install script without version pin
+        run: |
+          TMPDIR=$(mktemp -d)
+          PMP_INSTALL_DIR="$TMPDIR/pmp-latest" sh install.sh
+          "$TMPDIR/pmp-latest/bin/pmp" --version
+          rm -rf "$TMPDIR"
       - name: Run shell tests
         run: sh tests/test_install.sh
 

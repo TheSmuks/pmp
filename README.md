@@ -23,7 +23,7 @@ wget -qO- https://github.com/TheSmuks/pmp/install.sh | sh
 Pin to a specific version:
 
 ```bash
-curl -LsSf https://github.com/TheSmuks/pmp/install.sh | env PMP_VERSION=v0.3.0 sh
+curl -LsSf https://github.com/TheSmuks/pmp/install.sh | env PMP_VERSION=v0.4.0 sh
 ```
 
 ### Environment variables

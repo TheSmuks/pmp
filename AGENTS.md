@@ -2,7 +2,7 @@
 
 ## Project overview
 
-pmp (Pike Module Package Manager) installs, versions, and resolves dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths. The architecture is a flat module layout: `bin/pmp.pike` (~274 lines, entry point with config init, error handling, and command dispatch) and a module library under `bin/Pmp.pmod/` (17 functional modules as flat `.pmod` files + 1 namespace-only `module.pmod`, ~4672 lines total source), invoked via a POSIX sh shim `bin/pmp` that sets a single `PIKE_MODULE_PATH` to `bin/`. Sub-modules use `import .Foo;` for sibling access; pmp.pike uses `import Pmp.Config; import Pmp.Helpers;` etc. Required external tools: tar/gunzip (for `.tar.gz` extraction), git (for self-hosted and self-update).
+pmp (Pike Module Package Manager) installs, versions, and resolves dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths. The architecture is a flat module layout: `bin/pmp.pike` (~274 lines, entry point with config init, error handling, and command dispatch) and a module library under `bin/Pmp.pmod/` (17 functional modules as flat `.pmod` files + 1 namespace-only `module.pmod`, ~4825 lines total source), invoked via a POSIX sh shim `bin/pmp` that sets a single `PIKE_MODULE_PATH` to `bin/`. Sub-modules use `import .Foo;` for sibling access; pmp.pike uses `import Pmp.Config; import Pmp.Helpers;` etc. Required external tools: tar/gunzip (for `.tar.gz` extraction), git (for self-hosted and self-update).
 
 ## Setup commands
 
@@ -22,7 +22,7 @@ bin/pmp.pike           Entry point (~274 lines) — uses `import Pmp.Config; imp
 bin/Pmp.pmod/          Flat module library (all 17 functional modules + module.pmod namespace)
   module.pmod          Namespace-only file — no inherit re-exports; makes `import Pmp` work
   Config.pmod          PMP_VERSION constant; EXIT_OK/EXIT_ERROR/EXIT_INTERNAL exit codes; PMP_VERBOSE/PMP_QUIET variables
-  Helpers.pmod         die, die_internal, info, warn, debug, need_cmd, json_field, find_project_root, compute_sha256 (streaming), sanitize_url, project_lock/unlock, store_lock/unlock
+  Helpers.pmod         die, die_internal, info, warn, debug, need_cmd, json_field, find_project_root, compute_sha256 (streaming), sanitize_url, atomic_symlink, atomic_write, validate_dep_name, project_lock/unlock, store_lock/unlock, advisory_lock, advisory_unlock, make_temp_dir, resolve_local_path, register_cleanup_dir, unregister_cleanup_dir, run_cleanup
   Semver.pmod          parse_semver, compare_semver, sort_tags_semver, classify_bump
   Source.pmod          detect_source_type, source_to_name/version/domain/repo_path/strip_version
   Http.pmod            http_get, http_get_safe, github_auth_headers; retry with jitter, Retry-After, split connect/read timeouts, body size limit
@@ -31,13 +31,13 @@ bin/Pmp.pmod/          Flat module library (all 17 functional modules + module.p
   StoreCmd.pmod        cmd_store (status + prune)
   Lockfile.pmod        lockfile_add_entry, write_lockfile, read_lockfile, lockfile_has_dep, merge_lock_entries; LOCKFILE_VERSION, tab/newline validation
   Manifest.pmod        add_to_manifest, parse_deps
-  Validate.pmod        validate_manifests — warn on undeclared imports/inherits/includes
-  Verify.pmod          Project and store integrity verification (~259 lines). Functions: cmd_verify(mapping ctx)→int, cmd_doctor(mapping ctx)→int.
+rn|  Validate.pmod        validate_manifests, strip_comments_and_strings, init_std_libs — warn on undeclared imports/inherits/includes
+ci|  Verify.pmod          Project and store integrity verification (~269 lines). Functions: cmd_verify(mapping ctx)→int, cmd_doctor(mapping ctx)→int.
   Project.pmod         cmd_init (write verification), cmd_list (column headers), cmd_clean (summary), cmd_remove (path traversal protection)
   Env.pmod             cmd_env, build_paths, cmd_run, cmd_resolve (Pike-native _has_headers)
   Install.pmod         install_one, cmd_install, cmd_install_all, cmd_install_source
-  Update.pmod          Update and outdated commands (~200 lines). Functions: cmd_update, cmd_outdated, print_update_summary.
-  LockOps.pmod         Lock, rollback, and changelog commands (~280 lines). Functions: cmd_lock, cmd_rollback, cmd_changelog.
+bj|  Update.pmod          Update and outdated commands (~210 lines). Functions: cmd_update, cmd_outdated, print_update_summary.
+yg|  LockOps.pmod         Lock, rollback, and changelog commands (~281 lines). Functions: cmd_lock, cmd_rollback, cmd_changelog.
 
 tests/test_install.sh  Test suite (pure sh, delegates to runner.sh)
 install.sh             curl-pipe-sh installer (POSIX sh)

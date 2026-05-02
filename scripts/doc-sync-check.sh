@@ -68,6 +68,83 @@ if grep -q 'Status:.*Accepted' docs/decisions/0003-lockfile-v2.md 2>/dev/null; t
     ERRORS="${ERRORS}ERROR: docs/decisions/0003-lockfile-v2.md claims Accepted but lockfile v2 is not implemented\n"
 fi
 
+# ── 8. Line count consistency (AGENTS.md vs actual files) ─────────
+# Check that claimed line counts are within ±50 lines of actual
+# (allowing for approximations in documentation)
+
+check_line_count() {
+    ACTUAL_LINES="$1"
+    CLAIM="$2"        # raw ~NNN string
+    DOC_NAME="$3"
+
+    # Strip leading tilde
+    CLAIM_VAL=$(echo "$CLAIM" | sed 's/~//')
+
+    # Calculate absolute difference
+    DIFF=$(( ACTUAL_LINES - CLAIM_VAL ))
+    if [ "$DIFF" -lt 0 ]; then
+        DIFF=$((- DIFF))
+    fi
+
+    # Allow ±50 lines tolerance for line count approximations
+    if [ "$DIFF" -gt 50 ]; then
+        ERRORS="${ERRORS}ERROR: $DOC_NAME claims ~${CLAIM_VAL} but actual is ${ACTUAL_LINES} lines (diff: $DIFF)\n"
+    fi
+}
+
+# Verify.pmod line count
+VERIFY_ACTUAL=$(wc -l < "$REPO_ROOT/bin/Pmp.pmod/Verify.pmod" 2>/dev/null || echo 0)
+VERIFY_CLAIM=$(grep 'Verify.pmod' "$REPO_ROOT/AGENTS.md" | grep -o '~[0-9]\+' | head -1)
+if [ -n "$VERIFY_CLAIM" ]; then
+    check_line_count "$VERIFY_ACTUAL" "$VERIFY_CLAIM" "AGENTS.md (Verify.pmod)"
+fi
+
+# Update.pmod line count
+UPDATE_ACTUAL=$(wc -l < "$REPO_ROOT/bin/Pmp.pmod/Update.pmod" 2>/dev/null || echo 0)
+UPDATE_CLAIM=$(grep 'Update.pmod' "$REPO_ROOT/AGENTS.md" | grep -o '~[0-9]\+' | head -1)
+if [ -n "$UPDATE_CLAIM" ]; then
+    check_line_count "$UPDATE_ACTUAL" "$UPDATE_CLAIM" "AGENTS.md (Update.pmod)"
+fi
+
+# LockOps.pmod line count
+LOCKOPS_ACTUAL=$(wc -l < "$REPO_ROOT/bin/Pmp.pmod/LockOps.pmod" 2>/dev/null || echo 0)
+LOCKOPS_CLAIM=$(grep 'LockOps.pmod' "$REPO_ROOT/AGENTS.md" | grep -o '~[0-9]\+' | head -1)
+if [ -n "$LOCKOPS_CLAIM" ]; then
+    check_line_count "$LOCKOPS_ACTUAL" "$LOCKOPS_CLAIM" "AGENTS.md (LockOps.pmod)"
+fi
+
+# pmp.pike line count (ARCHITECTURE.md section)
+PMPIKE_ACTUAL=$(wc -l < "$REPO_ROOT/bin/pmp.pike" 2>/dev/null || echo 0)
+PMPIKE_CLAIM=$(grep 'pmp.pike' "$REPO_ROOT/ARCHITECTURE.md" | grep -o '~[0-9]\+' | head -1)
+if [ -n "$PMPIKE_CLAIM" ]; then
+    check_line_count "$PMPIKE_ACTUAL" "$PMPIKE_CLAIM" "ARCHITECTURE.md (pmp.pike)"
+fi
+
+# Install.pmod line count (ARCHITECTURE.md section)
+INSTALL_ACTUAL=$(wc -l < "$REPO_ROOT/bin/Pmp.pmod/Install.pmod" 2>/dev/null || echo 0)
+INSTALL_CLAIM=$(grep 'project_lock' "$REPO_ROOT/ARCHITECTURE.md" | grep -o '~[0-9]\+' | head -1)
+if [ -n "$INSTALL_CLAIM" ]; then
+    check_line_count "$INSTALL_ACTUAL" "$INSTALL_CLAIM" "ARCHITECTURE.md (Install.pmod)"
+fi
+
+# Total source line count
+TOTAL_ACTUAL=$(wc -l "$REPO_ROOT/bin/pmp.pike" "$REPO_ROOT/bin/Pmp.pmod"/*.pmod 2>/dev/null | tail -1 | awk '{print $1}')
+# Match "NNN lines total source" pattern specifically
+TOTAL_CLAIM=$(grep -o '~[0-9]\+ lines total source' "$REPO_ROOT/AGENTS.md" 2>/dev/null | grep -o '~[0-9]\+' | head -1)
+if [ -n "$TOTAL_CLAIM" ]; then
+    check_line_count "$TOTAL_ACTUAL" "$TOTAL_CLAIM" "AGENTS.md (total source)"
+fi
+
+# ── 9. Shell test count consistency ───────────────────────────────
+# AGENTS.md and ARCHITECTURE.md should agree on shell test count
+AGENTS_SHELL=$(grep -E '[0-9]{3}' "$REPO_ROOT/AGENTS.md" 2>/dev/null | grep 'shell' | grep -o '[0-9]\{3\}' | head -1)
+ARCH_SHELL=$(grep -E '[0-9]{3}' "$REPO_ROOT/ARCHITECTURE.md" 2>/dev/null | grep 'test suite' | grep -o '[0-9]\{3\}' | head -1)
+if [ -n "$AGENTS_SHELL" ] && [ -n "$ARCH_SHELL" ]; then
+    if [ "$AGENTS_SHELL" != "$ARCH_SHELL" ]; then
+        ERRORS="${ERRORS}ERROR: AGENTS.md shell test count ($AGENTS_SHELL) differs from ARCHITECTURE.md ($ARCH_SHELL)\n"
+    fi
+fi
+
 # ── Report ─────────────────────────────────────────────────────────
 if [ -n "$ERRORS" ]; then
     printf "$ERRORS"

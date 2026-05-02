@@ -18,7 +18,6 @@ _TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Set up trap for cleanup
 trap cleanup EXIT
 
-
 # Derive module path from the PMP shim location
 _PMP_DIR="$(dirname "$PMP")"
 
@@ -43,6 +42,25 @@ if [ -d "${HOME:-/tmp}/.pike/store" ]; then
     cp -a "${HOME:-/tmp}/.pike/store" "$_PMP_STORE_BACKUP/store"
     export _PMP_STORE_BACKUP
 fi
+
+# Backup project root state that tests may modify.
+# Tests source into the same shell process; non-isolated tests can overwrite
+# pike.json, pike.lock, and create modules/libs/ in the project root.
+# cleanup() (in helpers.sh) restores these after all tests finish.
+_PROJ_ROOT="$(cd "$(dirname "$PMP")/.." && pwd)"
+_PIKE_JSON_BACKUP=""
+if [ -f "$_PROJ_ROOT/pike.json" ]; then
+    _PIKE_JSON_BACKUP=$(mktemp)
+    cat "$_PROJ_ROOT/pike.json" > "$_PIKE_JSON_BACKUP"
+fi
+_PIKE_LOCK_BACKUP=""
+if [ -f "$_PROJ_ROOT/pike.lock" ]; then
+    _PIKE_LOCK_BACKUP=$(mktemp)
+    cat "$_PROJ_ROOT/pike.lock" > "$_PIKE_LOCK_BACKUP"
+fi
+_MODULES_EXISTED=0
+[ -d "$_PROJ_ROOT/modules" ] && _MODULES_EXISTED=1
+export _PIKE_JSON_BACKUP _PIKE_LOCK_BACKUP _MODULES_EXISTED _PROJ_ROOT
 
 # ── Discover test files ───────────────────────────────────────────
 

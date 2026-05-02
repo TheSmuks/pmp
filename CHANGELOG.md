@@ -5,9 +5,19 @@ All notable changes to pmp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-## [0.4.0] - 2026-05-01
+8zz|## [Unreleased]
+9co|
+10ke|### Fixed
+11ke|fix(docs): corrected AGENTS.md line counts (Verify ~269, Update ~210, LockOps ~281) and total source (~4825)
+12ke|fix(docs): corrected ARCHITECTURE.md line counts (pmp.pike ~274, Install.pmod ~582)
+13ke|fix(docs): updated AGENTS.md and ARCHITECTURE.md shell test count to 211 (were 172 in ARCHITECTURE.md)
+14ke|fix(docs): updated install.sh and README.md version examples to v0.4.0
+15ke|fix(docs): updated Pike test file names in ARCHITECTURE.md (SourceAdversarialTests, LockfileAdversarialTests, HelpersAdversarialTests, etc.)
+16ke|fix(docs): updated Helpers.pmod function list in AGENTS.md (added atomic_symlink, atomic_write, validate_dep_name, advisory_lock/unlock, make_temp_dir, resolve_local_path, register/unregister_cleanup_dir, run_cleanup)
+17vv|fix(docs): updated Validate.pmod function list in AGENTS.md (added strip_comments_and_strings, init_std_libs)
+18jk|fix(docs): extended scripts/doc-sync-check.sh with line count consistency checks (Verify/Update/LockOps, pmp.pike, Install.pmod totals, shell test count match)
+18to|
+19rz|## [0.4.0] - 2026-05-01
 
 ### Added
 

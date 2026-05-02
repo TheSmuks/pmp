@@ -2,7 +2,7 @@
 # pmp installer — curl-pipe-sh friendly, pure POSIX sh
 # Usage: sh install.sh
 #   PMP_INSTALL_DIR=~/.pmp     override install location
-#   PMP_VERSION=v0.3.0         pin to a specific tag
+#   PMP_VERSION=v0.4.0         pin to a specific tag
 #   PMP_MODIFY_PATH=1          opt in to shell rc PATH modification
 
 set -eu

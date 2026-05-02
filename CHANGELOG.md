@@ -13,17 +13,18 @@ feat(cli): `pmpx` command — download and execute a Pike module without install
 test(cli): shell and Pike unit tests for pmpx (error paths, entry point resolution, cache reuse, no side effects)
 ### Fixed
 fix(docs): updated AGENTS.md and ARCHITECTURE.md for Exec.pmod (18 modules, ~4984 lines, test counts, function listing)
-11ke|fix(docs): corrected AGENTS.md line counts (Verify ~269, Update ~210, LockOps ~281) and total source (~4825)
-11ke|fix(install): install.sh now uses `^{commit}` to dereference annotated tags during version verification — prevents false checksum mismatch on annotated tag checkouts
-12ke|fix(docs): corrected ARCHITECTURE.md line counts (pmp.pike ~274, Install.pmod ~582)
-13ke|fix(docs): updated AGENTS.md and ARCHITECTURE.md shell test count to 211 (were 172 in ARCHITECTURE.md)
-14ke|fix(docs): updated install.sh and README.md version examples to v0.4.0
-15ke|fix(docs): updated Pike test file names in ARCHITECTURE.md (SourceAdversarialTests, LockfileAdversarialTests, HelpersAdversarialTests, etc.)
-16ke|fix(docs): updated Helpers.pmod function list in AGENTS.md (added atomic_symlink, atomic_write, validate_dep_name, advisory_lock/unlock, make_temp_dir, resolve_local_path, register/unregister_cleanup_dir, run_cleanup)
-17vv|fix(docs): updated Validate.pmod function list in AGENTS.md (added strip_comments_and_strings, init_std_libs)
-18jk|fix(docs): extended scripts/doc-sync-check.sh with line count consistency checks (Verify/Update/LockOps, pmp.pike, Install.pmod totals, shell test count match)
-18to|
-19rz|## [0.4.0] - 2026-05-01
+fix(docs): added pmpx to README.md; cleaned anchor artifacts; corrected Install.pmod listing; added corruption guard to doc-sync-check
+fix(docs): corrected AGENTS.md line counts (Verify ~269, Update ~210, LockOps ~281) and total source (~4825)
+fix(install): install.sh now uses `^{commit}` to dereference annotated tags during version verification — prevents false checksum mismatch on annotated tag checkouts
+fix(docs): corrected ARCHITECTURE.md line counts (pmp.pike ~274, Install.pmod ~582)
+fix(docs): updated AGENTS.md and ARCHITECTURE.md shell test count to 211 (were 172 in ARCHITECTURE.md)
+fix(docs): updated install.sh and README.md version examples to v0.4.0
+fix(docs): updated Pike test file names in ARCHITECTURE.md (SourceAdversarialTests, LockfileAdversarialTests, HelpersAdversarialTests, etc.)
+fix(docs): updated Helpers.pmod function list in AGENTS.md (added atomic_symlink, atomic_write, validate_dep_name, advisory_lock/unlock, make_temp_dir, resolve_local_path, register/unregister_cleanup_dir, run_cleanup)
+fix(docs): updated Validate.pmod function list in AGENTS.md (added strip_comments_and_strings, init_std_libs)
+fix(docs): extended scripts/doc-sync-check.sh with line count consistency checks (Verify/Update/LockOps, pmp.pike, Install.pmod totals, shell test count match)
+
+## [0.4.0] - 2026-05-01
 
 ### Added
 

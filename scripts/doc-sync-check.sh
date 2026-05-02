@@ -122,7 +122,7 @@ fi
 
 # Install.pmod line count (ARCHITECTURE.md section)
 INSTALL_ACTUAL=$(wc -l < "$REPO_ROOT/bin/Pmp.pmod/Install.pmod" 2>/dev/null || echo 0)
-INSTALL_CLAIM=$(grep 'project_lock' "$REPO_ROOT/ARCHITECTURE.md" | grep -o '~[0-9]\+' | head -1)
+INSTALL_CLAIM=$(grep 'Install\.pmod.*install_one' "$REPO_ROOT/ARCHITECTURE.md" | grep -o '~[0-9]\+' | head -1)
 if [ -n "$INSTALL_CLAIM" ]; then
     check_line_count "$INSTALL_ACTUAL" "$INSTALL_CLAIM" "ARCHITECTURE.md (Install.pmod)"
 fi
@@ -145,6 +145,15 @@ if [ -n "$AGENTS_SHELL" ] && [ -n "$ARCH_SHELL" ]; then
     fi
 fi
 
+# ── 10. No edit-tool anchor artifacts in tracked docs ───────────────
+ANCHOR_CORRUPT=$(grep -l '[0-9][0-9][a-z][a-z]|' \
+    ARCHITECTURE.md CHANGELOG.md AGENTS.md README.md 2>/dev/null || true)
+if [ -n "$ANCHOR_CORRUPT" ]; then
+    for f in $ANCHOR_CORRUPT; do
+        LINES=$(grep -c '[0-9][0-9][a-z][a-z]|' "$f")
+        ERRORS="${ERRORS}ERROR: $f has $LINES line(s) with edit-tool anchor artifacts (NNLL| pattern)\n"
+    done
+fi
 # ── Report ─────────────────────────────────────────────────────────
 if [ -n "$ERRORS" ]; then
     printf "$ERRORS"

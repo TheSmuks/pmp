@@ -42,13 +42,14 @@ bin/Pmp.pmod/          Flat module namespace (17 modules + namespace file)
                        print_update_summary
   LockOps.pmod         cmd_lock, cmd_rollback, cmd_changelog
                        — lockfile operations and version comparison
+  Exec.pmod           cmd_pmpx, _find_entry_point (~155 lines)
 docs/
   TIGER_STYLE.md       TigerBeetle coding style guide (reference for project conventions)
 tests/pike_tests.sh     Entry point for Pike unit tests (installs PUnit, runs tests/pike/run.pike)
-48di|tests/pike/             PUnit test files (SemverTests, SourceAdversarialTests, LockfileAdversarialTests,
-49sb|                         LockfileIOAdversarialTests, HelpersAdversarialTests, HelpersStateTests,
-50sj|                         StoreCmdAdversarialTests)
-51eq|tests/test_install.sh   Shell integration test suite (211 tests)
+tests/pike/             PUnit test files (SemverTests, SourceAdversarialTests, LockfileAdversarialTests,
+                         LockfileIOAdversarialTests, HelpersAdversarialTests, HelpersStateTests,
+                         StoreCmdAdversarialTests, ExecAdversarialTests)
+tests/test_install.sh   Shell integration test suite (230 tests)
 ```
 
 ## Module Resolution
@@ -108,12 +109,12 @@ Holds all mutable state (`lock_entries`, `visited`, `std_libs`, config paths) an
 - **Configuration** — `pike_bin`, `global_dir`, `local_dir`, `store_dir`, `pike_json`, `lockfile_path`
 - **Mutable state** — `lock_entries` array, `visited` multiset, `std_libs` multiset
 - **Transitive resolution** — `install_one()` orchestrates Store, Resolve, Lockfile modules
-- **Commands** — `cmd_init`, `cmd_install`, `cmd_install_all`, `cmd_install_source`, `cmd_update`, `cmd_rollback`, `cmd_changelog`, `cmd_lock`, `cmd_store`, `cmd_list`, `cmd_clean`, `cmd_remove`, `cmd_run`, `cmd_env`, `cmd_resolve`
+- **Commands** — `cmd_init`, `cmd_install`, `cmd_install_all`, `cmd_install_source`, `cmd_update`, `cmd_rollback`, `cmd_changelog`, `cmd_lock`, `cmd_store`, `cmd_list`, `cmd_clean`, `cmd_remove`, `cmd_run`, `cmd_env`, `cmd_resolve`, `cmd_pmpx`
 - **Main dispatch** — `switch (argv[1])`
 
-### bin/Pmp.pmod/ (module library, 17 modules, flat layout)
+### bin/Pmp.pmod/ (module library, 18 modules, flat layout)
 
-All modules are pure functions — no mutable global state. State is passed as explicit parameters. All 17 modules live as flat `.pmod` files under `bin/Pmp.pmod/`. `module.pmod` is namespace-only (no inherit re-exports).
+All modules are pure functions — no mutable global state. State is passed as explicit parameters. All 18 modules live as flat `.pmod` files under `bin/Pmp.pmod/`. `module.pmod` is namespace-only (no inherit re-exports).
 
 #### Config & Utilities
 
@@ -150,6 +151,7 @@ All modules are pure functions — no mutable global state. State is passed as e
 150zd|- **Install.pmod** — `install_one`, `cmd_install`, `cmd_install_all`, `cmd_install_source`, `project_lock`/`project_unlock` (shared lock helpers, ~582 lines)
 - **Update.pmod** — `cmd_update` (single-module and full update with lock management), `cmd_outdated` (compares lockfile versions with latest remote tags), `print_update_summary`
 - **LockOps.pmod** — `cmd_lock` (resolve + write lockfile without installing), `cmd_rollback` (restore modules from pike.lock.prev), `cmd_changelog` (show commit log between versions via GitHub/GitLab compare APIs)
+- **Exec.pmod** — `cmd_pmpx` (download and execute remote module without installing), `_find_entry_point` (pike.json bin field, heuristic filenames, single .pike fallback, ~155 lines)
 
 ### Content-addressable store
 

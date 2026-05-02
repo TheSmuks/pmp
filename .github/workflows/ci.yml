@@ -26,30 +26,19 @@ jobs:
           PMP_VERSION=v0.4.0 PMP_INSTALL_DIR="$TMPDIR/pmp" sh install.sh
           "$TMPDIR/pmp/bin/pmp" version
           rm -rf "$TMPDIR"
+
       - name: Test install script without version pin
         run: |
           TMPDIR=$(mktemp -d)
           PMP_INSTALL_DIR="$TMPDIR/pmp-latest" sh install.sh
           "$TMPDIR/pmp-latest/bin/pmp" --version
           rm -rf "$TMPDIR"
+
       - name: Run shell tests
         run: sh tests/test_install.sh
 
       - name: Install Pike modules (PUnit)
-        run: |
-          # Clear store to avoid stale entries from previous runs
-          rm -rf ~/.pike/store
-          mkdir -p ~/.pike/store
-          sh bin/pmp install
-          # Verify PUnit is loadable
-          pike -M modules -e 'import PUnit; write("PUnit OK\\n");'
+        run: sh bin/pmp install
 
       - name: Run Pike unit tests
-        run: |
-          # Ensure modules are still available (race condition mitigation)
-          if [ ! -e "modules/PUnit.pmod" ]; then
-            echo "PUnit missing, reinstalling..."
-            sh bin/pmp install
-          fi
-          ls -la modules/
-          sh tests/pike_tests.sh || { echo "Retrying..."; sleep 5; sh tests/pike_tests.sh; }
+        run: sh tests/pike_tests.sh

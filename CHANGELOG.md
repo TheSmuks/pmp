@@ -9,158 +9,159 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.4.0] - 2026-05-01
 
-- fix: lockfile replay validates store entry before symlinking (stale lockfile no longer creates broken symlinks)
-- fix: test infrastructure — shell tests and Pike tests can run in sequence without store pollution
-- fix: test counts updated to 211 shell + 342 Pike
-- docs: `bin/pmp` is the only supported entry point; `pike bin/pmp.pike` requires `PIKE_MODULE_PATH`
-- docs: store integrity strategy documented (content-addressable naming + SHA-256)
-- docs: out-of-scope features (ADR-0003/0004/0005) documented as unimplemented
-- refactor: restructure all 17 modules into canonical Pike layout under `bin/Pmp.pmod/` (flat, no subdirectories)
-- fix: `module.pmod` is now namespace-only — no `inherit` re-exports, sub-modules use `import .Foo;`
-- fix: shell shim sets single `PIKE_MODULE_PATH` instead of 6 colon-separated entries
-- fix: `pmp.pike` uses explicit imports (`import Pmp.Config; import Pmp.Helpers;` etc.)
-- fix: `Config`, `Helpers`, etc. are no longer importable as top-level modules (namespace pollution eliminated)
-- fix: documentation hallucinations corrected — `Filesystem.Tar` is not used (system `tar` required), test counts updated
-- fix: `scripts/doc-sync-check.sh` updated for new module layout
+### Added
 
-- feat: global `--offline` flag works with any command (`pmp outdated --offline`, `pmp changelog --offline`, `pmp doctor --offline`)
-- feat: `tar` dependency check before GitHub/GitLab installs with actionable error message
-- feat: `tar` availability reporting in `pmp doctor`
-- feat: `scripts/doc-sync-check.sh` — CI-enforced doc-code consistency (blocks merge on drift)
-- feat: `cmd_rollback` now reports 'restored N of M modules' with per-entry failure listing
-- feat: `tests/test_35_install_pipeline.sh` — 26-assertion end-to-end install pipeline test with local git fixture
-- feat: `tests/pike/ExtractSecurityTests.pike` — 5 adversarial tar extraction security tests
-- test: `test_22_update.sh` now verifies actual version change (not just 'done' in output)
-- test: `test_21_changelog.sh` now includes success-path test with version comparison verification
-- test: `test_25_self_update.sh` now verifies exit code and output format
-- fix(ci): install PUnit before running Pike tests — modules/ is gitignored and not populated on CI checkout
-- fix(ci): replace `Stdio.PIPE` with temp-file capture in `LockOpsAdversarialTests.pike` — `Stdio.PIPE` unavailable on CI Pike build
-- fix(test): convert test_outdated_no_pike_json to subprocess isolation — die() calls exit() which cannot be caught by PUnit catch blocks, killing the entire test runner process
-- fix(test): correct `run_pike` helper in `LockOpsAdversarialTests` — use `proc->wait()` return value for exit code instead of `proc->status()` which returns process state constant, not exit code
-- fix(test): use absolute path for local dep in `test_rollback_restores_local_dep` — relative `./libs/my-lib` resolved against CWD (pmp repo root) instead of temp project directory
-- feat: extract `prune_stale_deps()` to Lockfile.pmod — shared BFS transitive dep pruning used by both `cmd_install_all` and `cmd_update`
-- feat: `sanitize_url()` in Helpers.pmod — strips credentials from URLs before display in error messages
-- feat: offline mode hardened — install --offline sets ctx for downstream; cmd_outdated, cmd_changelog, cmd_doctor skip network calls when ctx["offline"] is set (currently only via install --offline)
-- feat: path traversal protection for resolved local dependency paths — validates resolved path stays within project root
-- feat: IPv6 SSRF bypass fix — explicit `::1` and `::` checks before expansion, fixed `::` group count bug
-- feat: 4 new sanitize_url tests, 1 new file:// rejection test, 2 new path traversal tests
-- docs: ADR 0003 — lockfile v2 design with integrity field and checksum
-- docs: ADR 0004 — semver range constraints design (caret, tilde, wildcard)
-- docs: ADR 0005 — workspace (monorepo) support design
+feat: global `--offline` flag works with any command (`pmp outdated --offline`, `pmp changelog --offline`, `pmp doctor --offline`)
+feat: `tar` dependency check before GitHub/GitLab installs with actionable error message
+feat: `tar` availability reporting in `pmp doctor`
+feat: `scripts/doc-sync-check.sh` — CI-enforced doc-code consistency (blocks merge on drift)
+feat: `cmd_rollback` now reports 'restored N of M modules' with per-entry failure listing
+feat: `tests/test_35_install_pipeline.sh` — 26-assertion end-to-end install pipeline test with local git fixture
+feat: `tests/pike/ExtractSecurityTests.pike` — 5 adversarial tar extraction security tests
+feat: extract `prune_stale_deps()` to Lockfile.pmod — shared BFS transitive dep pruning used by both `cmd_install_all` and `cmd_update`
+feat: `sanitize_url()` in Helpers.pmod — strips credentials from URLs before display in error messages
+feat: offline mode hardened — install --offline sets ctx for downstream; cmd_outdated, cmd_changelog, cmd_doctor skip network calls when ctx["offline"] is set (currently only via install --offline)
+feat: path traversal protection for resolved local dependency paths — validates resolved path stays within project root
+feat: IPv6 SSRF bypass fix — explicit `::1` and `::` checks before expansion, fixed `::` group count bug
+feat: 4 new sanitize_url tests, 1 new file:// rejection test, 2 new path traversal tests
+feat: StoreCmdAdversarialTests.pike — 11 new tests for dir_size, human_size, and store pruning logic
+feat: 4 new Semver adversarial tests for prerelease leading zeros (S-01), at-sign rejection (S-04), build metadata validation (S-05), and build metadata leading zeros acceptance (S-06)
+feat: PUnit as a dev dependency (`pike.json`) with Pike-level unit tests (81 tests) for `Semver`, `Source`, `Lockfile`, and `Helpers` pure-function modules
+feat: `tests/pike_tests.sh` entry point — installs PUnit and runs tests via `sh tests/pike_tests.sh`
+feat: `tests/pike/` directory with `run.pike` harness and 4 test files: `SemverTests.pike`, `SourceTests.pike`, `LockfilePureTests.pike`, `HelpersTests.pike`
+feat: Adopted ai-project-template v0.2.0 — added `.editorconfig`, `.gitattributes`, `.architecture.yml`, issue/PR templates, CODEOWNERS, SECURITY.md, dependabot.yml, commit-lint/changelog-check/blob-size-policy workflows, `.omp/` agent definitions, `docs/ci.md`, and ADR 0001
+feat: `--verbose` / `--quiet` CLI flags and `PMP_VERBOSE` / `PMP_QUIET` environment variables
+feat: `debug()` logging function for verbose output
+feat: `die_internal()` for assertion-style failures with exit code 2
+feat: Column headers in `pmp list` output (`MODULE`, `VERSION`, `SOURCE`)
+feat: Module count in `pmp clean` summary
+feat: `pmp init` now verifies write success
+feat: `pmp store prune` now deletes unused store entries (with confirmation)
+docs: ADR 0003 — lockfile v2 design with integrity field and checksum
+docs: ADR 0004 — semver range constraints design (caret, tilde, wildcard)
+docs: ADR 0005 — workspace (monorepo) support design
+docs: ARCHITECTURE.md version corrected to 0.4.0, layer count to 5, test counts to 174+325
+docs: AGENTS.md test counts updated, Helpers.pmod description includes new functions
+docs: stale comments fixed in pmp.pike and Install.pmod
+docs: removed aspirational TODO from ConfigTests.pike
+docs: added TigerBeetle's Tiger Style coding guide (docs/TIGER_STYLE.md) as a project reference
 
 ### Changed
-- fix(docs): purged hallucinated features from behavior-spec.md — removed caching/TTL/ETag/non-existent Config constants
-- fix(docs): ADR-0003 lockfile v2 status corrected from Accepted to Proposed (not implemented)
-- fix(docs): SHA prefix corrected from 8 to 16 chars across ARCHITECTURE.md, README.md
-- fix(docs): test counts corrected to 211 shell + 342 Pike across all doc files
-- fix(docs): AGENTS.md now lists tar as an external dependency (was claiming no external deps)
-- fix(docs): offline flag CHANGELOG entry corrected to reflect actual implementation scope
-- fix(install): Config.pmod path updated from bin/Pmp.pmod/ to bin/core/ in install.sh
-- fix(tests): convert in-process die() tests to subprocess in LockfileIOAdversarialTests and ManifestAdversarialTests
-- fix(deps): parse_deps no longer dies on malformed JSON (resilient query function)
-- fix(install): resolve transitive deps for kept-existing modules
-- refactor: moved `project_lock`/`project_unlock` from Install.pmod to Helpers.pmod (architecturally correct placement)
-- refactor: moved `store_lock`/`store_unlock` from Store.pmod to Helpers.pmod
-- refactor: extracted `_follow_with_redirects()` — shared HTTP redirect/SSRF logic, removed 60 lines of duplication from http_get/http_get_safe
-- refactor: extracted `_resolve_remote()` — shared resolve dispatch, consolidated 6 near-duplicate github/gitlab resolve functions
-- fix: `pmp update <module>` now prunes stale transitive deps (BFS walk from direct deps)
-- fix: `lockfile_add_entry` and `merge_lock_entries` die on empty name/source instead of silently dropping
-- fix: `read_lockfile` dies on missing version header instead of silently parsing
-- fix: `_read_json_mapping` dies on malformed JSON instead of returning 0 (missing files still return 0)
-- fix: `classify_bump` restructured with explicit branches for all version transition types
-- fix: `file://` URL rejection already implemented — verified and tested
-- docs: ARCHITECTURE.md version corrected to 0.4.0, layer count to 5, test counts to 174+325
-- docs: AGENTS.md test counts updated, Helpers.pmod description includes new functions
-- docs: stale comments fixed in pmp.pike and Install.pmod
-- docs: removed aspirational TODO from ConfigTests.pike
-- docs: added TigerBeetle's Tiger Style coding guide (docs/TIGER_STYLE.md) as a project reference
-- feat: StoreCmdAdversarialTests.pike — 11 new tests for dir_size, human_size, and store pruning logic
-- feat: 4 new Semver adversarial tests for prerelease leading zeros (S-01), at-sign rejection (S-04), build metadata validation (S-05), and build metadata leading zeros acceptance (S-06)
-- PUnit as a dev dependency (`pike.json`) with Pike-level unit tests (81 tests) for `Semver`, `Source`, `Lockfile`, and `Helpers` pure-function modules
-- `tests/pike_tests.sh` entry point — installs PUnit and runs tests via `sh tests/pike_tests.sh`
-- `tests/pike/` directory with `run.pike` harness and 4 test files: `SemverTests.pike`, `SourceTests.pike`, `LockfilePureTests.pike`, `HelpersTests.pike`
-- Adopted ai-project-template v0.2.0 — added `.editorconfig`, `.gitattributes`, `.architecture.yml`, issue/PR templates, CODEOWNERS, SECURITY.md, dependabot.yml, commit-lint/changelog-check/blob-size-policy workflows, `.omp/` agent definitions, `docs/ci.md`, and ADR 0001
-- Restructured test suite — split `tests/test_install.sh` (803 lines, 97 tests) into a test runner (`tests/runner.sh`) + 25 individual test files with numeric sort ordering
-- `tests/helpers.sh` with extracted assertion functions and setup utilities
-- `tests/test_install.sh` is now a thin shim that delegates to `tests/runner.sh`
-- `pmp store prune` now deletes unused store entries (with confirmation)
-- `cmd_rollback` now warns and continues on missing store entries instead of aborting
-- PUnit version pinned in `pike.json` to prevent breaking CI on upstream releases
-- `--verbose` / `--quiet` CLI flags and `PMP_VERBOSE` / `PMP_QUIET` environment variables
-- `debug()` logging function for verbose output
-- `die_internal()` for assertion-style failures with exit code 2
-- Exit codes documented in help text (0 success, 1 user error, 2 internal error)
-- Environment variable reference in help text (`GITHUB_TOKEN`, `PIKE_BIN`, `TMPDIR`, `PMP_VERBOSE`, `PMP_QUIET`)
-- Column headers in `pmp list` output (`MODULE`, `VERSION`, `SOURCE`)
-- Module count in `pmp clean` summary
-- `pmp init` now verifies write success
-- `install.sh` verifies `pmp version` works after install
-- `install.sh` `git fetch --all --tags` before checkout on update
 
-### Changed
-- refactor: reorganized flat bin/Pmp.pmod/ into layered domain directories (core, transport, store, project, commands) following separation of concerns
-- refactor: updated sh shim and pike_tests.sh to include layered PIKE_MODULE_PATH entries
-- refactor: decomposed Install.pmod (1042 lines) into Install.pmod (~600 lines), Update.pmod (~200 lines), and LockOps.pmod (~280 lines) for focused single-responsibility modules
-- refactor: deduplicated Pike test suites — removed LockfilePureTests, HelpersTests, SourceTests (merged into adversarial counterparts), removed classify_bump/merge_lock_entries duplicates from InstallAdversarialTests and ResolveAdversarialTests
-- docs: reconciled documentation with actual codebase — corrected module counts (17 modules across 5 layers), test counts (211 shell + 342 Pike), added verify/doctor commands to README
-- Updated `.gitignore` with IDE/OS/environment patterns from template
-- Updated `CONTRIBUTING.md` with branch naming conventions and expanded guidelines
-- Updated `README.md` with changelog badge
-- Updated `AGENTS.md` with CI workflow table, agent behavior section, and template version tracking
-- Rewrote `.agents/skills/pmp-dev/SKILL.md` to reflect current Pike architecture (was describing pre-0.3.0 POSIX sh implementation)
-- Updated `ARCHITECTURE.md` to reflect current version (0.4.0), module list (17 modules across 5 layers), and line counts
-- Updated `install.sh` version pin example to `v0.3.0`
-- Updated `RELEASE.md` with correct syntax check command and Pike test command
-- Updated `CONTRIBUTING.md` and `docs/ci.md` with Pike test commands
-- **Error categorization** — All `die()` calls audited: integrity mismatches, store corruption, and extraction failures now exit 2 (internal error). User-facing errors remain exit 1.
-- **Store operations use Pike `mv()`** — Replaced three `Process.run(({"mv",...}))` calls with Pike's native `mv()`, eliminating external process dependency.
-- **`build_paths` uses Pike directory walk** — Replaced `find` command with recursive Pike walk for `.h` file detection, removing external dependency.
-- **HTTP error messages** — URLs in error messages now show only the host (not full URL) to avoid leaking tokens in logs.
-- **Top-level error handler** — `main()` wrapped in `catch`; unhandled exceptions produce `pmp: internal error: <msg>` with exit 2.
-- **Hash type consistency** — All store install methods now return `compute_dir_hash()` of the final store entry, ensuring lockfile hashes match regardless of whether the entry was cached or freshly downloaded.
-- **Atomic lockfile write** — Lockfile writes use Pike's `mv()` (wraps `rename(2)`) instead of `Process.run` with external `mv`.
-- **Temp directory** — Uses `${TMPDIR:-/tmp}` instead of hardcoded `/tmp` for temporary files.
-- **Store locking** — Added PID-based advisory lock on `~/.pike/store/.lock` to prevent concurrent store corruption.
-- **URL scheme support** — Sources can now use `https://`, `http://`, `git://`, `ssh://` prefixes and `.git` suffix, automatically stripped during normalization.
-- **Source URL validation** — Invalid source formats (e.g., bare names, incomplete paths) are rejected with clear error messages.
-- **Import scanner** — Validates dotted imports (`import Standards.JSON`), relative imports (`import .Foo`), and dotted inherits. Extracts first component for dependency matching.
-- **Error patterns** — Eliminated all `"unknown"` sentinel return values. Functions now return `0` on failure or `die()` for unrecoverable errors.
-
-### Removed
-- Cache.pmod and CacheAdversarialTests.pike — orphaned module never wired into the system (ADR-0002)
-- Removed `Cache.pmod` — orphaned module (~140 lines) that was never wired into module.pmod or called by any other module. 18 tests (CacheAdversarialTests.pike) removed. No behavior change.
-
-### Security
-- **Exit code separation** — User errors (exit 1) are now distinguishable from internal failures (exit 2). CI pipelines can differentiate between misconfiguration and bugs.
-- **HTTP transport hardening** — Split timeouts into connect (10s) and read (30s). Added 100 MB response body size limit to prevent OOM. Retry jitter prevents thundering herd. `Retry-After` header respected for 429 responses. Thread handles are no longer leaked on timeout.
-- **Store lock race fix** — Replaced TOCTOU-vulnerable `kill -0` + write with `O_EXCL` atomic create (`Stdio.File("wct")`), eliminating the window for concurrent lock acquisition.
-- **Streaming SHA-256** — `compute_sha256` now reads files in 64 KB chunks instead of loading entire contents into memory, preventing OOM on large packages.
-- **Lockfile format versioning** — Lockfiles now carry a parsed version field (`# pmp lockfile v1`). `read_lockfile` rejects future versions with a clear update suggestion.
-- **Lockfile newline validation** — `write_lockfile` now rejects fields containing newlines alongside tabs, preventing silent format corruption.
-- **`pmp remove` path traversal protection** — Module names containing `/`, `..`, or null bytes are rejected.
-- **install.sh checksum verification** — After pinning to a tag, the installer verifies HEAD matches the expected tag SHA, preventing MITM during clone.
-- **install.sh PATH modification is now opt-in** — Shell RC files are no longer modified by default. Set `PMP_MODIFY_PATH=1` to enable.
-- **Lockfile integrity verification** — `cmd_install_all` now compares `content_sha256` from lockfile against stored hash when installing from lockfile. Tampered or corrupted store entries are detected and rejected.
-- **Tarball extraction hardening** — `extract_targz` uses `--no-same-owner` flag and validates no symlink-path-traversal in extracted archives (CVE-2001-1261 class).
-- **HTTP timeouts** — All HTTP requests now have a 60-second timeout via thread-based timeout wrapper, preventing indefinite hangs on stalled servers.
-- **HTTP retry with backoff** — Transient failures (429, 5xx, connection errors) are retried up to 3 times with exponential backoff.
-- **Sentinel value elimination** — `resolve_commit_sha` and `compute_sha256` no longer return `"unknown"` on failure. `resolve_commit_sha` returns `0`, `compute_sha256` dies on failure. All callers updated.
-- **install.sh hardening** — Added `set -eu` to the installer script.
-- **SECURITY.md** — Added vulnerability disclosure policy with response timeline.
+refactor: restructure all 17 modules into canonical Pike layout under `bin/Pmp.pmod/` (flat, no subdirectories)
+refactor: `module.pmod` is now namespace-only — no `inherit` re-exports, sub-modules use `import .Foo;`
+refactor: shell shim sets single `PIKE_MODULE_PATH` instead of 6 colon-separated entries
+refactor: `pmp.pike` uses explicit imports (`import Pmp.Config; import Pmp.Helpers;` etc.)
+refactor: `Config`, `Helpers`, etc. are no longer importable as top-level modules (namespace pollution eliminated)
+refactor: moved `project_lock`/`project_unlock` from Install.pmod to Helpers.pmod (architecturally correct placement)
+refactor: moved `store_lock`/`store_unlock` from Store.pmod to Helpers.pmod
+refactor: extracted `_follow_with_redirects()` — shared HTTP redirect/SSRF logic, removed 60 lines of duplication from http_get/http_get_safe
+refactor: extracted `_resolve_remote()` — shared resolve dispatch, consolidated 6 near-duplicate github/gitlab resolve functions
+refactor: reorganized flat bin/Pmp.pmod/ into layered domain directories (core, transport, store, project, commands) following separation of concerns
+refactor: updated sh shim and pike_tests.sh to include layered PIKE_MODULE_PATH entries
+refactor: decomposed Install.pmod (1042 lines) into Install.pmod (~600 lines), Update.pmod (~200 lines), and LockOps.pmod (~280 lines) for focused single-responsibility modules
+refactor: deduplicated Pike test suites — removed LockfilePureTests, HelpersTests, SourceTests (merged into adversarial counterparts), removed classify_bump/merge_lock_entries duplicates from InstallAdversarialTests and ResolveAdversarialTests
+refactor: restructured test suite — split `tests/test_install.sh` (803 lines, 97 tests) into a test runner (`tests/runner.sh`) + 25 individual test files with numeric sort ordering
+refactor: `tests/helpers.sh` with extracted assertion functions and setup utilities
+refactor: `tests/test_install.sh` is now a thin shim that delegates to `tests/runner.sh`
+refactor: `cmd_rollback` now warns and continues on missing store entries instead of aborting
+refactor: Exit codes documented in help text (0 success, 1 user error, 2 internal error)
+refactor: Environment variable reference in help text (`GITHUB_TOKEN`, `PIKE_BIN`, `TMPDIR`, `PMP_VERBOSE`, `PMP_QUIET`)
+refactor: `install.sh` verifies `pmp version` works after install
+refactor: `install.sh` `git fetch --all --tags` before checkout on update
+refactor: PUnit version pinned in `pike.json` to prevent breaking CI on upstream releases
+refactor: docs reconciled with actual codebase — corrected module counts (17 modules across 5 layers), test counts (211 shell + 342 Pike), added verify/doctor commands to README
+refactor: Updated `.gitignore` with IDE/OS/environment patterns from template
+refactor: Updated `CONTRIBUTING.md` with branch naming conventions and expanded guidelines
+refactor: Updated `README.md` with changelog badge
+refactor: Updated `AGENTS.md` with CI workflow table, agent behavior section, and template version tracking
+refactor: Rewrote `.agents/skills/pmp-dev/SKILL.md` to reflect current Pike architecture (was describing pre-0.3.0 POSIX sh implementation)
+refactor: Updated `ARCHITECTURE.md` to reflect current version (0.4.0), module list (17 modules across 5 layers), and line counts
+refactor: Updated `install.sh` version pin example to `v0.3.0`
+refactor: Updated `RELEASE.md` with correct syntax check command and Pike test command
+refactor: Updated `CONTRIBUTING.md` and `docs/ci.md` with Pike test commands
+fix(docs): purged hallucinated features from behavior-spec.md — removed caching/TTL/ETag/non-existent Config constants
+fix(docs): ADR-0003 lockfile v2 status corrected from Accepted to Proposed (not implemented)
+fix(docs): SHA prefix corrected from 8 to 16 chars across ARCHITECTURE.md, README.md
+fix(docs): test counts corrected to 211 shell + 342 Pike across all doc files
+fix(docs): AGENTS.md now lists tar as an external dependency (was claiming no external deps)
+fix(docs): offline flag CHANGELOG entry corrected to reflect actual implementation scope
+fix(install): Config.pmod path updated from bin/Pmp.pmod/ to bin/core/ in install.sh
+fix(tests): convert in-process die() tests to subprocess in LockfileIOAdversarialTests and ManifestAdversarialTests
+fix(deps): parse_deps no longer dies on malformed JSON (resilient query function)
+fix(install): resolve transitive deps for kept-existing modules
+fix: `pmp update <module>` now prunes stale transitive deps (BFS walk from direct deps)
+fix: `lockfile_add_entry` and `merge_lock_entries` die on empty name/source instead of silently dropping
+fix: `read_lockfile` dies on missing version header instead of silently parsing
+fix: `_read_json_mapping` dies on malformed JSON instead of returning 0 (missing files still return 0)
+fix: `classify_bump` restructured with explicit branches for all version transition types
+fix: `file://` URL rejection already implemented — verified and tested
+fix: lockfile replay validates store entry before symlinking (stale lockfile no longer creates broken symlinks)
+fix: test infrastructure — shell tests and Pike tests can run in sequence without store pollution
+fix: test counts updated to 211 shell + 342 Pike
+fix: documentation hallucinations corrected — `Filesystem.Tar` is not used (system `tar` required), test counts updated
+fix: `scripts/doc-sync-check.sh` updated for new module layout
+fix(ci): install PUnit before running Pike tests — modules/ is gitignored and not populated on CI checkout
+fix(ci): replace `Stdio.PIPE` with temp-file capture in `LockOpsAdversarialTests.pike` — `Stdio.PIPE` unavailable on CI Pike build
+fix(test): convert test_outdated_no_pike_json to subprocess isolation — die() calls exit() which cannot be caught by PUnit catch blocks, killing the entire test runner process
+fix(test): correct `run_pike` helper in `LockOpsAdversarialTests` — use `proc->wait()` return value for exit code instead of `proc->status()` which returns process state constant, not exit code
+fix(test): use absolute path for local dep in `test_rollback_restores_local_dep` — relative `./libs/my-lib` resolved against CWD (pmp repo root) instead of temp project directory
+**Error categorization** — All `die()` calls audited: integrity mismatches, store corruption, and extraction failures now exit 2 (internal error). User-facing errors remain exit 1.
+**Store operations use Pike `mv()`** — Replaced three `Process.run(({"mv",...}))` calls with Pike's native `mv()`, eliminating external process dependency.
+**`build_paths` uses Pike directory walk** — Replaced `find` command with recursive Pike walk for `.h` file detection, removing external dependency.
+**HTTP error messages** — URLs in error messages now show only the host (not full URL) to avoid leaking tokens in logs.
+**Top-level error handler** — `main()` wrapped in `catch`; unhandled exceptions produce `pmp: internal error: <msg>` with exit 2.
+**Hash type consistency** — All store install methods now return `compute_dir_hash()` of the final store entry, ensuring lockfile hashes match regardless of whether the entry was cached or freshly downloaded.
+**Atomic lockfile write** — Lockfile writes use Pike's `mv()` (wraps `rename(2)`) instead of `Process.run` with external `mv`.
+**Temp directory** — Uses `${TMPDIR:-/tmp}` instead of hardcoded `/tmp` for temporary files.
+**Store locking** — Added PID-based advisory lock on `~/.pike/store/.lock` to prevent concurrent store corruption.
+**URL scheme support** — Sources can now use `https://`, `http://`, `git://`, `ssh://` prefixes and `.git` suffix, automatically stripped during normalization.
+**Source URL validation** — Invalid source formats (e.g., bare names, incomplete paths) are rejected with clear error messages.
+**Import scanner** — Validates dotted imports (`import Standards.JSON`), relative imports (`import .Foo`), and dotted inherits. Extracts first component for dependency matching.
+**Error patterns** — Eliminated all `"unknown"` sentinel return values. Functions now return `0` on failure or `die()` for unrecoverable errors.
 
 ### Fixed
-- fix(security): sanitize URLs in error messages to prevent credential leakage (C-05)
-- fix(source): reject file:// URLs with clear error message — use local paths instead (C-07)
-- fix: verified SHA prefix is 16 chars (C-10), cmd_update locking is safe (C-17), cmd_remove atomicity (P-01), install rollback (H-28), cmd_rollback locking (H-29) — all confirmed already fixed
-- **`pmp install <url>` lockfile race condition** — Lockfile was read before acquiring the project lock, allowing concurrent installs to lose entries. Lockfile read now happens inside the locked section.
-- **`pmp remove` double JSON decode** — `pike.json` was decoded twice (validate + execute phases) without BOM handling. Now decoded once with `_strip_bom`, preserving raw content for rollback.
-- **`cmd_verify` local-source detection** — Inline `ls != "-" && !has_prefix(ls, "./") && !has_prefix(ls, "/")` replaced with `is_local_source()` helper, adding Verify.pmod to the set of modules using the shared function.
-- **`pmp self-update` now uses semver comparison** — comparing `0.3.0` with `0.10.0` as raw strings incorrectly reported "up to date". Uses `compare_semver()` from `Semver.pmod`.
-- **GitHub/GitLab tag API pagination** — `latest_tag_github` and `latest_tag_gitlab` now paginate through all tags (repos with >100 tags silently missed newer versions before).
-- **`compute_dir_hash` no longer uses `find`** — replaced external `find` command with Pike `get_dir` recursive walk, eliminating a vulnerability where filenames with newlines would corrupt the content hash.
-- **Open redirect protection in HTTP layer** — `http_get` and `http_get_safe` now validate that redirect targets stay on the same domain or a subdomain, preventing SSRF via malicious 302 responses.
-- **Lockfile field validation** — `write_lockfile` now rejects fields containing tab characters, which would silently corrupt the tab-separated format.
 
+fix(security): sanitize URLs in error messages to prevent credential leakage (C-05)
+fix(source): reject file:// URLs with clear error message — use local paths instead (C-07)
+fix: verified SHA prefix is 16 chars (C-10), cmd_update locking is safe (C-17), cmd_remove atomicity (P-01), install rollback (H-28), cmd_rollback locking (H-29) — all confirmed already fixed
+**`pmp install <url>` lockfile race condition** — Lockfile was read before acquiring the project lock, allowing concurrent installs to lose entries. Lockfile read now happens inside the locked section.
+**`pmp remove` double JSON decode** — `pike.json` was decoded twice (validate + execute phases) without BOM handling. Now decoded once with `_strip_bom`, preserving raw content for rollback.
+**`cmd_verify` local-source detection** — Inline `ls != "-" && !has_prefix(ls, "./") && !has_prefix(ls, "/")` replaced with `is_local_source()` helper, adding Verify.pmod to the set of modules using the shared function.
+**`pmp self-update` now uses semver comparison** — comparing `0.3.0` with `0.10.0` as raw strings incorrectly reported "up to date". Uses `compare_semver()` from `Semver.pmod`.
+**GitHub/GitLab tag API pagination** — `latest_tag_github` and `latest_tag_gitlab` now paginate through all tags (repos with >100 tags silently missed newer versions before).
+**`compute_dir_hash` no longer uses `find`** — replaced external `find` command with Pike `get_dir` recursive walk, eliminating a vulnerability where filenames with newlines would corrupt the content hash.
+**Open redirect protection in HTTP layer** — `http_get` and `http_get_safe` now validate that redirect targets stay on the same domain or a subdomain, preventing SSRF via malicious 302 responses.
+**Lockfile field validation** — `write_lockfile` now rejects fields containing tab characters, which would silently corrupt the tab-separated format.
+
+### Security
+
+**Exit code separation** — User errors (exit 1) are now distinguishable from internal failures (exit 2). CI pipelines can differentiate between misconfiguration and bugs.
+**HTTP transport hardening** — Split timeouts into connect (10s) and read (30s). Added 100 MB response body size limit to prevent OOM. Retry jitter prevents thundering herd. `Retry-After` header respected for 429 responses. Thread handles are no longer leaked on timeout.
+**Store lock race fix** — Replaced TOCTOU-vulnerable `kill -0` + write with `O_EXCL` atomic create (`Stdio.File("wct")`), eliminating the window for concurrent lock acquisition.
+**Streaming SHA-256** — `compute_sha256` now reads files in 64 KB chunks instead of loading entire contents into memory, preventing OOM on large packages.
+**Lockfile format versioning** — Lockfiles now carry a parsed version field (`# pmp lockfile v1`). `read_lockfile` rejects future versions with a clear update suggestion.
+**Lockfile newline validation** — `write_lockfile` now rejects fields containing newlines alongside tabs, preventing silent format corruption.
+**`pmp remove` path traversal protection** — Module names containing `/`, `..`, or null bytes are rejected.
+**install.sh checksum verification** — After pinning to a tag, the installer verifies HEAD matches the expected tag SHA, preventing MITM during clone.
+**install.sh PATH modification is now opt-in** — Shell RC files are no longer modified by default. Set `PMP_MODIFY_PATH=1` to enable.
+**Lockfile integrity verification** — `cmd_install_all` now compares `content_sha256` from lockfile against stored hash when installing from lockfile. Tampered or corrupted store entries are detected and rejected.
+**Tarball extraction hardening** — `extract_targz` uses `--no-same-owner` flag and validates no symlink-path-traversal in extracted archives (CVE-2001-1261 class).
+**HTTP timeouts** — All HTTP requests now have a 60-second timeout via thread-based timeout wrapper, preventing indefinite hangs on stalled servers.
+**HTTP retry with backoff** — Transient failures (429, 5xx, connection errors) are retried up to 3 times with exponential backoff.
+**Sentinel value elimination** — `resolve_commit_sha` and `compute_sha256` no longer return `"unknown"` on failure. `resolve_commit_sha` returns `0`, `compute_sha256` dies on failure. All callers updated.
+**install.sh hardening** — Added `set -eu` to the installer script.
+**SECURITY.md** — Added vulnerability disclosure policy with response timeline.
+
+### Removed
+
+Removed `Cache.pmod` — orphaned module (~140 lines) that was never wired into module.pmod or called by any other module. 18 tests (CacheAdversarialTests.pike) removed. No behavior change.
+
+### Tests
+
+test: `test_22_update.sh` now verifies actual version change (not just 'done' in output)
+test: `test_21_changelog.sh` now includes success-path test with version comparison verification
+test: `test_25_self_update.sh` now verifies exit code and output format
 ## [0.3.0] - 2026-04-21
 
 ### Added

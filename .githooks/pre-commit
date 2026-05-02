@@ -1,0 +1,16 @@
+#!/bin/sh
+# pre-commit hook: reject edit-tool anchor artifacts
+STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+if [ -n "$STAGED" ]; then
+    CORRUPT=$(echo "$STAGED" | xargs grep -l '[0-9][0-9][a-z][a-z]|' 2>/dev/null || true)
+    if [ -n "$CORRUPT" ]; then
+        echo "ERROR: edit-tool anchor artifacts found in staged files:"
+        for f in $CORRUPT; do
+            grep -n '[0-9][0-9][a-z][a-z]|' "$f"
+        done
+        echo ""
+        echo "These NNLL| prefixes are edit-tool artifacts, not content."
+        echo "Remove them before committing."
+        exit 1
+    fi
+fi

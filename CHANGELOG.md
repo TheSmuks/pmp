@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 8zz|## [Unreleased]
 9co|
-10ke|### Fixed
+### Added
+feat(cli): `pmpx` command — download and execute a Pike module without installing (`pmp pmpx github.com/owner/repo [-- args...]`)
+test(cli): shell and Pike unit tests for pmpx (error paths, entry point resolution, cache reuse, no side effects)
+### Fixed
 11ke|fix(docs): corrected AGENTS.md line counts (Verify ~269, Update ~210, LockOps ~281) and total source (~4825)
 11ke|fix(install): install.sh now uses `^{commit}` to dereference annotated tags during version verification — prevents false checksum mismatch on annotated tag checkouts
 12ke|fix(docs): corrected ARCHITECTURE.md line counts (pmp.pike ~274, Install.pmod ~582)

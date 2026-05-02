@@ -15,7 +15,7 @@ public Regexp RE_OCTAL = Regexp("^[0-7]+$");
 public Regexp RE_DIGITS = Regexp("^[0-9]+$");
 
 //! Check if a redirect from original_url to location would be an HTTPS→HTTP downgrade.
-private int(0..1) _is_https_downgrade(string original_url, string location) {
+int(0..1) _is_https_downgrade(string original_url, string location) {
     string orig_scheme = "";
     mixed e1 = catch { orig_scheme = lower_case(Standards.URI(original_url)->scheme); };
     if (orig_scheme != "https") return 0;

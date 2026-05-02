@@ -20,6 +20,7 @@ import Pmp.Env;
 import Pmp.Install;
 import Pmp.Update;
 import Pmp.LockOps;
+import Pmp.Exec;
 import Arg;
 
 void cmd_version() {
@@ -81,6 +82,8 @@ void print_help() {
           "Verify installed dependencies\n");
     write("  pmp doctor                                 "
           "Diagnose common project issues\n");
+    write("  pmp pmpx <source> [-- args...]             "
+          "Execute module without installing\n");
     write("\nSource formats:\n");
     write("  github.com/owner/repo                       "
           "GitHub\n");
@@ -268,6 +271,7 @@ void _main(array(string) argv) {
         case "self-update": cmd_self_update(ctx); break;
         case "verify":   if (!cmd_verify(ctx)) exit(EXIT_ERROR); break;
         case "doctor":   if (!cmd_doctor(ctx)) exit(EXIT_ERROR); break;
+        case "pmpx":       cmd_pmpx(args, ctx); break;
         default:
             die("unknown command '" + cmd + "' (try: pmp --help)");
     }

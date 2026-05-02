@@ -36,7 +36,13 @@ jobs:
         run: sh tests/test_install.sh
 
       - name: Install Pike modules (PUnit)
-        run: sh bin/pmp install
+        run: |
+          # Clear store to avoid stale entries from previous runs
+          rm -rf ~/.pike/store
+          mkdir -p ~/.pike/store
+          sh bin/pmp install
+          # Verify PUnit is loadable
+          pike -M modules -e 'import PUnit; write("PUnit OK\\n");'
 
       - name: Run Pike unit tests
         run: sh tests/pike_tests.sh

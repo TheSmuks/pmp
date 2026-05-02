@@ -23,7 +23,7 @@ wget -qO- https://github.com/TheSmuks/pmp/install.sh | sh
 Pin to a specific version:
 
 ```bash
-curl -LsSf https://github.com/TheSmuks/pmp/install.sh | env PMP_VERSION=v0.4.0 sh
+curl -LsSf https://github.com/TheSmuks/pmp/install.sh | env PMP_VERSION=v0.5.0 sh
 ```
 
 ### Environment variables
@@ -248,9 +248,33 @@ pmp version                                 Show pmp version
 pmp self-update                             Update pmp to the latest version
 pmp verify                                  Verify installed dependencies
 pmp doctor                                  Diagnose common project issues
+pmp pmpx <source> [-- args...]              Execute module without installing
 ```
 
 > **Note:** pmp uses [Semantic Versioning](https://semver.org/) for tag comparison. Only tags matching MAJOR.MINOR.PATCH (with optional `v` prefix and `-prerelease` suffix) are sorted correctly. Non-semver tags are deprioritized.
+
+## pmpx (one-shot execution)
+
+Download and execute a remote Pike module without installing it into your project. No `pike.json`, `modules/`, or `pike.lock` files are modified.
+
+```bash
+# Run the latest version of a module
+pmp pmpx github.com/owner/repo
+
+# Pin to a specific version
+pmp pmpx github.com/owner/repo#v1.0.0
+
+# Pass arguments to the executed module
+pmp pmpx github.com/owner/repo -- --verbose --output=json
+```
+
+**Entry point resolution** (in order):
+
+1. `pike.json` `"bin"` field (e.g. `{"bin": "cli.pike"}`)
+2. Heuristic filenames: `main.pike`, `cli.pike`, `cmd.pike`
+3. Single `.pike` file at the package root (unambiguous)
+
+The module is downloaded to the shared content-addressable store (`~/.pike/store/`) and reused on subsequent runs. Local paths are not supported — use `pmp install ./path` instead.
 
 ## Selective .h imports
 

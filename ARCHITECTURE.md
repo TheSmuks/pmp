@@ -4,13 +4,13 @@
 
 - **Name**: pmp (Pike Module Package Manager)
 - **Repository**: github.com/TheSmuks/pmp
-- **Version**: 0.4.0
-- **Date**: 2026-04-30
+- **Version**: 0.5.0
+- **Date**: 2026-05-02
 ## Project Structure
 
 ```
 bin/pmp                POSIX sh shim — delegates to bin/pmp.pike, sets PIKE_MODULE_PATH
-13dk|bin/pmp.pike           Entry point (~274 lines) — config init, command dispatch
+bin/pmp.pike           Entry point (~274 lines) — config init, command dispatch
 bin/Pmp.pmod/          Flat module namespace (17 modules + namespace file)
   module.pmod          Namespace-only — no inherit re-exports; sub-modules accessed as Pmp.Config etc.
   Config.pmod          PMP_VERSION constant
@@ -37,7 +37,7 @@ bin/Pmp.pmod/          Flat module namespace (17 modules + namespace file)
   Env.pmod             cmd_env, cmd_resolve, cmd_run, build_paths
                        (virtual environment, path resolution, script execution)
   Install.pmod         install_one, cmd_install, cmd_install_all, cmd_install_source,
-40mi|                       project_lock/unlock (~582 lines)
+                       (~582 lines)
   Update.pmod          cmd_update (single-module and full update), cmd_outdated,
                        print_update_summary
   LockOps.pmod         cmd_lock, cmd_rollback, cmd_changelog
@@ -102,7 +102,7 @@ User → pmp CLI (bin/pmp shim → bin/pmp.pike)
 
 ## Core Components
 
-104kk|### bin/pmp.pike (entry point, ~274 lines)
+### bin/pmp.pike (entry point, ~274 lines)
 
 Holds all mutable state (`lock_entries`, `visited`, `std_libs`, config paths) and command dispatch. All pure functions are imported from `Pmp.pmod/` via explicit imports (`import Pmp.Config;`, `import Pmp.Helpers;`, etc.).
 
@@ -148,7 +148,7 @@ All modules are pure functions — no mutable global state. State is passed as e
 
 #### Install & update orchestrators
 
-150zd|- **Install.pmod** — `install_one`, `cmd_install`, `cmd_install_all`, `cmd_install_source`, `project_lock`/`project_unlock` (shared lock helpers, ~582 lines)
+- **Install.pmod** — `install_one`, `cmd_install`, `cmd_install_all`, `cmd_install_source` (~582 lines)
 - **Update.pmod** — `cmd_update` (single-module and full update with lock management), `cmd_outdated` (compares lockfile versions with latest remote tags), `print_update_summary`
 - **LockOps.pmod** — `cmd_lock` (resolve + write lockfile without installing), `cmd_rollback` (restore modules from pike.lock.prev), `cmd_changelog` (show commit log between versions via GitHub/GitLab compare APIs)
 - **Exec.pmod** — `cmd_pmpx` (download and execute remote module without installing), `_find_entry_point` (pike.json bin field, heuristic filenames, single .pike fallback, ~155 lines)

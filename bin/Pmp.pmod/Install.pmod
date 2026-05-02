@@ -88,9 +88,18 @@ void install_one(string name, string source, string target,
                         + repo_path + " — pin a version in pike.json");
                 array(string) resolved =
                     latest_tag(type, domain, repo_path, PMP_VERSION);
-                if (sizeof(resolved[0]) == 0)
-                    die("no tags found for " + repo_path);
-                ver = resolved[0];
+                if (sizeof(resolved[0]) == 0) {
+                    // No tags found — try to resolve the default branch instead
+                    array(string) branch_info =
+                        resolve_default_branch(type, domain, repo_path, PMP_VERSION);
+                    if (sizeof(branch_info[0]) == 0)
+                        die("no tags found for " + repo_path
+                            + " and could not resolve default branch");
+                    ver = branch_info[0];
+                } else {
+                    ver = resolved[0];
+                }
+
             }
 
             // Check for cycle

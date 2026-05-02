@@ -210,6 +210,100 @@ array(string) latest_tag_safe(string type, string domain, string repo_path,
     return _resolve_remote(type, domain, repo_path, version, 0);
 }
 
+//! Get the default branch of a GitHub repo.
+//! Returns ({branch_name, commit_sha}) or ({"", ""}) on failure.
+array(string) resolve_default_branch_github(string repo_path,
+                                             void|string version) {
+    string url = "https://api.github.com/repos/" + repo_path;
+    array(int|string) result = http_get_safe(url, github_auth_headers(), version);
+    if (result[0] == 200 && result[1]) {
+        mixed data;
+        mixed err = catch { data = Standards.JSON.decode(result[1]); };
+        if (!err && mappingp(data) && data->default_branch) {
+            string branch = data->default_branch;
+            array(int|string) sha_result = http_get_safe(
+                url + "/commits/" + branch,
+                github_auth_headers(), version);
+            if (sha_result[0] == 200 && sha_result[1]) {
+                mixed sha_data;
+                mixed sha_err = catch { sha_data = Standards.JSON.decode(sha_result[1]); };
+                if (!sha_err && mappingp(sha_data) && sha_data->sha)
+                    return ({ branch, sha_data->sha });
+            }
+        }
+    }
+    return ({ "", "" });
+}
+
+//! Get the default branch of a GitLab repo.
+//! Returns ({branch_name, commit_sha}) or ({"", ""}) on failure.
+array(string) resolve_default_branch_gitlab(string repo_path,
+                                             void|string version) {
+    string encoded = Protocols.HTTP.percent_encode(repo_path);
+    string url = "https://gitlab.com/api/v4/projects/" + encoded;
+    array(int|string) result = http_get_safe(url, 0, version);
+    if (result[0] == 200 && result[1]) {
+        mixed data;
+        mixed err = catch { data = Standards.JSON.decode(result[1]); };
+        if (!err && mappingp(data) && data->default_branch) {
+            string branch = data->default_branch;
+            array(int|string) sha_result = http_get_safe(
+                "https://gitlab.com/api/v4/projects/" + encoded
+                + "/repository/commits/" + _encode_tag(branch), 0, version);
+            if (sha_result[0] == 200 && sha_result[1]) {
+                mixed sha_data;
+                mixed sha_err = catch { sha_data = Standards.JSON.decode(sha_result[1]); };
+                if (!sha_err && mappingp(sha_data) && sha_data->id)
+                    return ({ branch, sha_data->id });
+            }
+        }
+    }
+    return ({ "", "" });
+}
+
+//! Resolve the default branch for any source type.
+//! Returns ({branch_name, commit_sha}) or ({"", ""}) on failure.
+array(string) resolve_default_branch(string type, string domain,
+                                       string repo_path,
+                                       void|string version) {
+    switch (type) {
+        case "github":
+            return resolve_default_branch_github(repo_path, version);
+        case "gitlab":
+            return resolve_default_branch_gitlab(repo_path, version);
+        case "selfhosted":
+            need_cmd("git");
+            if (_is_private_host(domain))
+                die("blocked: SSRF protection — refusing to ls-remote from private/internal address: " + domain);
+            mapping r = Process.run(
+                ({"git", "ls-remote", "--symref", "https://" + domain + "/" + repo_path}));
+            if (r->exitcode == 0 && sizeof(r->stdout) > 0) {
+                foreach (r->stdout / "\n"; ; string line) {
+                    if (sizeof(line) == 0) continue;
+                    if (has_prefix(line, "HEAD")) {
+                        array(string) parts = line / "\t";
+                        if (sizeof(parts) >= 1) {
+                            string ref = parts[0];
+                            if (has_prefix(ref, "HEAD ref: ")) {
+                                string branch = replace(ref, "HEAD ref: ", "");
+                                mapping sha_r = Process.run(
+                                    ({"git", "ls-remote", "https://" + domain + "/" + repo_path, branch}));
+                                if (sha_r->exitcode == 0 && sizeof(sha_r->stdout) > 0) {
+                                    string sha = (sha_r->stdout / "\t")[0];
+                                    if (sizeof(sha) > 0)
+                                        return ({ replace(branch, "refs/heads/", ""), sha });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return ({ "", "" });
+        default:
+            return ({ "", "" });
+    }
+}
+
 //! Resolve a specific tag to its commit SHA.
 //! Returns 0 if the SHA cannot be resolved.
 string resolve_commit_sha(string type, string domain,

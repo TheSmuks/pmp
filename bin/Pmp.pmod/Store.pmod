@@ -340,7 +340,7 @@ mapping _store_install_common(string store_dir, string source_label,
 mapping store_install_github(string store_dir, string repo_path, string ver,
                              void|string version) {
     string url = "https://github.com/" + repo_path
-                 + "/archive/refs/tags/" + ver + ".tar.gz";
+                 + "/tarball/" + ver;
 
     info("downloading " + url);
     string body = http_get(url, 0, version);

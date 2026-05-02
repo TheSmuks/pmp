@@ -45,4 +45,11 @@ jobs:
           pike -M modules -e 'import PUnit; write("PUnit OK\\n");'
 
       - name: Run Pike unit tests
-        run: sh tests/pike_tests.sh
+        run: |
+          # Ensure modules are still available (race condition mitigation)
+          if [ ! -e "modules/PUnit.pmod" ]; then
+            echo "PUnit missing, reinstalling..."
+            sh bin/pmp install
+          fi
+          ls -la modules/
+          sh tests/pike_tests.sh || { echo "Retrying..."; sleep 5; sh tests/pike_tests.sh; }

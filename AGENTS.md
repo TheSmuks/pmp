@@ -2,7 +2,7 @@
 
 ## Project overview
 
-pmp (Pike Module Package Manager) installs, versions, and resolves dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths. The architecture is a flat module layout: `bin/pmp.pike` (~274 lines, entry point with config init, error handling, and command dispatch) and a module library under `bin/Pmp.pmod/` (17 functional modules as flat `.pmod` files + 1 namespace-only `module.pmod`, ~4825 lines total source), invoked via a POSIX sh shim `bin/pmp` that sets a single `PIKE_MODULE_PATH` to `bin/`. Sub-modules use `import .Foo;` for sibling access; pmp.pike uses `import Pmp.Config; import Pmp.Helpers;` etc. Required external tools: tar/gunzip (for `.tar.gz` extraction), git (for self-hosted and self-update).
+pmp (Pike Module Package Manager) installs, versions, and resolves dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths. The architecture is a flat module layout: `bin/pmp.pike` (~274 lines, entry point with config init, error handling, and command dispatch) and a module library under `bin/Pmp.pmod/` (18 functional modules as flat `.pmod` files + 1 namespace-only `module.pmod`, ~4984 lines total source), invoked via a POSIX sh shim `bin/pmp` that sets a single `PIKE_MODULE_PATH` to `bin/`. Sub-modules use `import .Foo;` for sibling access; pmp.pike uses `import Pmp.Config; import Pmp.Helpers;` etc. Required external tools: tar/gunzip (for `.tar.gz` extraction), git (for self-hosted and self-update).
 
 ## Setup commands
 
@@ -11,7 +11,7 @@ pmp (Pike Module Package Manager) installs, versions, and resolves dependencies 
 - Verify syntax: `pike bin/pmp.pike --help`
 - Check version: `pike bin/pmp.pike version` (or `sh bin/pmp version`)
 
-Expected result: 211 passed, 0 failed, exit code 0 (shell tests via `sh tests/runner.sh`); 342 passed for `sh tests/pike_tests.sh`.
+Expected result: 230 passed, 0 failed, exit code 0 (shell tests via `sh tests/runner.sh`); Pike unit tests exit 0 (via `sh tests/pike_tests.sh`).
 
 ## Architecture
 
@@ -19,7 +19,7 @@ Expected result: 211 passed, 0 failed, exit code 0 (shell tests via `sh tests/ru
 bin/pmp                POSIX sh shim — sets PIKE_MODULE_PATH=bin/, delegates to pmp.pike
 bin/pmp.pike           Entry point (~274 lines) — uses `import Pmp.Config; import Pmp.Helpers;` etc.; config init, context mapping, command dispatch
 
-bin/Pmp.pmod/          Flat module library (all 17 functional modules + module.pmod namespace)
+bin/Pmp.pmod/          Flat module library (all 18 functional modules + module.pmod namespace)
   module.pmod          Namespace-only file — no inherit re-exports; makes `import Pmp` work
   Config.pmod          PMP_VERSION constant; EXIT_OK/EXIT_ERROR/EXIT_INTERNAL exit codes; PMP_VERBOSE/PMP_QUIET variables
   Helpers.pmod         die, die_internal, info, warn, debug, need_cmd, json_field, find_project_root, compute_sha256 (streaming), sanitize_url, atomic_symlink, atomic_write, validate_dep_name, project_lock/unlock, store_lock/unlock, advisory_lock, advisory_unlock, make_temp_dir, resolve_local_path, register_cleanup_dir, unregister_cleanup_dir, run_cleanup
@@ -38,6 +38,7 @@ ci|  Verify.pmod          Project and store integrity verification (~269 lines).
   Install.pmod         install_one, cmd_install, cmd_install_all, cmd_install_source
 bj|  Update.pmod          Update and outdated commands (~210 lines). Functions: cmd_update, cmd_outdated, print_update_summary.
 yg|  LockOps.pmod         Lock, rollback, and changelog commands (~281 lines). Functions: cmd_lock, cmd_rollback, cmd_changelog.
+  Exec.pmod            Download-and-exec command (~155 lines). Functions: cmd_pmpx, _find_entry_point.
 
 tests/test_install.sh  Test suite (pure sh, delegates to runner.sh)
 install.sh             curl-pipe-sh installer (POSIX sh)
@@ -77,6 +78,10 @@ Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 - `cmd_lock()` — lock dependencies at current versions
 - `cmd_rollback()` — restore all modules from pike.lock.prev
 - `cmd_changelog(args, ctx)` — show commit log between versions
+
+**In Exec.pmod (stateful command, takes `mapping ctx`):
+- `cmd_pmpx(args, ctx)` — download and execute a remote Pike module without installing
+- `_find_entry_point(entry_dir)` — find executable entry point (pike.json bin field, heuristics, single .pike fallback)
 
 **In Project.pmod, StoreCmd.pmod, Env.pmod (stateful commands, take `mapping ctx`):
 - `cmd_init()`, `cmd_list()`, `cmd_clean()`, `cmd_remove()` — project management
@@ -181,7 +186,7 @@ The TigerBeetle coding style guide informs our approach. Key principles adapted 
 - Uses `assert`, `assert_exists`, `assert_not_exists`, `assert_output_contains` helpers
 - Tests create temp dirs and clean up on exit
 - Tests that need the store back up/restore `~/.pike/store/`
-- Every change must pass all 211 shell tests and 342 Pike unit tests
+- Every change must pass all 230 shell tests and Pike unit tests (exit 0)
 
 ## Commit conventions
 
@@ -209,7 +214,7 @@ Doc-only changes do NOT trigger this checklist.
 ## PR instructions
 
 - Title format: descriptive summary of the change
-- Run `sh tests/test_install.sh` or `sh tests/runner.sh` before committing — all 211 tests must pass; also run `sh tests/pike_tests.sh` (342 tests)
+- Run `sh tests/test_install.sh` or `sh tests/runner.sh` before committing — all 230 tests must pass; also run `sh tests/pike_tests.sh`
 - If adding new features, add corresponding test cases
 
 

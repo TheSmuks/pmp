@@ -92,8 +92,11 @@ if [ -n "${PMP_VERSION:-}" ]; then
     git -C "$PMP_INSTALL_DIR" checkout "tags/$PMP_VERSION" 2>/dev/null || \
         die "tag $PMP_VERSION not found. Run 'git -C \"$PMP_INSTALL_DIR\" tag -l' to see available versions."
 
-    # Verify checkout integrity: compare HEAD with expected tag commit
-    _tag_sha=$(git -C "$PMP_INSTALL_DIR" rev-parse "tags/$PMP_VERSION" 2>/dev/null || echo "")
+    # Verify checkout integrity: compare HEAD with expected tag commit.
+    # Use ^{commit} to dereference annotated tags to the actual commit SHA.
+    # Without ^{commit}, rev-parse returns the tag object's SHA, not the commit,
+    # causing a false mismatch when the tag is annotated (not a lightweight tag).
+    _tag_sha=$(git -C "$PMP_INSTALL_DIR" rev-parse "tags/$PMP_VERSION^{commit}" 2>/dev/null || echo "")
     _head_sha=$(git -C "$PMP_INSTALL_DIR" rev-parse HEAD 2>/dev/null || echo "")
     if [ -n "$_tag_sha" ] && [ -n "$_head_sha" ] && [ "$_tag_sha" != "$_head_sha" ]; then
         die "checksum mismatch: expected $_tag_sha but got $_head_sha for $PMP_VERSION"

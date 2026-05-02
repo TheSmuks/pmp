@@ -21,6 +21,7 @@ cleanup() {
   cd /
   [ -n "$TESTDIR" ] && rm -rf "$TESTDIR"
   restore_store
+  restore_project_root
   for _td in $_TRACKED_TEMPDIRS; do
     [ -d "$_td" ] && rm -rf "$_td"
   done
@@ -85,7 +86,6 @@ assert_output_contains() {
   esac
 }
 
-
 # ── Store backup ─────────────────────────────────────────────────
 
 # Backup the real store before tests that might modify it
@@ -112,7 +112,7 @@ restore_store() {
     fi
     _proj_root=$(cd "$(dirname "$PMP")/.." && pwd)
     if [ -d "${HOME:-/tmp}/.pike/store" ] && [ -n "$(ls -A "${HOME:-/tmp}/.pike/store" 2>/dev/null)" ]; then
-mkdir -p "$_proj_root/modules"
+        mkdir -p "$_proj_root/modules"
         # Symlink every .pmod directory found in the store.
         # Generic approach — no hard-coded module names.
         for _entry in "${HOME:-/tmp}/.pike/store"/*; do
@@ -129,6 +129,45 @@ mkdir -p "$_proj_root/modules"
     # Also clean up any test-specific backup (test_10_store.sh etc.)
     [ -n "$_STORE_BACKUP" ] && rm -rf "$_STORE_BACKUP"
     unset _STORE_BACKUP
+}
+
+# ── Project root restore ─────────────────────────────────────────
+
+restore_project_root() {
+    # Restore the project root's pike.json, pike.lock, and remove test-created
+    # modules/libs/ directories.
+    if [ -z "$_PROJ_ROOT" ]; then
+        _PROJ_ROOT=$(cd "$(dirname "$PMP")/.." && pwd)
+    fi
+
+    # Restore pike.json — prefer backup, else remove test-created file
+    if [ -n "$_PIKE_JSON_BACKUP" ] && [ -f "$_PIKE_JSON_BACKUP" ]; then
+        cat "$_PIKE_JSON_BACKUP" > "$_PROJ_ROOT/pike.json"
+        rm -f "$_PIKE_JSON_BACKUP"
+    elif [ -f "$_PROJ_ROOT/pike.json" ]; then
+        # No backup existed; remove test-created file
+        rm -f "$_PROJ_ROOT/pike.json"
+    fi
+
+    # Restore pike.lock — prefer backup, else remove only if we created it
+    if [ -n "$_PIKE_LOCK_BACKUP" ] && [ -f "$_PIKE_LOCK_BACKUP" ]; then
+        cat "$_PIKE_LOCK_BACKUP" > "$_PROJ_ROOT/pike.lock"
+        rm -f "$_PIKE_LOCK_BACKUP"
+    fi
+
+    # Remove pike.lock.prev as well
+    rm -f "$_PROJ_ROOT/pike.lock.prev"
+
+    # Remove test-created modules/ if it didn't exist before tests started
+    if [ "$_MODULES_EXISTED" = "0" ]; then
+        rm -rf "$_PROJ_ROOT/modules"
+    fi
+
+    # Remove test-created libs/
+    rm -rf "$_PROJ_ROOT/libs"
+
+    # Clean up exported variables
+    unset _PIKE_JSON_BACKUP _PIKE_LOCK_BACKUP _MODULES_EXISTED _PROJ_ROOT
 }
 
 # ── Temp dir tracking ──────────────────────────────────────────────

@@ -6,9 +6,19 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Changelog](https://img.shields.io/badge/changelog-Keep%20a%20Changelog-blue.svg)](./CHANGELOG.md)
 
-Install, version, and resolve dependencies for Pike modules. Works with GitHub, GitLab, self-hosted git, and local paths.
+## What is pmp?
 
-## Installation
+pmp installs, versions, and resolves dependencies for [Pike](https://pike.lysator.liu.se/) modules. Works with GitHub, GitLab, self-hosted git, and local paths.
+
+```bash
+pmp init                                       # create pike.json scaffold
+pmp install github.com/thesmuks/punit#v1.0.0   # install from GitHub
+pmp env                                        # create isolated environment
+pmp run my_script.pike                         # run with module paths set
+pmp pmpx github.com/owner/cli-tool -- --help   # execute without installing
+```
+
+## Install
 
 ```bash
 curl -LsSf https://github.com/TheSmuks/pmp/install.sh | sh
@@ -36,7 +46,7 @@ curl -LsSf https://github.com/TheSmuks/pmp/install.sh | env PMP_VERSION=v0.5.0 s
 
 Re-running the installer updates pmp in place (git pull).
 
-## Upgrading
+### Upgrade
 
 ```bash
 pmp self-update
@@ -48,7 +58,7 @@ Or re-run the installer:
 curl -LsSf https://github.com/TheSmuks/pmp/install.sh | sh
 ```
 
-## Uninstall
+### Uninstall
 
 ```bash
 rm -rf ~/.pmp
@@ -61,162 +71,39 @@ Remove the PATH line from your shell rc (`~/.bashrc`, `~/.zshrc`, or `~/.profile
 export PATH="$HOME/.pmp/bin:$PATH"
 ```
 
-## Invoking pmp
+## Quick links
 
-Use `sh bin/pmp` (or `$PATH/pmp` after installation). The shell shim sets `PIKE_MODULE_PATH` to the `bin/` directory so Pike can resolve `import Pmp.Config` etc.
+- Getting started
+  - [Commands](#commands)
+  - [Source types](#source-types)
+  - [`pike.json`](#pikejson)
+  - [Requirements](#requirements)
 
-Direct invocation (`pike bin/pmp.pike`) does **not** work — Pike resolves `import Pmp.Config` before the shim runs, and `PIKE_MODULE_PATH` is not set. The shell shim (`bin/pmp`) sets this correctly before delegating to Pike.
+- Package management
+  - [`pmp install`](#commands)
+  - [`pmp update`](#commands)
+  - [`pmp remove`](#commands)
+  - [`pmp lock`](#commands)
+  - [`pmp outdated`](#commands)
+  - [`pmp changelog`](#commands)
+  - [`pmp rollback`](#commands)
+  - [Content-addressable store](#content-addressable-store)
+  - [`pike.lock` (lockfile)](#pikelock-lockfile)
+  - [Transitive dependencies](#transitive-dependencies)
+  - [Integrity verification](#integrity-verification)
+  - [Manifest validation](#manifest-validation)
 
-## Quick start
+- Execution
+  - [`pmpx` (one-shot execution)](#pmpx-one-shot-execution)
+  - [`pmp env` (virtual environment)](#pmp-env-virtual-environment)
+  - [`pmp run`](#commands)
 
-```bash
-# Initialize a project
-pmp init
+- Reference
+  - [LSP integration](#lsp-integration)
+  - [Selective .h imports](#selective-h-imports)
+  - [License](#license)
 
-# Install from GitHub
-pmp install github.com/thesmuks/punit-tests#v1.0.0
-
-# Create an isolated environment
-pmp env
-. .pike-env/activate
-
-# Run your code with module paths set
-pmp run my_script.pike
-```
-
-## Source types
-
-pmp auto-detects the source type from the URL format:
-
-| URL format | Type | Version resolution |
-|---|---|---|
-| `github.com/owner/repo` | GitHub | GitHub tags API |
-| `gitlab.com/owner/repo` | GitLab | GitLab tags API |
-| `git.example.com/owner/repo` | Self-hosted git | `git ls-remote --tags` |
-| `./relative/path` or `/abs/path` | Local | None (dev mode, symlinked) |
-
-Append `#tag` to pin a version. Without it, pmp resolves the latest tag.
-
-## Content-addressable store
-
-pmp uses a global content-addressable store at `~/.pike/store/`. Each package version is downloaded once and shared across projects via symlinks:
-
-```
-~/.pike/store/
-  github.com-thesmuks-punit-v1.0.0-a1b2c3d4e5f67890/   # immutable store entry
-    PUnit.pmod/
-    pike.json
-    .pmp-meta                                     # source, tag, commit SHA, content hash
-
-your-project/
-  modules/
-    PUnit/    → symlink to ~/.pike/store/github.com-thesmuks-punit-v1.0.0-a1b2c3d4e5f67890/
-```
-
-**Benefits:**
-- Instant installs when a package is already in the store
-- Zero disk duplication across projects
-- Store survives `pmp clean` — only project symlinks are removed
-
-Store entry names include the first 16 characters of the commit SHA to disambiguate force-pushed tags.
-
-## pike.lock (lockfile)
-
-After every install, pmp writes `pike.lock` with exact commit SHAs and content hashes:
-
-```
-# pmp lockfile v1 — DO NOT EDIT
-# name	source	tag	commit_sha	content_sha256
-PUnit	github.com/thesmuks/punit-tests	v1.0.0	a1b2c3d4e5f6...	abcdef1234...
-LocalLib	./libs/my-lib	-	-	-
-```
-
-**Commit `pike.lock` to git** for reproducible builds. When it exists, `pmp install` uses the lockfile to skip resolution and install exact versions.
-
-- `pike.json` = what you want (declarative, may have `#tag` or omit it)
-- `pike.lock` = what you got (exact commit SHA, always pinned)
-
-- `pike.lock.prev` = previous lockfile (automatic backup created on every install/update, used by `pmp rollback`)
-
-## Integrity verification
-
-Every remote package download is verified with SHA-256. The hash is recorded in both `.pmp-meta` (in the store) and `pike.lock`. On lockfile-based reinstalls, the hash is compared to ensure the content hasn't changed.
-
-## Transitive dependencies
-
-Packages can declare their own dependencies in their `pike.json`:
-
-```json
-{
-  "name": "MyLib",
-  "version": "1.0.0",
-  "dependencies": {
-    "PUnit": "github.com/thesmuks/punit-tests#v1.0.0"
-  }
-}
-```
-
-pmp resolves transitive dependencies recursively. The lockfile captures the full resolved tree. Cycle detection prevents infinite loops.
-
-**Conflict resolution:** if two packages need different versions of the same dependency, the first-installed version wins and a warning is emitted.
-
-## Manifest validation
-
-After installing, pmp scans each package's `.pike`/`.pmod` files for `import` statements and warns about imports that reference modules not declared in the package's `pike.json`. This encourages explicit dependency declarations.
-
-Validation is warn-only — it will not block installs.
-## pike.json
-
-Project manifest in your project root:
-
-```json
-{
-  "dependencies": {
-    "PUnit": "github.com/thesmuks/punit-tests#v1.0.0",
-    "OtherMod": "gitlab.com/someuser/other-mod",
-    "LocalLib": "./libs/my-lib"
-  }
-}
-```
-
-- **Key**: module name (directory name in `./modules/`)
-- **Value**: source URL or local path
-- `#version` suffix is optional — defaults to latest tag
-- Local paths are symlinked, not copied — changes are immediately visible
-
-### Package manifest
-
-In the package repository itself:
-
-```json
-{
-  "name": "PUnit",
-  "version": "1.0.0",
-  "description": "JUnit-inspired testing framework for Pike",
-  "source": "github.com/thesmuks/punit-tests",
-  "dependencies": {
-    "SomeDep": "github.com/owner/dep#v2.0.0"
-  }
-}
-```
-
-The `dependencies` block enables transitive resolution when other projects install this package.
-
-## pmp env (virtual environment)
-
-Creates `.pike-env/` with a scoped Pike wrapper:
-
-```bash
-pmp env          # creates .pike-env/
-. .pike-env/activate   # activate
-pike my_script.pike    # uses project module paths
-pmp_deactivate         # restore system Pike
-```
-
-The wrapper:
-- Injects `PIKE_MODULE_PATH` and `PIKE_INCLUDE_PATH` for the project
-- Resolves local dependencies from `pike.json` on every invocation
-- Falls back to global modules in `~/.pike/modules/`
+---
 
 ## Commands
 
@@ -253,7 +140,126 @@ pmp pmpx <source> [-- args...]              Execute module without installing
 
 > **Note:** pmp uses [Semantic Versioning](https://semver.org/) for tag comparison. Only tags matching MAJOR.MINOR.PATCH (with optional `v` prefix and `-prerelease` suffix) are sorted correctly. Non-semver tags are deprioritized.
 
-## pmpx (one-shot execution)
+## Source types
+
+pmp auto-detects the source type from the URL format:
+
+| URL format | Type | Version resolution |
+|---|---|---|
+| `github.com/owner/repo` | GitHub | GitHub tags API |
+| `gitlab.com/owner/repo` | GitLab | GitLab tags API |
+| `git.example.com/owner/repo` | Self-hosted git | `git ls-remote --tags` |
+| `./relative/path` or `/abs/path` | Local | None (dev mode, symlinked) |
+
+Append `#tag` to pin a version. Without it, pmp resolves the latest tag.
+
+## `pike.json`
+
+Project manifest in your project root:
+
+```json
+{
+  "dependencies": {
+    "PUnit": "github.com/thesmuks/punit-tests#v1.0.0",
+    "OtherMod": "gitlab.com/someuser/other-mod",
+    "LocalLib": "./libs/my-lib"
+  }
+}
+```
+
+- **Key**: module name (directory name in `./modules/`)
+- **Value**: source URL or local path
+- `#version` suffix is optional — defaults to latest tag
+- Local paths are symlinked, not copied — changes are immediately visible
+
+### Package manifest
+
+In the package repository itself:
+
+```json
+{
+  "name": "PUnit",
+  "version": "1.0.0",
+  "description": "JUnit-inspired testing framework for Pike",
+  "source": "github.com/thesmuks/punit-tests",
+  "dependencies": {
+    "SomeDep": "github.com/owner/dep#v2.0.0"
+  }
+}
+```
+
+The `dependencies` block enables transitive resolution when other projects install this package.
+
+## Content-addressable store
+
+pmp uses a global content-addressable store at `~/.pike/store/`. Each package version is downloaded once and shared across projects via symlinks:
+
+```
+~/.pike/store/
+  github.com-thesmuks-punit-v1.0.0-a1b2c3d4e5f67890/   # immutable store entry
+    PUnit.pmod/
+    pike.json
+    .pmp-meta                                     # source, tag, commit SHA, content hash
+
+your-project/
+  modules/
+    PUnit/    → symlink to ~/.pike/store/github.com-thesmuks-punit-v1.0.0-a1b2c3d4e5f67890/
+```
+
+**Benefits:**
+- Instant installs when a package is already in the store
+- Zero disk duplication across projects
+- Store survives `pmp clean` — only project symlinks are removed
+
+Store entry names include the first 16 characters of the commit SHA to disambiguate force-pushed tags.
+
+## `pike.lock` (lockfile)
+
+After every install, pmp writes `pike.lock` with exact commit SHAs and content hashes:
+
+```
+# pmp lockfile v1 — DO NOT EDIT
+# name	source	tag	commit_sha	content_sha256
+PUnit	github.com/thesmuks/punit-tests	v1.0.0	a1b2c3d4e5f6...	abcdef1234...
+LocalLib	./libs/my-lib	-	-	-
+```
+
+**Commit `pike.lock` to git** for reproducible builds. When it exists, `pmp install` uses the lockfile to skip resolution and install exact versions.
+
+- `pike.json` = what you want (declarative, may have `#tag` or omit it)
+- `pike.lock` = what you got (exact commit SHA, always pinned)
+
+- `pike.lock.prev` = previous lockfile (automatic backup created on every install/update, used by `pmp rollback`)
+
+## Transitive dependencies
+
+Packages can declare their own dependencies in their `pike.json`:
+
+```json
+{
+  "name": "MyLib",
+  "version": "1.0.0",
+  "dependencies": {
+    "PUnit": "github.com/thesmuks/punit-tests#v1.0.0"
+  }
+}
+```
+
+pmp resolves transitive dependencies recursively. The lockfile captures the full resolved tree. Cycle detection prevents infinite loops.
+
+**Conflict resolution:** if two packages need different versions of the same dependency, the first-installed version wins and a warning is emitted.
+
+## Integrity verification
+
+Every remote package download is verified with SHA-256. The hash is recorded in both `.pmp-meta` (in the store) and `pike.lock`. On lockfile-based reinstalls, the hash is compared to ensure the content hasn't changed.
+
+## Manifest validation
+
+After installing, pmp scans each package's `.pike`/`.pmod` files for `import` statements and warns about imports that reference modules not declared in the package's `pike.json`. This encourages explicit dependency declarations.
+
+Validation is warn-only — it will not block installs.
+
+## `pmpx` (one-shot execution)
 
 Download and execute a remote Pike module without installing it into your project. No `pike.json`, `modules/`, or `pike.lock` files are modified.
 
@@ -276,6 +282,26 @@ pmp pmpx github.com/owner/repo -- --verbose --output=json
 
 The module is downloaded to the shared content-addressable store (`~/.pike/store/`) and reused on subsequent runs. Local paths are not supported — use `pmp install ./path` instead.
 
+## `pmp env` (virtual environment)
+
+Creates `.pike-env/` with a scoped Pike wrapper:
+
+```bash
+pmp env          # creates .pike-env/
+. .pike-env/activate   # activate
+pike my_script.pike    # uses project module paths
+pmp_deactivate         # restore system Pike
+```
+
+The wrapper:
+- Injects `PIKE_MODULE_PATH` and `PIKE_INCLUDE_PATH` for the project
+- Resolves local dependencies from `pike.json` on every invocation
+- Falls back to global modules in `~/.pike/modules/`
+
+## LSP integration
+
+For language server support, configure your LSP to use the pike wrapper from `.pike-env/bin/pike`. This ensures module resolution matches runtime behavior.
+
 ## Selective .h imports
 
 PUnit-style packages use granular header files. Import only what you need:
@@ -290,10 +316,6 @@ Or include all assertions:
 ```c
 #include <PUnit.pmod/macros.h>
 ```
-
-## LSP integration
-
-For language server support, configure your LSP to use the pike wrapper from `.pike-env/bin/pike`. This ensures module resolution matches runtime behavior.
 
 ## Requirements
 

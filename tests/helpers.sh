@@ -110,22 +110,19 @@ restore_store() {
             mv "$_PMP_STORE_BACKUP/store" "${HOME:-/tmp}/.pike/store"
         fi
     fi
-    # Recreate modules/ directory and PUnit symlink if store is non-empty but modules/ is missing.
-    # Some tests end with `cd /` so we need to cd to the project dir.
     _proj_root=$(cd "$(dirname "$PMP")/.." && pwd)
     if [ -d "${HOME:-/tmp}/.pike/store" ] && [ -n "$(ls -A "${HOME:-/tmp}/.pike/store" 2>/dev/null)" ]; then
-        if ! [ -e "$_proj_root/modules/PUnit.pmod" ]; then
-            # Create modules/ dir and symlink PUnit directly from the store.
-            # This avoids calling `pmp install` which requires network.
-            mkdir -p "$_proj_root/modules"
-            # Find the PUnit store entry (punit-tests repo)
-            for _entry in "${HOME:-/tmp}/.pike/store"/*; do
-                if [ -d "$_entry/PUnit.pmod" ]; then
-                    ln -sf "$_entry/PUnit.pmod" "$_proj_root/modules/PUnit.pmod"
-                    break
-                fi
+mkdir -p "$_proj_root/modules"
+        # Symlink every .pmod directory found in the store.
+        # Generic approach — no hard-coded module names.
+        for _entry in "${HOME:-/tmp}/.pike/store"/*; do
+            [ -d "$_entry" ] || continue
+            for _pmod in "$_entry"/*.pmod; do
+                [ -d "$_pmod" ] || continue
+                _pmod_name=$(basename "$_pmod")
+                ln -sf "$_pmod" "$_proj_root/modules/$_pmod_name"
             done
-        fi
+        done
     fi
     [ -n "$_PMP_STORE_BACKUP" ] && rm -rf "$_PMP_STORE_BACKUP"
     unset _PMP_STORE_BACKUP _STORE_HAD_CONTENT

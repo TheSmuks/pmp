@@ -119,3 +119,35 @@ void test_sanitize_url_no_credentials() {
 void test_sanitize_url_non_url() {
     assert_equal("not-a-url", sanitize_url("not-a-url"));
 }
+// ── _is_https_downgrade ─────────────────────────────────────────────
+
+void test_https_downgrade_blocked() {
+    // HTTPS → HTTP downgrade should be blocked
+    assert_equal(1, _is_https_downgrade("https://example.com/path", "http://example.com/other"));
+}
+
+void test_https_to_https_allowed() {
+    assert_equal(0, _is_https_downgrade("https://example.com/path", "https://other.com/path"));
+}
+
+void test_http_to_http_allowed() {
+    assert_equal(0, _is_https_downgrade("http://example.com/path", "http://example.com/other"));
+}
+
+// ── Integration: redirect following ─────────────────────────────────
+
+void test_redirect_chain_followed() {
+    // Test that GitHub tarball redirect is followed correctly.
+    // GitHub returns 302 with location header pointing to codeload.github.com.
+    // The redirect should be allowed since codeload.github.com is a subdomain.
+    assert_equal(1, _redirect_allowed_by_host("github.com", "https://codeload.github.com/owner/repo/tar.gz/refs/tags/v1.0.0"));
+}
+
+void test_redirect_to_different_subdomain_allowed() {
+    // GitHub might redirect to api subdomain in some cases
+    assert_equal(1, _redirect_allowed_by_host("github.com", "https://api.github.com/repos/owner/repo"));
+}
+
+void test_redirect_blocked_https_to_http() {
+    assert_equal(1, _is_https_downgrade("https://secure.example.com/path", "http://insecure.example.com/path"));
+}

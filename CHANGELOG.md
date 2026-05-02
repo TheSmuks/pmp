@@ -5,8 +5,9 @@ All notable changes to pmp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-8zz|## [Unreleased]
-9co|
+## [Unreleased]
+
+## [0.5.0] - 2026-05-02
 ### Added
 feat(cli): `pmpx` command — download and execute a Pike module without installing (`pmp pmpx github.com/owner/repo [-- args...]`)
 test(cli): shell and Pike unit tests for pmpx (error paths, entry point resolution, cache reuse, no side effects)

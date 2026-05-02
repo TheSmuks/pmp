@@ -1,4 +1,4 @@
-constant PMP_VERSION = "0.4.0";
+constant PMP_VERSION = "0.5.0";
 
 // Exit codes: distinguish user errors from internal failures for CI
 constant EXIT_OK = 0;

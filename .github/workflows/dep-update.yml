@@ -23,7 +23,7 @@ jobs:
         run: |
           set -e
           TMPDIR=$(mktemp -d)
-          PMP_INSTALL_DIR="$TMPDIR/pmp" sh https://raw.githubusercontent.com/TheSmuks/pmp/main/install.sh
+          curl -LsSf https://raw.githubusercontent.com/TheSmuks/pmp/main/install.sh | PMP_INSTALL_DIR="$TMPDIR/pmp" sh
           echo "$TMPDIR/pmp/bin" >> "$GITHUB_PATH"
 
       - name: Install dependencies

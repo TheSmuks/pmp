@@ -95,7 +95,8 @@ void cmd_rollback(mapping ctx) {
                              + " not found — skipping");
                         continue;
                     }
-                    mapping rmp = resolve_module_path(ln, local_path);
+                    mapping rmp = resolve_module_path(ln, local_path,
+                        combine_path(local_path, "pike.json"));
                     string dest_rm = combine_path(target, rmp->link_name);
                     // Remove complementary symlink variant
                     if (dest != dest_rm) {
@@ -121,7 +122,8 @@ void cmd_rollback(mapping ctx) {
                 }
 
                 string entry_full = combine_path(ctx["store_dir"], found_entry);
-                mapping rmp = resolve_module_path(ln, entry_full);
+                mapping rmp = resolve_module_path(ln, entry_full,
+                    combine_path(entry_full, "pike.json"));
                 string dest_rm = combine_path(target, rmp->link_name);
                 // Remove complementary symlink variant (bare vs .pmod)
                 if (dest != dest_rm) {

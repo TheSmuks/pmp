@@ -51,9 +51,8 @@ docs/TIGER_STYLE.md    TigerBeetle coding style guide — principles adopted in 
 Packages are downloaded once to `~/.pike/store/` with entries named `{domain}-{owner}-{repo}-{tag}-{sha_prefix16}`. Projects symlink from `./modules/{name}/` to the store entry. Store is shared across projects — deleting `./modules/` does not affect the store.
 
 ### Lockfile (`pike.lock`)
-
+Tab-separated, line-oriented format. Created after `pmp install` or `pmp lock`. Contains exact commit SHAs and content hashes. **Committed to git for reproducible builds** — CI uses `--frozen-lockfile` to ensure deterministic resolution.
 Tab-separated, line-oriented format. Created after `pmp install` or `pmp lock`. Contains exact commit SHAs and content hashes. Should be committed to git for reproducible builds.
-
 Format: `name<TAB>source<TAB>tag<TAB>commit_sha<TAB>content_sha256`
 
 ### Key functions
@@ -232,6 +231,15 @@ CI uses separate workflow files, one concern per file. See [docs/ci.md](docs/ci.
 | `blob-size-policy.yml` | Reject files >1MB on PRs |
 | `dep-update.yml` | Reusable workflow for automatic Pike dependency update PRs (consumed via `uses:` from other repos) |
 
+
+
+### OMP Rules
+
+pmp uses Oh My Pi OMP rules to enforce invariants:
+- `source-change-doc-sync.md` — ensures CHANGELOG.md, ARCHITECTURE.md, and AGENTS.md are kept in sync when source files change
+- `version-sync.md` — ensures PMP_VERSION in Config.pmod matches "version" in pike.json
+- `pike-lock-committed.md` — ensures pike.lock is regenerated and never gitignored
+- Extension: `pmp-baseline-guard.ts` — guards test baseline (242 tests) and version/gitignore invariants
 ## Agent behavior
 
 When an AI agent is working in this repository:

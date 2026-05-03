@@ -1,5 +1,11 @@
 {
   "$schema": "https://json.schemastore.org/omp-settings.json",
+  "version": 1,
+  "project": {
+    "name": "pmp",
+    "language": "pike",
+    "test_command": "sh tests/runner.sh"
+  },
   "skills": {
     "enabled": true
   },

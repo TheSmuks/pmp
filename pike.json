@@ -1,6 +1,8 @@
 {
+  "name": "pmp",
+  "version": "0.5.0",
+  "description": "Pike Module Package Manager",
   "dependencies": {
     "punit-tests": "github.com/TheSmuks/punit-tests"
-  },
-  "name": "test"
+  }
 }

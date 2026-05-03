@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+feat(repo): pmp practices what it preaches — pike.json now has proper name ("pmp"), version ("0.5.0"), and description; pike.lock is committed to git (removed from .gitignore) for CI reproducibility; CI now uses --frozen-lockfile; OMP rules added to enforce these invariants going forward
 feat(cli): `pmp outdated --json` — machine-readable JSON output for tooling and CI integration; exits 1 if any dependencies are outdated, 0 if all up to date
 feat(ci): reusable GitHub Actions workflow `.github/workflows/dep-update.yml` — any Pike project can opt-in to automatic dependency update PRs via `uses: TheSmuks/pmp/.github/workflows/dep-update.yml@main`
 

@@ -208,7 +208,34 @@ string compute_dir_hash(string dir) {
 //!   2. Name.pmod/module.pmod — directory with .pmod suffix
 //! Bare directories (Name/) are NOT resolved by import, so we always
 //! use .pmod-suffixed symlinks when module.pmod exists.
-mapping resolve_module_path(string name, string entry_dir) {
+//! Supports optional `"module_path"` in pike.json for explicit declaration,
+//! and Cargo-style `src/` layout convention as fallback.
+mapping resolve_module_path(string name, string entry_dir,
+                            void|string pike_json_path) {
+    // 0. Check pike.json for explicit module_path declaration
+    if (stringp(pike_json_path) && Stdio.exist(pike_json_path)) {
+        mixed mp = json_field("module_path", pike_json_path);
+        if (stringp(mp) && sizeof(mp) > 0) {
+            // Validate: no leading slash, no path traversal, relative path only
+            if (!has_prefix(mp, "/") && !has_value(mp, "..") && mp[0] != '\0') {
+                string resolved = combine_path(entry_dir, mp);
+                // Must exist and must be within entry_dir (no escaping)
+                if ((Stdio.is_dir(resolved) || Stdio.exist(resolved))
+                    && has_prefix(resolved, entry_dir)) {
+                    debug("module_path declared: " + mp + " -> " + resolved);
+                    string link = has_suffix(name, ".pmod") ? name : name + ".pmod";
+                    return (["target": resolved, "link_name": link]);
+                } else {
+                    warn("pike.json module_path '" + mp
+                         + "' not found — falling back to scanning");
+                }
+            } else {
+                warn("pike.json module_path '" + mp
+                     + "' is invalid (absolute path or traversal) — falling back to scanning");
+            }
+        }
+    }
+
     // 1. name.pmod/ directory (e.g., PUnit.pmod/) — nested module
     string pmod_dir = combine_path(entry_dir, name + ".pmod");
     if (Stdio.is_dir(pmod_dir))
@@ -225,7 +252,27 @@ mapping resolve_module_path(string name, string entry_dir) {
     if (Stdio.exist(combine_path(entry_dir, "module.pmod")))
         return (["target": entry_dir, "link_name": name + ".pmod"]);
 
-    // 4. Fallback: symlink to entry root
+    // 4. src/name.pmod/ — Cargo-style convention (src/MyLib.pmod/module.pmod)
+    string src_named = combine_path(entry_dir, "src", name + ".pmod");
+    if (Stdio.is_dir(src_named))
+        return (["target": src_named, "link_name": name + ".pmod"]);
+
+    // 5. src/ with exactly one *.pmod/ directory — single-module Cargo layout
+    //    Only use if src/ exists and contains exactly one pmod directory.
+    string src_dir = combine_path(entry_dir, "src");
+    if (Stdio.is_dir(src_dir)) {
+        array(string) entries = get_dir(src_dir);
+        if (entries) {
+            array(string) pmod_dirs = filter(entries, lambda(string e) {
+                return Stdio.is_dir(combine_path(src_dir, e)) && has_suffix(e, ".pmod");
+            });
+            if (sizeof(pmod_dirs) == 1)
+                return (["target": combine_path(src_dir, pmod_dirs[0]),
+                         "link_name": name + ".pmod"]);
+        }
+    }
+
+    // 6. Fallback: symlink to entry root
     return (["target": entry_dir, "link_name": name]);
 }
 

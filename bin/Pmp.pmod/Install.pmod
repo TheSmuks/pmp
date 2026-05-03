@@ -58,7 +58,8 @@ void install_one(string name, string source, string target,
             if (!Stdio.is_dir(local_path))
                 die("local path not found: " + local_path);
 
-            mapping rmp = resolve_module_path(name, local_path);
+            mapping rmp = resolve_module_path(name, local_path,
+                combine_path(local_path, "pike.json"));
             string dest = combine_path(target, rmp->link_name);
             Stdio.mkdirhier(target);
             atomic_symlink(rmp->target, dest);
@@ -228,7 +229,8 @@ void install_one(string name, string source, string target,
                 if (Stdio.exist(old_link)) rm(old_link);
                 if (Stdio.exist(old_link_pmod)) rm(old_link_pmod);
             }
-            mapping rmp = resolve_module_path(resolved_name, entry_full);
+            mapping rmp = resolve_module_path(resolved_name, entry_full,
+                combine_path(entry_full, "pike.json"));
             dest = combine_path(target, rmp->link_name);
             atomic_symlink(rmp->target, dest);
 
@@ -315,7 +317,8 @@ void cmd_install_all(string target, mapping ctx) {
                             continue;
                         }
                         Stdio.mkdirhier(target);
-                        mapping rmp = resolve_module_path(ln, local_path);
+                        mapping rmp = resolve_module_path(ln, local_path,
+                            combine_path(local_path, "pike.json"));
                         string dest = combine_path(target, rmp->link_name);
                         atomic_symlink(rmp->target, dest);
                         info("linked " + ln + " -> " + rmp->target);
@@ -331,7 +334,8 @@ void cmd_install_all(string target, mapping ctx) {
                         // Validate that the store entry exists and has valid structure.
                         // resolve_module_path() checks for name.pmod/ or module.pmod inside
                         // entry_full. If neither exists, the lockfile entry is stale.
-                        mapping rmp = resolve_module_path(ln, entry_full);
+                        mapping rmp = resolve_module_path(ln, entry_full,
+                            combine_path(entry_full, "pike.json"));
                         if (!Stdio.exist(rmp->target)) {
                             info("lockfile entry for " + ln
                                  + " not in store (stale) — re-resolving");

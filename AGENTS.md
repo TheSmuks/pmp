@@ -11,7 +11,7 @@ pmp (Pike Module Package Manager) installs, versions, and resolves dependencies 
 - Verify syntax: `pike bin/pmp.pike --help`
 - Check version: `pike bin/pmp.pike version` (or `sh bin/pmp version`)
 
-Expected result: 230 passed, 0 failed, exit code 0 (shell tests via `sh tests/runner.sh`); Pike unit tests exit 0 (via `sh tests/pike_tests.sh`).
+Expected result: 242 passed, 0 failed, exit code 0 (shell tests via `sh tests/runner.sh`); Pike unit tests exit 0 (via `sh tests/pike_tests.sh`).
 
 ## Architecture
 

@@ -36,7 +36,7 @@ ci|  Verify.pmod          Project and store integrity verification (~269 lines).
   Project.pmod         cmd_init (write verification), cmd_list (column headers), cmd_clean (summary), cmd_remove (path traversal protection)
   Env.pmod             cmd_env, build_paths, cmd_run, cmd_resolve (Pike-native _has_headers)
   Install.pmod         install_one, cmd_install, cmd_install_all, cmd_install_source
-bj|  Update.pmod          Update and outdated commands (~210 lines). Functions: cmd_update, cmd_outdated, print_update_summary.
+bj|  Update.pmod          Update and outdated commands (~280 lines). Functions: cmd_update(args, ctx)→void, cmd_outdated(args, ctx)→void, print_update_summary. `cmd_outdated` supports `--json` flag for machine-readable output.
 yg|  LockOps.pmod         Lock, rollback, and changelog commands (~281 lines). Functions: cmd_lock, cmd_rollback, cmd_changelog.
   Exec.pmod            Download-and-exec command (~155 lines). Functions: cmd_pmpx, _find_entry_point.
 
@@ -230,6 +230,7 @@ CI uses separate workflow files, one concern per file. See [docs/ci.md](docs/ci.
 | `commit-lint.yml` | Conventional commit enforcement |
 | `changelog-check.yml` | Require CHANGELOG.md updates on PRs |
 | `blob-size-policy.yml` | Reject files >1MB on PRs |
+| `dep-update.yml` | Reusable workflow for automatic Pike dependency update PRs (consumed via `uses:` from other repos) |
 
 ## Agent behavior
 

@@ -322,6 +322,33 @@ Or include all assertions:
 - Pike 8.0+ (provides HTTP client, JSON parser, SHA-256, tar extraction natively)
 - `gunzip` (for .tar.gz decompression)
 - `git` (for self-hosted sources only; not needed for GitHub/GitLab)
+## Automatic dependency updates
+
+pmp includes a reusable GitHub Actions workflow that provides Dependabot-like behavior for Pike projects. Add this to your project's `.github/workflows/dep-update.yml`:
+
+```yaml
+name: Update Pike Dependencies
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Monday 06:00 UTC
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['pike.json']
+
+jobs:
+  update-deps:
+    uses: TheSmuks/pmp/.github/workflows/dep-update.yml@main
+```
+
+This workflow:
+- Checks for outdated Pike dependencies every Monday at 06:00 UTC
+- Supports manual triggers via GitHub UI (`workflow_dispatch`)
+- Runs automatically when `pike.json` changes
+- Creates a PR with updated `pike.lock` if updates are available
+- Leaves no PRs if all dependencies are already up to date
+
+**Note:** Commit your `pike.lock` to git for this workflow to work correctly.
 
 ## License
 

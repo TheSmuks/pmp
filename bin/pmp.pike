@@ -264,7 +264,7 @@ void _main(array(string) argv) {
         case "clean":     cmd_clean(ctx); break;
         case "remove":    cmd_remove(args, ctx); break;
         case "run":       cmd_run(args, ctx); break;
-        case "outdated":  cmd_outdated(ctx); break;
+        case "outdated":  cmd_outdated(args, ctx); break;
         case "resolve":   cmd_resolve(args, ctx); break;
         case "env":       cmd_env(ctx); break;
         case "version":    cmd_version(); break;

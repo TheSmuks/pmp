@@ -18,7 +18,6 @@ jobs:
       - uses: actions/checkout@v6
       - name: Check CHANGELOG.md is updated
         uses: dangoslen/changelog-enforcer@v4
-        uses: dangoslen/changelog-enforcer@v3
         with:
           changeLogPath: CHANGELOG.md
           missingUpdateErrorMessage: |

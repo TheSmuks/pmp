@@ -15,3 +15,5 @@ docs(readme): restructured README to Bun-style layout — key info up top, quick
 
 ### Fixed
 fix(ci): dep-update.yml install step uses `curl -LsSf <url> | sh` instead of `sh <url>` — `sh` cannot fetch URLs, causing `pmp: command not found` in downstream steps
+fix(install): `pmp install` now resolves modules in Cargo-style `src/` layout — packages with `src/PackageName.pmod/module.pmod` are correctly detected and symlinked. Also supports `"module_path"` field in pike.json for explicit declaration (equivalent to Cargo's `[lib] path`). Fixes broken imports for packages like pike-introspect that use non-root layout. Backward compatible with existing flat and nested layouts.
+

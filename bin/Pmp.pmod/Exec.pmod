@@ -134,7 +134,8 @@ void cmd_pmpx(array(string) args, mapping ctx) {
     string tmp_modules = combine_path(tmpdir, "modules");
     Stdio.mkdirhier(tmp_modules);
 
-    mapping rmp = resolve_module_path(name, entry_dir);
+    mapping rmp = resolve_module_path(name, entry_dir,
+        combine_path(entry_dir, "pike.json"));
     string link_path = combine_path(tmp_modules, rmp->link_name);
     symlink(rmp->target, link_path);
 

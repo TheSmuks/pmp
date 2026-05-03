@@ -163,3 +163,194 @@ assert "list shows N3" "1" "$_has_n3"
 # Clean up
 rm -rf modules libs
 rm -f /tmp/test_nested.pike /tmp/test_flat.pike
+
+# ══════════════════════════════════════════════════════════════════════
+# NEW TESTS: src/ layout and module_path field
+# ══════════════════════════════════════════════════════════════════════
+
+# ── Test 8: Cargo-style src/ layout with name.pmod/ ─────────────────
+
+rm -rf modules libs
+mkdir -p libs/src-layout/src/PkgName.pmod
+cat > libs/src-layout/src/PkgName.pmod/module.pmod << 'PIKE'
+constant version = "1.0.0";
+PIKE
+
+cat > pike.json << 'JSON'
+{
+  "dependencies": {
+    "PkgName": "./libs/src-layout"
+  }
+}
+JSON
+
+"$PMP" install
+
+# The symlink should point into src/PkgName.pmod/
+assert_exists "PkgName.pmod symlink created" "modules/PkgName.pmod"
+_dest="$(readlink modules/PkgName.pmod 2>/dev/null || echo '')"
+case "$_dest" in
+  */src/PkgName.pmod) _src_ok=1 ;;
+  *) _src_ok=0 ;;
+esac
+assert "symlink targets src/PkgName.pmod" "1" "$_src_ok"
+
+# Verify import works
+cat > /tmp/test_src.pike << 'PIKE'
+import PkgName;
+int main() {
+    werror(PkgName.version + "\n");
+    return 0;
+}
+PIKE
+_out="$(PIKE_MODULE_PATH="$(pwd)/modules" pike /tmp/test_src.pike 2>&1 || true)"
+assert_output_contains "import PkgName works with src/ layout" "1.0.0" "$_out"
+
+# ── Test 9: src/ with single *.pmod/ auto-detection ─────────────────
+
+rm -rf modules libs
+mkdir -p libs/single-src/src/SingleMod.pmod
+cat > libs/single-src/src/SingleMod.pmod/module.pmod << 'PIKE'
+constant value = 99;
+PIKE
+
+cat > pike.json << 'JSON'
+{
+  "dependencies": {
+    "SingleMod": "./libs/single-src"
+  }
+}
+JSON
+
+"$PMP" install
+
+# Should auto-detect src/SingleMod.pmod/ since src/ has exactly one pmod dir
+assert_exists "SingleMod.pmod symlink created" "modules/SingleMod.pmod"
+_dest="$(readlink modules/SingleMod.pmod 2>/dev/null || echo '')"
+case "$_dest" in
+  */src/SingleMod.pmod) _single_src_ok=1 ;;
+  *) _single_src_ok=0 ;;
+esac
+assert "symlink targets src/SingleMod.pmod via auto-detect" "1" "$_single_src_ok"
+
+# Verify import
+cat > /tmp/test_single_src.pike << 'PIKE'
+import SingleMod;
+int main() {
+    werror((string)SingleMod.value + "\n");
+    return 0;
+}
+PIKE
+_out="$(PIKE_MODULE_PATH="$(pwd)/modules" pike /tmp/test_single_src.pike 2>&1 || true)"
+assert_output_contains "import SingleMod works with auto-detect" "99" "$_out"
+
+
+# ── Test 10: module_path field in pike.json ─────────────────────────
+
+rm -rf modules libs
+mkdir -p libs/explicit-path/deep/nested/ExplicitMod.pmod
+cat > libs/explicit-path/deep/nested/ExplicitMod.pmod/module.pmod << 'PIKE'
+constant msg = "explicit module_path works";
+PIKE
+
+cat > libs/explicit-path/pike.json << 'JSON'
+{
+  "name": "ExplicitMod",
+  "version": "0.1.0",
+  "module_path": "deep/nested/ExplicitMod.pmod"
+}
+JSON
+
+cat > pike.json << 'JSON'
+{
+  "dependencies": {
+    "ExplicitMod": "./libs/explicit-path"
+  }
+}
+JSON
+
+"$PMP" install
+
+# Symlink should point to deep/nested/ExplicitMod.pmod via module_path
+assert_exists "ExplicitMod.pmod symlink created" "modules/ExplicitMod.pmod"
+_dest="$(readlink modules/ExplicitMod.pmod 2>/dev/null || echo '')"
+case "$_dest" in
+  */deep/nested/ExplicitMod.pmod) _explicit_ok=1 ;;
+  *) _explicit_ok=0 ;;
+esac
+assert "symlink targets module_path declared path" "1" "$_explicit_ok"
+
+# Verify import works
+cat > /tmp/test_explicit.pike << 'PIKE'
+import ExplicitMod;
+int main() {
+    werror(ExplicitMod.msg + "\n");
+    return 0;
+}
+PIKE
+_out="$(PIKE_MODULE_PATH="$(pwd)/modules" pike /tmp/test_explicit.pike 2>&1 || true)"
+assert_output_contains "import ExplicitMod works via module_path" "explicit module_path works" "$_out"
+
+# ── Test 11: module_path with invalid path falls back to scanning ────
+
+rm -rf modules libs
+mkdir -p libs/fallback-test/FallbackMod.pmod
+cat > libs/fallback-test/FallbackMod.pmod/module.pmod << 'PIKE'
+constant data = "fallback data";
+PIKE
+
+# Declare a non-existent module_path — should warn and fall back
+cat > libs/fallback-test/pike.json << 'JSON'
+{
+  "name": "FallbackMod",
+  "version": "0.1.0",
+  "module_path": "does/not/exist"
+}
+JSON
+
+cat > pike.json << 'JSON'
+{
+  "dependencies": {
+    "FallbackMod": "./libs/fallback-test"
+  }
+}
+JSON
+
+"$PMP" install 2>&1 | grep -q "module_path.*not found\|module_path.*falling back" || true
+
+# Should still work via fallback scanning
+assert_exists "FallbackMod.pmod symlink created (fallback)" "modules/FallbackMod.pmod"
+_out="$(PIKE_MODULE_PATH="$(pwd)/modules" pike -e 'import FallbackMod; werror(FallbackMod.data + "\n");' 2>&1 || true)"
+assert_output_contains "import FallbackMod works via fallback" "fallback data" "$_out"
+
+# ── Test 12: module_path with path traversal is rejected ─────────────
+
+rm -rf modules libs
+mkdir -p libs/traversal-test/TravMod.pmod
+cat > libs/traversal-test/TravMod.pmod/module.pmod << 'PIKE'
+constant x = 1;
+PIKE
+
+cat > libs/traversal-test/pike.json << 'JSON'
+{
+  "name": "TravMod",
+  "module_path": "../../etc/passwd"
+}
+JSON
+
+cat > pike.json << 'JSON'
+{
+  "dependencies": {
+    "TravMod": "./libs/traversal-test"
+  }
+}
+JSON
+
+"$PMP" install 2>&1 | grep -q "module_path.*invalid\|module_path.*traversal\|module_path.*falling back" || true
+
+# Should fall back and still work
+assert_exists "TravMod.pmod symlink created (traversal blocked)" "modules/TravMod.pmod"
+
+# Clean up
+rm -rf modules libs
+rm -f /tmp/test_src.pike /tmp/test_single_src.pike /tmp/test_explicit.pike

@@ -228,9 +228,20 @@ CI uses separate workflow files, one concern per file. See [docs/ci.md](docs/ci.
 | `docs-check.yml` | Verify doc sync across AGENTS.md, ARCHITECTURE.md, SKILL.md |
 | `commit-lint.yml` | Conventional commit enforcement |
 | `changelog-check.yml` | Require CHANGELOG.md updates on PRs |
+| `branch-cleanup.yml` | Auto-delete merged feature branches |
 | `blob-size-policy.yml` | Reject files >1MB on PRs |
 | `dep-update.yml` | Reusable workflow for automatic Pike dependency update PRs (consumed via `uses:` from other repos) |
 
+
+### OMP Skills
+
+pmp includes OMP skills for common workflows:
+- `cut-release` — semantic version bumps and release PRs
+- `merge-to-main` — safe merge with CI monitoring and changelog consolidation
+- `template-guide` — compliance audit and upgrade guidance
+- `setup` — interactive project initialization
+
+See [docs/agent-files-guide.md](docs/agent-files-guide.md) and [docs/omp-extensions-guide.md](docs/omp-extensions-guide.md).
 
 
 ### OMP Rules
@@ -255,4 +266,4 @@ When an AI agent is working in this repository:
 
 ## Template version
 
-This project uses conventions from `ai-project-template` v0.2.0. See [`.template-version`](.template-version).
+This project uses conventions from `ai-project-template` v0.6.0. See [`.template-version`](.template-version).

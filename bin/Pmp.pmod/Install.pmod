@@ -334,7 +334,28 @@ void cmd_install_all(string target, mapping ctx) {
                         // Validate that the store entry exists and has valid structure.
                         // resolve_module_path() checks for name.pmod/ or module.pmod inside
                         // entry_full. If neither exists, the lockfile entry is stale.
-                        mapping rmp = resolve_module_path(ln, entry_full,
+                        // Resolve module name from the package's pike.json if available
+                        string resolved_name = json_field("name",
+                            combine_path(entry_full, "pike.json"));
+                        // json_field returns raw JSON value — only accept strings
+                        if (!stringp(resolved_name)) resolved_name = ln;
+                        // Sanitize package name from pike.json — prevent path traversal
+                        if (has_value(resolved_name, "/") || has_value(resolved_name, "\\")
+                            || has_value(resolved_name, "..") || has_value(resolved_name, "\0")
+                            || sizeof(resolved_name) == 0) {
+                            warn("package has invalid name '" + resolved_name
+                                 + "' in pike.json — using dependency key");
+                            resolved_name = ln;
+                        }
+                        // If resolved name differs from dependency key, clean up any
+                        // orphaned symlink under the dependency key from a previous install
+                        if (resolved_name != ln) {
+                            string old_link = combine_path(target, ln);
+                            string old_link_pmod = combine_path(target, ln + ".pmod");
+                            if (Stdio.exist(old_link)) rm(old_link);
+                            if (Stdio.exist(old_link_pmod)) rm(old_link_pmod);
+                        }
+                        mapping rmp = resolve_module_path(resolved_name, entry_full,
                             combine_path(entry_full, "pike.json"));
                         if (!Stdio.exist(rmp->target)) {
                             info("lockfile entry for " + ln

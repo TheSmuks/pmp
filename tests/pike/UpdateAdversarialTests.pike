@@ -163,7 +163,7 @@ void test_outdated_empty_deps() {
     cd(proj);
 
     // Should not die — just reports "no dependencies declared"
-    mixed err = catch { cmd_outdated(ctx); };
+    mixed err = catch { cmd_outdated(({}), ctx); };
     assert_false(!!err, "outdated with empty deps should not die");
 }
 
@@ -182,8 +182,7 @@ void test_outdated_local_dep_skipped() {
         ({"my-lib", "./libs/my-lib", "-", "sha1", "hash1"}),
     }));
 
-    // Should not die — local deps are skipped
-    mixed err = catch { cmd_outdated(ctx); };
+    mixed err = catch { cmd_outdated(({}), ctx); };
     assert_false(!!err, "outdated with local dep should not die");
 }
 
@@ -194,6 +193,6 @@ void test_outdated_offline_mode() {
     cd(proj);
 
     // Offline mode should just print a message and return, not die
-    mixed err = catch { cmd_outdated(ctx); };
+    mixed err = catch { cmd_outdated(({}), ctx); };
     assert_false(!!err, "outdated in offline mode should not die");
 }

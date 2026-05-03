@@ -128,11 +128,24 @@ void cmd_update(array(string) args, mapping ctx) {
 
 //! Show which dependencies are outdated.
 //! Compares lockfile versions with latest tags from remotes.
-void cmd_outdated(mapping ctx) {
+//! When args contains "--json", outputs machine-readable JSON array
+//! and exits 1 if any outdated, 0 if all up to date.
+void cmd_outdated(array(string) args, mapping ctx) {
+    int json_mode = 0;
+    // Strip --json from args (treat it as a command flag, not a dep spec)
+    if (has_value(args, "--json")) {
+        json_mode = 1;
+        args -= ({"--json"});
+    }
+
     if (!Stdio.exist(ctx["pike_json"]))
         die("no pike.json found");
 
     if (ctx["offline"]) {
+        if (json_mode) {
+            write("[]\n");
+            return;
+        }
         info("offline mode: cannot check for outdated dependencies");
         return;
     }
@@ -146,11 +159,16 @@ void cmd_outdated(mapping ctx) {
 
     array(array(string)) deps = parse_deps(ctx["pike_json"]);
     if (sizeof(deps) == 0) {
+        if (json_mode) {
+            write("[]\n");
+            return;
+        }
         info("no dependencies declared");
         return;
     }
 
     int any_outdated = 0;
+    array(mapping) outdated_list = ({});
     String.Buffer buf = String.Buffer();
 
     foreach (deps; ; array(string) dep) {
@@ -173,31 +191,50 @@ void cmd_outdated(mapping ctx) {
             latest_tag_safe(type, domain, repo_path, PMP_VERSION);
         string latest_tag_str = resolved[0];
 
+        string bump = "update";
         if (sizeof(latest_tag_str) == 0) {
-            buf->add(sprintf("  %-20s %-12s %-12s %s\n",
-                name, current_tag, "-", "resolve error"));
-            any_outdated = 1;
-            continue;
-        }
-
-        if (latest_tag_str != current_tag && current_tag != "-") {
-            string bump = "";
+            bump = "error";
+        } else if (latest_tag_str != current_tag && current_tag != "-") {
             mapping cur_v = parse_semver(current_tag);
             mapping lat_v = parse_semver(latest_tag_str);
             if (cur_v && lat_v)
                 bump = classify_bump(current_tag, latest_tag_str);
             else
                 bump = "update";
-
-            string label = bump == "major" ? "MAJOR" : bump;
-            buf->add(sprintf("  %-20s %-12s %-12s %s\n",
-                name, current_tag, latest_tag_str, label));
-            any_outdated = 1;
         } else if (current_tag == "-") {
-            buf->add(sprintf("  %-20s %-12s %-12s %s\n",
-                name, "(none)", latest_tag_str, "not installed"));
-            any_outdated = 1;
+            bump = "not-installed";
         }
+
+        int is_outdated = (latest_tag_str != current_tag) && (current_tag != "-");
+        if (latest_tag_str == "" || current_tag == "-")
+            is_outdated = 1;
+
+        if (is_outdated) {
+            any_outdated = 1;
+            if (json_mode) {
+                outdated_list += ({ ([
+                    "name": name,
+                    "current": current_tag,
+                    "latest": sizeof(latest_tag_str) ? latest_tag_str : "-",
+                    "bump": bump,
+                ]) });
+            } else {
+                string label = bump == "major" ? "MAJOR" : bump;
+                if (bump == "error")
+                    label = "resolve error";
+                else if (bump == "not-installed")
+                    label = "not installed";
+                buf->add(sprintf("  %-20s %-12s %-12s %s\n",
+                    name, current_tag,
+                    sizeof(latest_tag_str) ? latest_tag_str : "-", label));
+            }
+        }
+    }
+
+    if (json_mode) {
+        write(Standards.JSON.encode(outdated_list) + "\n");
+        if (any_outdated) exit(EXIT_ERROR);
+        return;
     }
 
     if (any_outdated) {

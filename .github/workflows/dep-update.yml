@@ -48,7 +48,7 @@ jobs:
 
       - name: Create PR
         if: steps.check.outputs.has_updates == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: pmp-update-deps
           title: 'chore(deps): update Pike dependencies'
